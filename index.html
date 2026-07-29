@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.51 (localStorage保存・完全オフライン)
+   Tally 3.52 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -681,7 +681,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.51";
+const APP_VERSION = "3.52";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -944,16 +944,23 @@ function viewMain(){
     const slotNet = gme.filter(e=>e.src==="slot").reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
     const mjNet = gme.filter(e=>e.src==="mahjong").reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
     const gambleNet = slotNet + mjNet;
+    /* v3.52: 代打報酬(src=daida)は遊技収支に含めない設計だが、カードが沈黙すると一覧の代打行が浮く。
+       従属行として金額と行き先を明記し「遊技収支の外」を位置で示す */
+    const daidaNet = gme.filter(e=>e.src==="daida").reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
     const hasSlot = gme.some(e=>e.src==="slot"), hasMj = gme.some(e=>e.src==="mahjong");
     const both = hasSlot && hasMj;
     h += '<div class="card" style="margin-top:10px;margin-bottom:12px">'+
-      '<div style="text-align:center;padding:2px 0 '+(both?"12px":"2px")+'">'+
+      '<div style="text-align:center;padding:2px 0 '+((both||daidaNet!==0)?"12px":"2px")+'">'+
         '<div class="muted" style="font-size:12px;letter-spacing:.1em;margin-bottom:3px">当月の遊技収支</div>'+
         '<div class="mono '+clsPM(gambleNet)+'" style="font-size:34px;font-weight:700;line-height:1.15">'+signYen(gambleNet)+'</div></div>'+
       (both ? '<div class="row" style="border-top:1px solid var(--line);padding-top:11px">'+
         '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">パチスロ</div><div class="mono '+clsPM(slotNet)+'" style="font-size:18px;font-weight:700">'+signYen(slotNet)+'</div></div>'+
         '<div style="width:1px;background:var(--line)"></div>'+
         '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">麻雀</div><div class="mono '+clsPM(mjNet)+'" style="font-size:18px;font-weight:700">'+signYen(mjNet)+'</div></div></div>' : '')+
+      (daidaNet!==0 ? '<div class="row between" style="border-top:1px solid var(--line);margin-top:'+(both?"11":"0")+'px;padding-top:9px;align-items:baseline">'+
+        '<span class="muted" style="font-size:11px">代打報酬</span>'+
+        '<span><span class="mono '+clsPM(daidaNet)+'" style="font-size:14px;font-weight:700">'+signYen(daidaNet)+'</span>'+
+        '<span class="muted" style="font-size:10px"> → 家計簿の副業へ</span></span></div>' : '')+
       '</div>';
     h += '<div class="row" style="gap:8px;margin-bottom:12px">'+
       [["slot","パチスロ"],["mahjong","麻雀"]].map(([v,l])=>
@@ -1121,7 +1128,7 @@ function viewSlot(foot){
           '<div style="flex:1;min-width:0">'+
           '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
           '<span class="tag" style="border:1px solid '+bc+';color:'+bc+'">'+modeShort(s.mode)+'</span>'+
-          (s.lotteryOnly?'<span class="tag">抽選</span>':'')+
+          (s.lotteryOnly?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:9px">抽選</span>':'')+
           ((s.partnerName||"").trim()?personTag(s.partnerName.trim()):'')+'</div>'+
           '<div class="muted ellip" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
           (machLine?'<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+esc(machLine)+'</div>':'')+
