@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.55 (localStorage保存・完全オフライン)
+   Tally 3.56 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -681,7 +681,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.55";
+const APP_VERSION = "3.56";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3566,7 +3566,7 @@ function entryChipStores(type){
   const m={};
   (S.entries||[]).filter(e=>e.type===type && CHIP_SRC_OK(e)).forEach(e=>{
     const s=(e.store||"").trim(); if(s) m[s]=(m[s]||0)+1; });
-  return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(x=>x[0]).slice(0,8);
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(x=>x[0]).slice(0,12);
 }
 function entryChipItems(type, store){
   const target=chainKeyOf(store), m={};
@@ -3583,7 +3583,7 @@ function entryChipItems(type, store){
     if(have.has(rev)) return;
     out.push(rev); have.add(rev);
   });
-  return out.slice(0,8);
+  return out.slice(0,6);
 }
 function entryChipAmounts(type, store, item){
   const target=chainKeyOf(store);
@@ -3644,15 +3644,22 @@ function viewEntry(){
   /* v3.55: 段階的開示のカスケード。店を選ぶまで品目は出さず、品目を選ぶまで金額は出さない */
   const cStores = entryChipStores(f.type);
   const curStore = (f.store||"").trim(), curItem = (f.item||"").trim();
-  const chipRow = (label, arr, act, cur) => arr.length
+  const chipRow = (label, arr, act, cur, extra) => (arr.length||extra)
     ? '<div class="muted" style="font-size:11px;margin:0 2px 6px">'+label+'</div>'+
       '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
       arr.map(v=>'<button class="chip '+(String(cur)===String(v)?"sel":"")+'" data-a="'+act+'" data-v="'+esc(String(v))+'">'+
-        (act==="uamt"?"¥"+num(v).toLocaleString("ja-JP"):esc(String(v)))+'</button>').join("")+'</div>'
+        (act==="uamt"?"¥"+num(v).toLocaleString("ja-JP"):esc(String(v)))+'</button>').join("")+(extra||'')+'</div>'
     : '';
-  let chipsHtml = chipRow("よく使う店", cStores, "ustore", curStore);
-  if(curStore) chipsHtml += chipRow("品目", entryChipItems(f.type, curStore), "uitem", curItem);
-  if(curStore && curItem) chipsHtml += chipRow("金額", entryChipAmounts(f.type, curStore, curItem), "uamt", num(f.amount)||"");
+  /* v3.56: 交通モード中はカスケードを描かない(保存時に店名/品目が合成で上書きされるため選択が無意味+レイアウトが浮く)。
+     店は既定5件+展開トグル(UI.chipMore)——8件常時は4行になり見通しを失っていた */
+  let chipsHtml = '';
+  if(!(f.tmode && UI.editEntryId===null)){
+    const moreChip = cStores.length>5
+      ? '<button class="chip" style="color:var(--muted)" data-a="cmore">'+(UI.chipMore?"▾ 閉じる":"＋他"+(cStores.length-5)+"件")+'</button>' : '';
+    chipsHtml = chipRow("よく使う店", (UI.chipMore?cStores:cStores.slice(0,5)), "ustore", curStore, moreChip);
+    if(curStore) chipsHtml += chipRow("品目", entryChipItems(f.type, curStore), "uitem", curItem);
+    if(curStore && curItem) chipsHtml += chipRow("金額", entryChipAmounts(f.type, curStore, curItem), "uamt", num(f.amount)||"");
+  }
   /* v3.31: 交通コンポーザ(新規支出のみ)。分類は増やさず保存時に 店名=モード/場所・品目=乗車→降車・分類=消費 へ合成する入力支援レイヤー。
      表記規約(店名固定・A→B)を規律でなく構造で強制する関所。編集画面は素の店名/品目に戻る一方通行 */
   const TRANS_MODES=["地下鉄","バス","電車","駐輪"];
@@ -3698,7 +3705,7 @@ function viewEntry(){
         /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
            日付はフォームの値を引き継ぐ */
         (UI.editEntryId===null?'<button class="btn full" style="margin-bottom:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''))+
-    chipsHtml + transHtml + (composerHtml || fieldsHtml) +
+    transHtml + chipsHtml + (composerHtml || fieldsHtml) +
     (UI.editEntryId!==null?'<button class="btn full" style="margin-bottom:8px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="tofixed">この内容で固定費に登録</button>':'')+
     '<div class="row" style="gap:8px">'+
     (UI.editEntryId!==null?'<button class="btn danger" data-a="edel">削除</button>':'')+
@@ -3725,10 +3732,11 @@ function bindEntry(){
             exchange:S.rates.exchange||"",pExchange:S.rates.pExchange||"",pushPayout:S.rates.pushPayout||"",pushDraw:S.rates.pushDraw||"",machines:[],expenses:[],memo:""};
           UI.whoTab="me"; UI.isNewSess=true; UI.screen="session"; render(); }
       else if(a==="ecat"){ f.category=v; render(); }
+      else if(a==="cmore"){ UI.chipMore=!UI.chipMore; render(); }
       else if(a==="ustore"){ f.tmode=""; f.store=el.dataset.v; f.item=""; const c=entryChipCat(f.type,f.store,null); if(c) f.category=c; render(); }
       else if(a==="uitem"){ f.item=el.dataset.v; const c=entryChipCat(f.type,f.store,f.item); if(c) f.category=c; render(); }
       else if(a==="uamt"){ f.amount=String(num(el.dataset.v)); render(); }
-      else if(a==="tmode"){ f.tmode=(f.tmode===el.dataset.v?"":el.dataset.v); if(f.tmode){ f.category="消費"; } render(); }
+      else if(a==="tmode"){ f.tmode=(f.tmode===el.dataset.v?"":el.dataset.v); if(f.tmode){ f.category="消費"; f.store=""; f.item=""; } render(); }
       else if(a==="tkf"){ f.tfrom=el.dataset.v; render(); }
       else if(a==="tkt"){ f.tto=el.dataset.v; render(); }
       else if(a==="tkp"){ f.tplace=el.dataset.v; render(); }
