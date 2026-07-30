@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.56 (localStorage保存・完全オフライン)
+   Tally 3.57 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -681,7 +681,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.56";
+const APP_VERSION = "3.57";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3645,21 +3645,18 @@ function viewEntry(){
   const cStores = entryChipStores(f.type);
   const curStore = (f.store||"").trim(), curItem = (f.item||"").trim();
   const chipRow = (label, arr, act, cur, extra) => (arr.length||extra)
-    ? '<div class="muted" style="font-size:11px;margin:0 2px 6px">'+label+'</div>'+
+    ? (label?'<div class="muted" style="font-size:11px;margin:0 2px 6px">'+label+'</div>':'')+
       '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
       arr.map(v=>'<button class="chip '+(String(cur)===String(v)?"sel":"")+'" data-a="'+act+'" data-v="'+esc(String(v))+'">'+
         (act==="uamt"?"¥"+num(v).toLocaleString("ja-JP"):esc(String(v)))+'</button>').join("")+(extra||'')+'</div>'
     : '';
-  /* v3.56: 交通モード中はカスケードを描かない(保存時に店名/品目が合成で上書きされるため選択が無意味+レイアウトが浮く)。
-     店は既定5件+展開トグル(UI.chipMore)——8件常時は4行になり見通しを失っていた */
-  let chipsHtml = '';
-  if(!(f.tmode && UI.editEntryId===null)){
-    const moreChip = cStores.length>5
-      ? '<button class="chip" style="color:var(--muted)" data-a="cmore">'+(UI.chipMore?"▾ 閉じる":"＋他"+(cStores.length-5)+"件")+'</button>' : '';
-    chipsHtml = chipRow("よく使う店", (UI.chipMore?cStores:cStores.slice(0,5)), "ustore", curStore, moreChip);
-    if(curStore) chipsHtml += chipRow("品目", entryChipItems(f.type, curStore), "uitem", curItem);
-    if(curStore && curItem) chipsHtml += chipRow("金額", entryChipAmounts(f.type, curStore, curItem), "uamt", num(f.amount)||"");
-  }
+  /* v3.57: チップは対応する入力欄の直下に置く(交通コンポーザと同じ対構造)。
+     店は既定5件+展開トグル(UI.chipMore)。交通モード中はfieldsHtml自体が使われないので自動的に非表示になる */
+  const moreChip = cStores.length>5
+    ? '<button class="chip" style="color:var(--muted)" data-a="cmore">'+(UI.chipMore?"▾ 閉じる":"＋他"+(cStores.length-5)+"件")+'</button>' : '';
+  const storeChips = chipRow("", (UI.chipMore?cStores:cStores.slice(0,5)), "ustore", curStore, moreChip);
+  const itemChips  = curStore ? chipRow("", entryChipItems(f.type, curStore), "uitem", curItem) : '';
+  const amtChips   = (curStore && curItem) ? chipRow("金額", entryChipAmounts(f.type, curStore, curItem), "uamt", num(f.amount)||"") : '';
   /* v3.31: 交通コンポーザ(新規支出のみ)。分類は増やさず保存時に 店名=モード/場所・品目=乗車→降車・分類=消費 へ合成する入力支援レイヤー。
      表記規約(店名固定・A→B)を規律でなく構造で強制する関所。編集画面は素の店名/品目に戻る一方通行 */
   const TRANS_MODES=["地下鉄","バス","電車","駐輪"];
@@ -3683,10 +3680,12 @@ function viewEntry(){
       composerHtml+='<div class="muted" style="font-size:10px;margin:0 2px 14px">保存時: 店名='+(f.tmode==="駐輪"?"場所":esc(f.tmode))+' / 品目='+(f.tmode==="駐輪"?"駐輪":"乗車→降車")+' / 分類=消費</div>';
     }
   }
-  const fieldsHtml = '<input class="input" id="e-store" list="e-storelist" placeholder="店名(任意)" value="'+esc(f.store||"")+'" autocomplete="off" style="margin-bottom:8px">'+
+  const fieldsHtml = '<input class="input" id="e-store" list="e-storelist" placeholder="店名(任意)" value="'+esc(f.store||"")+'" autocomplete="off" style="margin-bottom:'+(storeChips?"6":"8")+'px">'+
     '<datalist id="e-storelist">'+sh.map(v=>'<option value="'+esc(v)+'"></option>').join("")+'</datalist>'+
-    '<input class="input" id="e-item" list="e-itemlist" placeholder="品目(任意)" value="'+esc(f.item||"")+'" autocomplete="off" style="margin-bottom:14px">'+
-    '<datalist id="e-itemlist">'+entryItemHintsFor(f.store).map(v=>'<option value="'+esc(v)+'"></option>').join("")+'</datalist>';
+    storeChips+
+    '<input class="input" id="e-item" list="e-itemlist" placeholder="品目(任意)" value="'+esc(f.item||"")+'" autocomplete="off" style="margin-bottom:'+(itemChips?"6":"14")+'px">'+
+    '<datalist id="e-itemlist">'+entryItemHintsFor(f.store).map(v=>'<option value="'+esc(v)+'"></option>').join("")+'</datalist>'+
+    itemChips+amtChips;
   return '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">'+(UI.editEntryId!==null?"記録を編集":"記録を追加")+'</div><div style="width:44px"></div></div>'+
     '<div class="row" style="gap:8px;margin-bottom:12px">'+
@@ -3705,7 +3704,7 @@ function viewEntry(){
         /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
            日付はフォームの値を引き継ぐ */
         (UI.editEntryId===null?'<button class="btn full" style="margin-bottom:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''))+
-    transHtml + chipsHtml + (composerHtml || fieldsHtml) +
+    transHtml + (composerHtml || fieldsHtml) +
     (UI.editEntryId!==null?'<button class="btn full" style="margin-bottom:8px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="tofixed">この内容で固定費に登録</button>':'')+
     '<div class="row" style="gap:8px">'+
     (UI.editEntryId!==null?'<button class="btn danger" data-a="edel">削除</button>':'')+
