@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.54 (localStorage保存・完全オフライン)
+   Tally 3.55 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -681,7 +681,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.54";
+const APP_VERSION = "3.55";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3558,45 +3558,58 @@ function entryItemHintsFor(store){
   });
   return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
 }
-function entryUsualChips(type){
-  const map={};
-  /* v3.54: daidaも除外。含めるとタップでセッションなき幽霊代打エントリが生まれる(src無し・遊技カード非計上・台記録なし) */
-  (S.entries||[]).filter(e=>e.type===type && e.src!=="slot" && e.src!=="mahjong" && e.src!=="fixed" && e.src!=="daida").forEach(e=>{
-    const store=(e.store||"").trim();
-    const item=(e.item!=null?String(e.item):String(e.memo||"")).trim();
-    if(!store && !item) return;
-    const k=store+"\u0001"+item;
-    if(!map[k]) map[k]={store,item,count:0,cats:{},amts:{}};
-    map[k].count++; map[k].cats[e.category]=(map[k].cats[e.category]||0)+1;
-    const am=num(e.amount); if(am>0) map[k].amts[am]=(map[k].amts[am]||0)+1;
-  });
-  /* v3.30: 金額の最頻値がそのペアの8割以上を占めるなら金額もチップに載せる(定額運賃・定期購入の1タップ化)。
-     ばらつく品目(クリーニング等)は従来通り金額なし→空欄+フォーカスで、誤額の静かな混入を防ぐ */
-  const modeAmt=o=>{
-    const es=Object.entries(o.amts); if(!es.length) return null;
-    const tot=es.reduce((a,x)=>a+x[1],0);
-    const top=es.sort((a,b)=>b[1]-a[1])[0];
-    return top[1]/tot>=0.8 ? num(top[0]) : null;
-  };
-  const out=Object.values(map).sort((a,b)=>b.count-a.count).slice(0,6).map(o=>({
-    store:o.store,item:o.item,
-    cat:Object.entries(o.cats).sort((a,b)=>b[1]-a[1])[0][0],
-    amt:modeAmt(o)
-  }));
-  /* v3.30: 経路品目「A→B」は逆方向チップを自動生成(運賃同額前提・同店名同分類)。
-     履歴に逆方向が既在なら生成しない(実績側が自力でランクインする)。上限8 */
-  const have=new Set(Object.keys(map));
-  out.slice().forEach(c=>{
+/* v3.55: 「よく使う」を店名→品目→金額のカスケードへ再構成(旧entryUsualChipsの合体チップは文字の壁で使用困難だった)。
+   v3.30の資産(経路品目の逆方向自動生成・履歴金額)はここへ移植して継承。連携srcは全て除外(幽霊エントリ防止) */
+const CHIP_SRC_OK = e => e.src!=="slot" && e.src!=="mahjong" && e.src!=="fixed" && e.src!=="daida";
+function chipItemOf(e){ return (e.item!=null?String(e.item):String(e.memo||"")).trim(); }
+function entryChipStores(type){
+  const m={};
+  (S.entries||[]).filter(e=>e.type===type && CHIP_SRC_OK(e)).forEach(e=>{
+    const s=(e.store||"").trim(); if(s) m[s]=(m[s]||0)+1; });
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(x=>x[0]).slice(0,8);
+}
+function entryChipItems(type, store){
+  const target=chainKeyOf(store), m={};
+  (S.entries||[]).filter(e=>e.type===type && CHIP_SRC_OK(e)).forEach(e=>{
+    const es=(e.store||"").trim(); if(!es||chainKeyOf(es)!==target) return;
+    const v=chipItemOf(e); if(v) m[v]=(m[v]||0)+1; });
+  const out=Object.entries(m).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+  /* 経路品目「A→B」の逆方向を自動生成(v3.30から継承・履歴に既在なら生成しない) */
+  const have=new Set(out);
+  out.slice().forEach(it=>{
     if(out.length>=8) return;
-    const m=/^(.+?)→(.+)$/.exec(c.item||""); if(!m) return;
-    const rev=m[2].trim()+"→"+m[1].trim();
-    const rk=c.store+"\u0001"+rev;
-    if(have.has(rk)) return;
-    out.push({store:c.store,item:rev,cat:c.cat,amt:c.amt}); have.add(rk);
+    const mm=/^(.+?)→(.+)$/.exec(it); if(!mm) return;
+    const rev=mm[2].trim()+"→"+mm[1].trim();
+    if(have.has(rev)) return;
+    out.push(rev); have.add(rev);
   });
-  return out.map(c=>Object.assign({},c,{
-    label:[c.store,c.item].filter(Boolean).join(" ")+(c.amt!=null?" ¥"+c.amt.toLocaleString("ja-JP"):"")
-  }));
+  return out.slice(0,8);
+}
+function entryChipAmounts(type, store, item){
+  const target=chainKeyOf(store);
+  const pick=(it)=>{
+    if(!it) return [];
+    const m={};
+    (S.entries||[]).filter(e=>e.type===type && CHIP_SRC_OK(e)).forEach(e=>{
+      const es=(e.store||"").trim(); if(!es||chainKeyOf(es)!==target) return;
+      if(chipItemOf(e)!==it) return;
+      const a=num(e.amount); if(a>0) m[a]=(m[a]||0)+1; });
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]||num(b[0])-num(a[0])).map(x=>num(x[0]));
+  };
+  const it=String(item||"").trim();
+  let r=pick(it);
+  /* 自動生成した逆方向経路は履歴が無いので往路の金額を流用(運賃同額前提・v3.30の思想) */
+  if(!r.length){ const mm=/^(.+?)→(.+)$/.exec(it); if(mm) r=pick(mm[2].trim()+"→"+mm[1].trim()); }
+  return r.slice(0,4);
+}
+function entryChipCat(type, store, item){
+  const target=chainKeyOf(store), it=(item==null?null:String(item).trim()), m={};
+  (S.entries||[]).filter(e=>e.type===type && CHIP_SRC_OK(e)).forEach(e=>{
+    const es=(e.store||"").trim(); if(!es||chainKeyOf(es)!==target) return;
+    if(it!==null && chipItemOf(e)!==it) return;
+    if(e.category) m[e.category]=(m[e.category]||0)+1; });
+  const top=Object.entries(m).sort((a,b)=>b[1]-a[1])[0];
+  return top?top[0]:null;
 }
 /* v3.31: 交通の予想入力辞書。同一店名(モード)の過去品目を→で分解した駅・停トークンを頻度順で返す。
    駐輪は過去の場所(店名)辞書。datalistでなくタップチップで出す(iOSのdatalist UXが弱いため) */
@@ -3627,13 +3640,19 @@ function entryDetailHtml(e){
 }
 function viewEntry(){
   const f = UI.entryForm;
-  const chips = entryUsualChips(f.type); UI._usualChips = chips;
   const sh = entryStoreHints(), ih = entryItemHints();
-  const chipsHtml = chips.length
-    ? '<div class="muted" style="font-size:11px;margin:0 2px 6px">よく使う</div>'+
-      '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
-      chips.map((c,i)=>'<button class="chip" data-a="usual" data-i="'+i+'">'+esc(c.label)+'</button>').join("")+'</div>'
+  /* v3.55: 段階的開示のカスケード。店を選ぶまで品目は出さず、品目を選ぶまで金額は出さない */
+  const cStores = entryChipStores(f.type);
+  const curStore = (f.store||"").trim(), curItem = (f.item||"").trim();
+  const chipRow = (label, arr, act, cur) => arr.length
+    ? '<div class="muted" style="font-size:11px;margin:0 2px 6px">'+label+'</div>'+
+      '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
+      arr.map(v=>'<button class="chip '+(String(cur)===String(v)?"sel":"")+'" data-a="'+act+'" data-v="'+esc(String(v))+'">'+
+        (act==="uamt"?"¥"+num(v).toLocaleString("ja-JP"):esc(String(v)))+'</button>').join("")+'</div>'
     : '';
+  let chipsHtml = chipRow("よく使う店", cStores, "ustore", curStore);
+  if(curStore) chipsHtml += chipRow("品目", entryChipItems(f.type, curStore), "uitem", curItem);
+  if(curStore && curItem) chipsHtml += chipRow("金額", entryChipAmounts(f.type, curStore, curItem), "uamt", num(f.amount)||"");
   /* v3.31: 交通コンポーザ(新規支出のみ)。分類は増やさず保存時に 店名=モード/場所・品目=乗車→降車・分類=消費 へ合成する入力支援レイヤー。
      表記規約(店名固定・A→B)を規律でなく構造で強制する関所。編集画面は素の店名/品目に戻る一方通行 */
   const TRANS_MODES=["地下鉄","バス","電車","駐輪"];
@@ -3706,7 +3725,9 @@ function bindEntry(){
             exchange:S.rates.exchange||"",pExchange:S.rates.pExchange||"",pushPayout:S.rates.pushPayout||"",pushDraw:S.rates.pushDraw||"",machines:[],expenses:[],memo:""};
           UI.whoTab="me"; UI.isNewSess=true; UI.screen="session"; render(); }
       else if(a==="ecat"){ f.category=v; render(); }
-      else if(a==="usual"){ const c=(UI._usualChips||[])[num(el.dataset.i)]; if(c){ f.tmode=""; f.store=c.store; f.item=c.item; f.category=c.cat; if(c.amt!=null) f.amount=String(c.amt); render(); if(c.amt==null){ const amt=document.getElementById("e-amount"); if(amt) amt.focus(); } } }
+      else if(a==="ustore"){ f.tmode=""; f.store=el.dataset.v; f.item=""; const c=entryChipCat(f.type,f.store,null); if(c) f.category=c; render(); }
+      else if(a==="uitem"){ f.item=el.dataset.v; const c=entryChipCat(f.type,f.store,f.item); if(c) f.category=c; render(); }
+      else if(a==="uamt"){ f.amount=String(num(el.dataset.v)); render(); }
       else if(a==="tmode"){ f.tmode=(f.tmode===el.dataset.v?"":el.dataset.v); if(f.tmode){ f.category="消費"; } render(); }
       else if(a==="tkf"){ f.tfrom=el.dataset.v; render(); }
       else if(a==="tkt"){ f.tto=el.dataset.v; render(); }
