@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.62 (localStorage保存・完全オフライン)
+   Tally 3.64 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -438,6 +438,7 @@ function applyData(d){
   S.budgets = (d.budgets && typeof d.budgets==="object") ? d.budgets : {};
   S.openAddOnLaunch = !!d.openAddOnLaunch;   /* v3.13: ホワイトリスト漏れでトグルが毎起動リセットされていた */
   S.genres = (d.genres && typeof d.genres==="object") ? d.genres : {};   /* v3.16: 店→ジャンル辞書 */
+  S.genreCaps = (d.genreCaps && typeof d.genreCaps==="object") ? d.genreCaps : {};   /* v3.64: ジャンル内枠(食費など) */
   S.invest = (d.invest && typeof d.invest==="object") ? d.invest : {policy:"",holdings:[],bufferTxns:[]};   /* v3.18: 投資台帳 */
   S.waterfall = (d.waterfall && typeof d.waterfall==="object") ? d.waterfall : {};   /* v3.23: 滝方式の定数(投資月額・目的積立月額) */
   if(!Array.isArray(S.savings.goals) || !S.savings.goals.length){
@@ -681,7 +682,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.62";
+const APP_VERSION = "3.64";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -876,7 +877,12 @@ function viewCatDrill(){
           '<span style="flex:none;font-size:11px;color:var(--muted);width:12px">'+(open?"▾":"▸")+'</span>'+
           '<span class="ellip" style="flex:1;font-size:13px;font-weight:600;min-width:0'+(G.gn==="未分類"?';color:var(--muted)':'')+'">'+esc(G.gn)+'</span>'+
           '<span class="muted" style="flex:none;font-size:10px">'+G.n+'件</span>'+
-          '<span class="mono" style="flex:none;font-size:14px;font-weight:700">¥'+G.sum.toLocaleString("ja-JP")+'</span></div>';
+          '<span class="mono" style="flex:none;font-size:14px;font-weight:700">¥'+G.sum.toLocaleString("ja-JP")+'</span>'+
+          /* v3.64: ジャンル内枠の設定導線。未分類には枠を持たせない(店の割当が先) */
+          (G.gn!=="未分類"
+            ? '<button class="navbtn" data-a="gcap" data-v="'+esc(G.gn)+'" style="flex:none;font-size:10px;padding:3px 6px;color:'+(num((S.genreCaps||{})[G.gn])>0?"var(--teal)":"var(--muted)")+'">'+
+              (num((S.genreCaps||{})[G.gn])>0 ? '/ ¥'+num((S.genreCaps||{})[G.gn]).toLocaleString("ja-JP") : '枠')+'</button>'
+            : '')+'</div>';
         if(open){
           G.chains.forEach(c=>{
             const asg = UI.drillAssign===c.ch;
@@ -926,6 +932,32 @@ function viewCatDrill(){
   h += saveIndicatorHtml();
   return h;
 }
+/* v3.63: wfapplyの実体を関数化。v3.60で行を内訳画面へ移したがハンドラを持って行かず「押せない」状態だった。
+   2箇所に同じ実装を書けば必ずずれるので、単一の関数を両画面から呼ぶ */
+function wfApply(){
+        let wf=S.waterfall||{};
+        const cm=monthKey();
+        const pmk=leakMonths().filter(k2=>k2<cm).sort().reverse()[0];
+        if(!pmk){ alert("前月の給与データがまだありません。"); return; }
+        const prevSal=leakAgg(pmk).salary;
+        const me2=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(cm));
+        const fx2=me2.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&e.src!=="slot"&&e.src!=="mahjong").reduce((a2,e)=>a2+e.amount,0);
+        const calc=()=> prevSal - fx2 - num(wf.invest) - num((S.budgets||{})["娯楽"]) - num(wf.sink);
+        const needSetup = !num(wf.invest) && !num(wf.sink);
+        const applied = String(calc())===String(num((S.budgets||{})["消費"]));
+        if(needSetup || applied){
+          if(applied && !confirm("定数(投資・積立の月額)を設定し直しますか?")) return;
+          /* v3.62: 2つの定数がそのまま予算カードの貯金枠・投資枠の上限になる */
+          const p1=prompt("投資の月額(円・無ければ0)\n予算カードの投資枠の上限になります。", wf.invest||"0"); if(p1==null)return;
+          const p2=prompt("貯金の月額(円・無ければ0)\n予算カードの貯金枠の上限になります。", wf.sink||"110000"); if(p2==null)return;
+          wf={invest:String(num(p1)), sink:String(num(p2))}; S.waterfall=wf;
+        }
+        const auto=calc();
+        if(auto<=0){ alert("変動消費に回せる額がマイナスです。\n投資・貯金の月額か娯楽枠を見直してください。"); save(); render(); return; }
+        (S.budgets=S.budgets||{})["消費"]=String(auto);
+        save(); render();
+        setTimeout(()=>{ try{ toast("変動予算を ¥"+auto.toLocaleString("ja-JP")+" に設定しました"); }catch(e){} }, 200);
+      }
 function bindCatDrill(){
   document.querySelectorAll("[data-a]").forEach(el=>{
     el.onclick = () => {
@@ -936,6 +968,17 @@ function bindCatDrill(){
       else if(a==="gassign"){ UI.drillAssign = (UI.drillAssign===v ? null : v); render(); }
       else if(a==="gset"){ const ch=el.dataset.c; S.genres=S.genres||{}; S.genres[ch]=v; UI.drillAssign=null; save(); render(); }
       else if(a==="gnew"){ const ch=el.dataset.c; const gn=prompt("新しいジャンル名:"); if(gn==null||!gn.trim())return; S.genres=S.genres||{}; S.genres[ch]=gn.trim(); UI.drillAssign=null; save(); render(); }
+      else if(a==="gcap"){
+        /* v3.64: 内枠は「その月のジャンル集計」に対する上限。未分類の店があると枠が実態より小さく見えるため警告する */
+        const gn=v; const cur=num((S.genreCaps||{})[gn])||"";
+        const unassigned=(ggroups.find(G=>G.gn==="未分類")||{}).sum||0;
+        const warn=unassigned>0 ? "\n\n※未分類の店が ¥"+unassigned.toLocaleString("ja-JP")+" あります。\n先にジャンルを割り当てると枠が正確になります。" : "";
+        const p=prompt(gn+"の月間上限(円)\n変動消費の中の内枠として予算カードに表示されます。\n0で解除。"+warn, cur);
+        if(p===null)return;
+        S.genreCaps=S.genreCaps||{};
+        if(num(p)>0) S.genreCaps[gn]=String(num(p)); else delete S.genreCaps[gn];
+        save(); render();
+      }
       else if(a==="gclear"){ const ch=el.dataset.c; if(S.genres){ delete S.genres[ch]; } UI.drillAssign=null; save(); render(); }
       else if(a==="drilledit"){
         const e=S.entries.find(x=>String(x.id)===String(v)); if(!e) return;
@@ -944,6 +987,7 @@ function bindCatDrill(){
         UI.entryReturn="catdrill";
         UI.screen="entry"; render();
       }
+      else if(a==="wfapply"){ wfApply(); }
       else if(a==="setbudget"){ const cat=v; const p=prompt(cat+"の月間予算(上限・円):", ((S.budgets||{})[cat])||""); if(p===null)return; (S.budgets=S.budgets||{})[cat]=String(num(p)); save(); render(); }
     };
   });
@@ -1096,6 +1140,25 @@ function viewLedger(){
         '<div class="row between" style="font-size:10px;margin-top:5px">'+(over>0?'<span class="'+colCls+'" style="font-weight:700">超過 ¥'+over.toLocaleString("ja-JP")+'</span>':'<span class="muted">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span>')+'<span class="mono muted">'+Math.floor(pct)+'% ・ 内訳を見る</span></div>';
     } else {
       h += '<div class="row between" style="align-items:center"><span style="font-size:12px"><span style="font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span> <span class="mono muted">¥'+spent.toLocaleString("ja-JP")+'</span></span><span class="amber" style="font-size:11px">＋ 上限を設定</span></div>';
+    }
+    /* v3.64: ジャンル内枠(ユーザー要望「食費上限」)。変動消費の中の一部なので独立行でなく親の直下に細いサブバーで置く。
+       集計はジャンル辞書(店→ジャンル・チェーン単位)。未割当の店は拾えないため、内枠設定時は割当漏れを警告する */
+    if(cat==="消費" && cap>0){
+      const gcaps=S.genreCaps||{};
+      Object.keys(gcaps).forEach(gn=>{
+        const gcap=num(gcaps[gn]); if(gcap<=0) return;
+        const gspent=me.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId==null&&!isNetEntry(e)
+          &&((S.genres||{})[chainKeyOf(e.store)]||"未分類")===gn).reduce((a,e)=>a+e.amount,0);
+        const gpct=Math.min(100,gspent/gcap*100), gover=gspent-gcap;
+        h += '<div style="margin:8px 0 0 10px;padding-left:9px;border-left:2px solid var(--line)">'+
+          '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">'+esc(gn)+'</span>'+
+          '<span><span class="mono '+(gover>0?"red":"")+'" style="font-size:12px;font-weight:700">¥'+gspent.toLocaleString("ja-JP")+'</span>'+
+          '<span class="muted" style="font-size:10px"> / ¥'+gcap.toLocaleString("ja-JP")+'</span></span></div>'+
+          '<div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:'+(gover>0?"var(--red)":"var(--muted)")+'"></div></div>'+
+          '<div class="row between" style="font-size:9px;margin-top:3px"><span class="'+(gover>0?"red":"muted")+'">'+
+          (gover>0?'超過 ¥'+gover.toLocaleString("ja-JP"):'残り ¥'+(gcap-gspent).toLocaleString("ja-JP"))+'</span>'+
+          '<span class="mono muted">'+Math.floor(gpct)+'%</span></div></div>';
+      });
     }
     h += '</div>';
   });
@@ -3479,30 +3542,7 @@ function bindMain(){
       else if(a==="bank"){ UI.screen="bank"; render(); }
       else if(a==="savings"){ UI.screen="savings"; render(); }
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
-      else if(a==="wfapply"){
-        let wf=S.waterfall||{};
-        const cm=monthKey();
-        const pmk=leakMonths().filter(k2=>k2<cm).sort().reverse()[0];
-        if(!pmk){ alert("前月の給与データがまだありません。"); return; }
-        const prevSal=leakAgg(pmk).salary;
-        const me2=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(cm));
-        const fx2=me2.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&e.src!=="slot"&&e.src!=="mahjong").reduce((a2,e)=>a2+e.amount,0);
-        const calc=()=> prevSal - fx2 - num(wf.invest) - num((S.budgets||{})["娯楽"]) - num(wf.sink);
-        const needSetup = !num(wf.invest) && !num(wf.sink);
-        const applied = String(calc())===String(num((S.budgets||{})["消費"]));
-        if(needSetup || applied){
-          if(applied && !confirm("定数(投資・積立の月額)を設定し直しますか?")) return;
-          /* v3.62: 2つの定数がそのまま予算カードの貯金枠・投資枠の上限になる */
-          const p1=prompt("投資の月額(円・無ければ0)\n予算カードの投資枠の上限になります。", wf.invest||"0"); if(p1==null)return;
-          const p2=prompt("貯金の月額(円・無ければ0)\n予算カードの貯金枠の上限になります。", wf.sink||"110000"); if(p2==null)return;
-          wf={invest:String(num(p1)), sink:String(num(p2))}; S.waterfall=wf;
-        }
-        const auto=calc();
-        if(auto<=0){ alert("計算結果がマイナスです。\n定数(投資/積立)か娯楽枠を見直してください。"); save(); render(); return; }
-        (S.budgets=S.budgets||{})["消費"]=String(auto);
-        save(); render();
-        setTimeout(()=>{ try{ toast("変動予算を ¥"+auto.toLocaleString("ja-JP")+" に設定しました"); }catch(e){} }, 200);
-      }
+      else if(a==="wfapply"){ wfApply(); }
       else if(a==="catdrill"){ UI.drillCat=v; UI.drillOpenStore=null; UI.drillMode="chain"; UI.drillAssign=null; UI.drillVarOnly=(v==="消費"); UI.screen="catdrill"; render(); }
       else if(a==="setbudget"){ const cat=v; const p=prompt(cat+"の月間予算(上限・円):", ((S.budgets||{})[cat])||""); if(p===null)return; (S.budgets=S.budgets||{})[cat]=String(num(p)); save(); render(); }
       else if(a==="furuset"){ const cy=todayStr().slice(0,4); const cur=(S.furusato&&String(S.furusato.year)===cy)?(S.furusato.limit||""):""; const p=prompt(cy+"年のふるさと納税 限度額(円):\n計算は外部シミュレーターで(税制は毎年変わるため)。\n記帳は 店名「ふるさと納税」・分類「承認」で。\n0で枠表示を解除。", cur); if(p===null)return; S.furusato={year:cy, limit:String(num(p))}; save(); render(); }
