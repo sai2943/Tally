@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.65 (localStorage保存・完全オフライン)
+   Tally 3.66 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -682,7 +682,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.65";
+const APP_VERSION = "3.66";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -843,19 +843,16 @@ function viewCatDrill(){
   /* v3.60: 滝の自動案は主画面から内訳画面へ移設(主画面の予算カードは「今いくら使ったか」を見る場所で、設定の提案は場違い)。
      式の羅列をやめ「行動として読めるボタン」に。予算管理の導線(ヘッダーの予算変更)と同じ場所に集約 */
   if(cat==="消費"){
-    const wf2=S.waterfall||{};
-    const pmk2=leakMonths().filter(k2=>k2<mk).sort().reverse()[0];
-    const prevSal2=pmk2?leakAgg(pmk2).salary:0;
+    /* v3.66: 表示と適用を完全一致させるためwfCalc()を共有(自前計算を持たない) */
+    const _c2=wfCalc();
+    const prevSal2=_c2.prevSal;
     if(prevSal2>0){
-      /* listは変動消費のみで固定費を含まないため当月エントリから直接数える。式はwfapplyハンドラと完全に同一
-         (表示額と適用額が食い違うのは最悪の不具合) */
-      const fx2=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&e.src!=="slot"&&e.src!=="mahjong").reduce((a,e)=>a+e.amount,0);
-      const auto2=prevSal2 - fx2 - num(wf2.invest) - num((S.budgets||{})["娯楽"]) - num(wf2.sink);
+      const auto2=_c2.auto;
       const applied2=(auto2===cap);
       h += '<div class="row between" style="align-items:center;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);cursor:pointer" data-a="wfapply">'+
         '<span style="font-size:12px'+(applied2?';color:var(--muted)':'')+'">滝で決める'+(applied2?'<span class="muted" style="font-size:10px"> ・ 適用中</span>':'')+'</span>'+
         '<span class="mono '+(applied2?"muted":"teal")+'" style="font-size:13px;font-weight:700">¥'+auto2.toLocaleString("ja-JP")+(applied2?'':' <span style="font-size:11px">›</span>')+'</span></div>'+
-        '<div class="muted" style="font-size:10px;margin-top:3px">前月給与から固定費・投資・貯金・娯楽枠を引いた残り</div>';
+        '<div class="muted" style="font-size:10px;margin-top:3px">前月収入 − 固定費 − 先取り − 娯楽枠 の残り'+(_c2.rest>_c2.capMax?'(上限 ¥'+_c2.capMax.toLocaleString("ja-JP")+' で頭打ち)':(_c2.rest<=0?'(残余なし)':''))+'</div>';
     }
   }
   h += '</div>';
@@ -934,30 +931,48 @@ function viewCatDrill(){
 }
 /* v3.63: wfapplyの実体を関数化。v3.60で行を内訳画面へ移したがハンドラを持って行かず「押せない」状態だった。
    2箇所に同じ実装を書けば必ずずれるので、単一の関数を両画面から呼ぶ */
+/* v3.66: 滝を反転(ユーザー設計)。
+   旧: 貯金・投資を先に決めて変動消費を逆算 → 収入が少ない月に変動消費がマイナスになり統制が破綻した。
+   新: **先取り(貯金)を先に取り、残余が変動消費。ただし上限(既定9万)でクリップ**。
+   金が無い月は変動消費が自動的に絞られるので破れない規律になる(軍資金システムと同じ思想)。
+   運用は月2回: 給料日前日=口座残高の20万超を貯金へ(先月の使い残しの回収・Tallyは残高を持たないので台帳外) /
+   給料日当日=先取り(=sink)。 */
+function wfCalc(){
+  const cm=monthKey();
+  const pmk=leakMonths().filter(k2=>k2<cm).sort().reverse()[0];
+  const prevSal=pmk?leakAgg(pmk).salary:0;
+  const me2=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(cm));
+  const fx=me2.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&e.src!=="slot"&&e.src!=="mahjong").reduce((a,e)=>a+e.amount,0);
+  const wf=S.waterfall||{};
+  const pre=num(wf.sink)+num(wf.invest);
+  const amuse=num((S.budgets||{})["娯楽"]);
+  const capMax=num(wf.varMax)||90000;
+  const rest=prevSal - fx - pre - amuse;
+  return {prevSal:prevSal, fx:fx, pre:pre, amuse:amuse, capMax:capMax,
+          rest:rest, auto:Math.max(0, Math.min(capMax, rest))};
+}
 function wfApply(){
-        let wf=S.waterfall||{};
-        const cm=monthKey();
-        const pmk=leakMonths().filter(k2=>k2<cm).sort().reverse()[0];
-        if(!pmk){ alert("前月の給与データがまだありません。"); return; }
-        const prevSal=leakAgg(pmk).salary;
-        const me2=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(cm));
-        const fx2=me2.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&e.src!=="slot"&&e.src!=="mahjong").reduce((a2,e)=>a2+e.amount,0);
-        const calc=()=> prevSal - fx2 - num(wf.invest) - num((S.budgets||{})["娯楽"]) - num(wf.sink);
-        const needSetup = !num(wf.invest) && !num(wf.sink);
-        const applied = String(calc())===String(num((S.budgets||{})["消費"]));
-        if(needSetup || applied){
-          if(applied && !confirm("定数(投資・積立の月額)を設定し直しますか?")) return;
-          /* v3.62: 2つの定数がそのまま予算カードの貯金枠・投資枠の上限になる */
-          const p1=prompt("投資の月額(円・無ければ0)\n予算カードの投資枠の上限になります。", wf.invest||"0"); if(p1==null)return;
-          const p2=prompt("貯金の月額(円・無ければ0)\n予算カードの貯金枠の上限になります。", wf.sink||"110000"); if(p2==null)return;
-          wf={invest:String(num(p1)), sink:String(num(p2))}; S.waterfall=wf;
-        }
-        const auto=calc();
-        if(auto<=0){ alert("変動消費に回せる額がマイナスです。\n投資・貯金の月額か娯楽枠を見直してください。"); save(); render(); return; }
-        (S.budgets=S.budgets||{})["消費"]=String(auto);
-        save(); render();
-        setTimeout(()=>{ try{ toast("変動予算を ¥"+auto.toLocaleString("ja-JP")+" に設定しました"); }catch(e){} }, 200);
-      }
+  const wf=S.waterfall||{};
+  if(wfCalc().prevSal<=0){ alert("前月の収入データがまだありません。"); return; }
+  const needSetup = !num(wf.sink) && !num(wf.invest);
+  const applied = String(wfCalc().auto)===String(num((S.budgets||{})["消費"]));
+  if(needSetup || applied){
+    if(applied && !confirm("滝の設定(先取り額・上限)を変更しますか?")) return;
+    const p1=prompt("毎月の先取り額(貯金・円)\n給料日に貯金口座へ動かす額。収入から最初に取り分けます。", wf.sink||"50000"); if(p1==null)return;
+    const p2=prompt("投資の月額(円・当面0でよい)", wf.invest||"0"); if(p2==null)return;
+    const p3=prompt("変動消費の上限(円)\n残余がこれを超えても、ここで頭打ちにします。", wf.varMax||"90000"); if(p3==null)return;
+    S.waterfall={sink:String(num(p1)), invest:String(num(p2)), varMax:String(num(p3))};
+  }
+  const c=wfCalc();
+  (S.budgets=S.budgets||{})["消費"]=String(c.auto);
+  save(); render();
+  setTimeout(()=>{ try{
+    let msg="変動予算を ¥"+c.auto.toLocaleString("ja-JP")+" に設定";
+    if(c.rest<=0) msg="残余がありません。固定費か先取り額の見直しを";
+    else if(c.rest>c.capMax) msg+="(上限で頭打ち・余剰 ¥"+(c.rest-c.capMax).toLocaleString("ja-JP")+")";
+    toast(msg);
+  }catch(e){} }, 200);
+}
 function bindCatDrill(){
   document.querySelectorAll("[data-a]").forEach(el=>{
     el.onclick = (ev) => {
