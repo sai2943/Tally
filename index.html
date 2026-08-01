@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.61 (localStorage保存・完全オフライン)
+   Tally 3.62 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -681,7 +681,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.61";
+const APP_VERSION = "3.62";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -854,7 +854,7 @@ function viewCatDrill(){
       h += '<div class="row between" style="align-items:center;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);cursor:pointer" data-a="wfapply">'+
         '<span style="font-size:12px'+(applied2?';color:var(--muted)':'')+'">滝で決める'+(applied2?'<span class="muted" style="font-size:10px"> ・ 適用中</span>':'')+'</span>'+
         '<span class="mono '+(applied2?"muted":"teal")+'" style="font-size:13px;font-weight:700">¥'+auto2.toLocaleString("ja-JP")+(applied2?'':' <span style="font-size:11px">›</span>')+'</span></div>'+
-        '<div class="muted" style="font-size:10px;margin-top:3px">前月給与から固定費・先取り・娯楽枠を引いた残り</div>';
+        '<div class="muted" style="font-size:10px;margin-top:3px">前月給与から固定費・投資・貯金・娯楽枠を引いた残り</div>';
     }
   }
   h += '</div>';
@@ -1025,9 +1025,19 @@ function viewLedger(){
   const actualBal = me.filter(e=>e.date<=todayS && !_inBank(e)).reduce((s,e)=> s + (e.type==="income"?e.amount:-e.amount), 0);
   const futIncome = me.filter(e=>e.type==="income" && !isNetEntry(e) && e.date>todayS).reduce((s,e)=>s+e.amount,0);
   const futExpense = me.filter(e=>e.type==="expense" && !isNetEntry(e) && e.date>todayS).reduce((s,e)=>s+e.amount,0);
+  /* v3.62: 見出しを「当月残金」へ(ユーザー提案)。収支は純資産の増分だが、先取り分は生活口座に残らないため
+     「いくら残るか」を答えられていなかった。**先取りはmax(実績,目標)で引く**——実績だけだと月初は過大に見え
+     入金した瞬間に急落する(財務状況は不変なのに数字が暴れる)。支出が予定込みなのと同じ扱いに揃える */
+  const _wf62=S.waterfall||{};
+  const _sp62=securedSplit(mk);
+  const svPlan=Math.max(_sp62.sv, num(_wf62.sink));
+  const ivPlan=Math.max(_sp62.iv, num(_wf62.invest));
+  const leftover=bal - svPlan - ivPlan;
+  const hasPre=(svPlan+ivPlan)>0;
   let h = '<div class="card" style="margin-top:10px"><div style="text-align:center;margin:4px 0 6px">'+
-    '<div style="font-size:12px;letter-spacing:.15em" class="muted">当月収支'+(hasFuture?'(予定込)':'')+'</div>'+
-    '<div class="mono '+clsPM(bal)+'" style="font-size:36px;font-weight:700;line-height:1.2">'+signYen(bal)+'</div>'+
+    '<div style="font-size:12px;letter-spacing:.15em" class="muted">'+(hasPre?'当月残金':'当月収支')+(hasFuture?'(予定込)':'')+'</div>'+
+    '<div class="mono '+clsPM(leftover)+'" style="font-size:36px;font-weight:700;line-height:1.2">'+signYen(leftover)+'</div>'+
+    (hasPre?'<div class="muted" style="font-size:10px;margin-top:3px">先取り ¥'+(svPlan+ivPlan).toLocaleString("ja-JP")+' を引いた後</div>':'')+
     '</div>'+
     '<div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px">'+
     '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">収入</div><div class="mono teal" style="font-size:18px;font-weight:700">'+yen(normIncome)+'</div></div>'+
@@ -1092,23 +1102,22 @@ function viewLedger(){
   /* v3.61: 予算カードの3行目=先取り(ユーザー提案)。滝の定数が見えないと「¥89,508残る」が実態と乖離する
      (先取り分は口座に残らない)。secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
      消費/娯楽は「超えるな」の計器だが先取りは「届かせろ」の計器なので色はteal、残りは「あと」表記 */
-  {
-    const wf3=S.waterfall||{};
-    const svTarget=num(wf3.invest)+num(wf3.sink);
-    const svDone=leakAgg(mk).secured;
-    if(svTarget>0 || svDone>0){
-      const svPct=svTarget>0?Math.min(100,svDone/svTarget*100):100;
-      const svLeft=Math.max(0,svTarget-svDone);
-      h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="savings">'+
-        '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">先取り</span>'+
-        '<span><span class="mono teal" style="font-size:15px;font-weight:700">¥'+svDone.toLocaleString("ja-JP")+'</span>'+
-        (svTarget>0?'<span class="muted" style="font-size:11px"> / ¥'+svTarget.toLocaleString("ja-JP")+'</span>':'')+'</span></div>'+
-        '<div class="bar" style="margin-top:6px"><div style="width:'+svPct+'%;background:var(--teal)"></div></div>'+
-        '<div class="row between" style="font-size:10px;margin-top:5px">'+
-        (svTarget>0?'<span class="muted">'+(svLeft>0?'あと ¥'+svLeft.toLocaleString("ja-JP"):'達成')+'</span>':'<span class="muted">目標未設定</span>')+
-        '<span class="mono muted">貯金・投資へ ›</span></div></div>';
-    }
-  }
+  /* v3.62: 先取りを貯金/投資の2枠に分割(ユーザー提案)。上限は滝の定数がそのまま入る。
+     消費娯楽=「超えるな」に対しこちらは「届かせろ」の計器——色teal・残りは「あと」・到達で「達成」 */
+  [["貯金", _sp62.sv, num(_wf62.sink), "savings"],
+   ["投資", _sp62.iv, num(_wf62.invest), "invest"]].forEach(([nm,done,target,act])=>{
+    if(target<=0 && done<=0) return;
+    const pct2=target>0?Math.min(100,done/target*100):100;
+    const left2=Math.max(0,target-done);
+    h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="'+act+'">'+
+      '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">'+nm+'</span>'+
+      '<span><span class="mono teal" style="font-size:15px;font-weight:700">¥'+done.toLocaleString("ja-JP")+'</span>'+
+      (target>0?'<span class="muted" style="font-size:11px"> / ¥'+target.toLocaleString("ja-JP")+'</span>':'')+'</span></div>'+
+      '<div class="bar" style="margin-top:6px"><div style="width:'+pct2+'%;background:var(--teal)"></div></div>'+
+      '<div class="row between" style="font-size:10px;margin-top:5px">'+
+      (target>0?'<span class="muted">'+(left2>0?'あと ¥'+left2.toLocaleString("ja-JP"):'達成')+'</span>':'<span class="muted">上限未設定</span>')+
+      '<span class="mono muted">'+nm+'へ ›</span></div></div>';
+  });
   h += '</div>';
 
   h += band("明細");
@@ -2426,17 +2435,22 @@ function leakMonths(){
   (S.entries||[]).forEach(e=>{ if(e.date&&e.date.length>=7) set[e.date.slice(0,7)]=1; });
   return Object.keys(set).sort().reverse().slice(0,12);
 }
+/* v3.62: 先取りの月次実績を貯金/投資に分離。leakAgg.securedもこれを合算して使う(同じ数字は1箇所で計算する) */
+function securedSplit(mk){
+  let sv=0, iv=0;
+  ((S.invest||{}).holdings||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"").startsWith(mk)) iv+=num(b.amount); }));
+  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"").startsWith(mk)&&num(t.amount)>0) iv+=num(t.amount); });
+  (((S.savings||{}).txns)||[]).forEach(t=>{ if(t.type==="deposit"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
+  (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
+  return {sv:sv, iv:iv};
+}
 function leakAgg(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
   const NET=["slot","mahjong"]; const isNet=e=>NET.includes(e.src);
   const salary=me.filter(e=>e.type==="income"&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
   const spend=me.filter(e=>e.type==="expense"&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
   const gnet=me.filter(isNet).reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
-  let secured=0;
-  ((S.invest||{}).holdings||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"").startsWith(mk)) secured+=num(b.amount); }));
-  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"").startsWith(mk)&&num(t.amount)>0) secured+=num(t.amount); });
-  (((S.savings||{}).txns)||[]).forEach(t=>{ if(t.type==="deposit"&&(t.date||"").startsWith(mk)) secured+=num(t.amount); });
-  (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&(t.date||"").startsWith(mk)) secured+=num(t.amount); });
+  const _ss=securedSplit(mk); const secured=_ss.sv+_ss.iv;
   return {mk:mk, salary:salary, spend:spend, gnet:gnet, secured:secured};
 }
 function viewLeak(){
@@ -3478,9 +3492,9 @@ function bindMain(){
         const applied = String(calc())===String(num((S.budgets||{})["消費"]));
         if(needSetup || applied){
           if(applied && !confirm("定数(投資・積立の月額)を設定し直しますか?")) return;
-          /* v3.61: 名称を実態へ。当面の行き先は投資でなく貯金(引越し資金→生活防衛費の梯子) */
-          const p1=prompt("毎月の先取り額(円)\n貯金・投資へ回す分。給与から最初に取り分ける額です。", wf.invest||"110000"); if(p1==null)return;
-          const p2=prompt("別枠の積立(円・無ければ0)\n上記と別に取り分ける分があれば。", wf.sink||"0"); if(p2==null)return;
+          /* v3.62: 2つの定数がそのまま予算カードの貯金枠・投資枠の上限になる */
+          const p1=prompt("投資の月額(円・無ければ0)\n予算カードの投資枠の上限になります。", wf.invest||"0"); if(p1==null)return;
+          const p2=prompt("貯金の月額(円・無ければ0)\n予算カードの貯金枠の上限になります。", wf.sink||"110000"); if(p2==null)return;
           wf={invest:String(num(p1)), sink:String(num(p2))}; S.waterfall=wf;
         }
         const auto=calc();
