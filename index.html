@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.69 (localStorage保存・完全オフライン)
+   Tally 3.70 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -682,7 +682,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.69";
+const APP_VERSION = "3.70";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3245,6 +3245,11 @@ function bindFixed(){
       if(dl) dl.innerHTML = entryItemHintsFor(f.store).map(v=>'<option value="'+esc(v)+'"></option>').join(""); };
     const fi=document.getElementById("fx-item"); if(fi) fi.oninput=e=>f.item=e.target.value;
     const d=document.getElementById("fx-day"); if(d) d.oninput=e=>f.day=e.target.value;
+    /* v3.70【バグ修正】fx-everyのバインド漏れ。周期に2を入れてもf.everyが更新されず、
+       頻度ボタンや休日設定のタップで再描画が走った瞬間に入力が消えて毎月に戻っていた
+       (水道を隔月にしたのに毎月計上される事象の原因)。fx-endも同様に補強 */
+    const ev=document.getElementById("fx-every"); if(ev) ev.oninput=e=>f.every=e.target.value;
+    const en=document.getElementById("fx-end"); if(en) en.onchange=e=>f.end=e.target.value;
     const st=document.getElementById("fx-start"); if(st) st.onchange=e=>f.start=e.target.value;
     const a=document.getElementById("fx-amount"); if(a) a.oninput=e=>f.amount=e.target.value;
   }
