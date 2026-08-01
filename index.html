@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.59 (localStorage保存・完全オフライン)
+   Tally 3.61 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -681,7 +681,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.59";
+const APP_VERSION = "3.61";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -838,6 +838,24 @@ function viewCatDrill(){
       '<div class="row between" style="font-size:10px;margin-top:5px">'+(over>0?'<span class="'+colCls+'" style="font-weight:700">超過 ¥'+over.toLocaleString("ja-JP")+'</span>':'<span class="muted">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span>')+'<span class="mono muted">'+list.length+'件</span></div>';
   } else {
     h += '<div class="row between"><span style="font-size:12px;font-weight:700">合計</span><span class="mono" style="font-size:16px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span></div>';
+  }
+  /* v3.60: 滝の自動案は主画面から内訳画面へ移設(主画面の予算カードは「今いくら使ったか」を見る場所で、設定の提案は場違い)。
+     式の羅列をやめ「行動として読めるボタン」に。予算管理の導線(ヘッダーの予算変更)と同じ場所に集約 */
+  if(cat==="消費"){
+    const wf2=S.waterfall||{};
+    const pmk2=leakMonths().filter(k2=>k2<mk).sort().reverse()[0];
+    const prevSal2=pmk2?leakAgg(pmk2).salary:0;
+    if(prevSal2>0){
+      /* listは変動消費のみで固定費を含まないため当月エントリから直接数える。式はwfapplyハンドラと完全に同一
+         (表示額と適用額が食い違うのは最悪の不具合) */
+      const fx2=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&e.src!=="slot"&&e.src!=="mahjong").reduce((a,e)=>a+e.amount,0);
+      const auto2=prevSal2 - fx2 - num(wf2.invest) - num((S.budgets||{})["娯楽"]) - num(wf2.sink);
+      const applied2=(auto2===cap);
+      h += '<div class="row between" style="align-items:center;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);cursor:pointer" data-a="wfapply">'+
+        '<span style="font-size:12px'+(applied2?';color:var(--muted)':'')+'">滝で決める'+(applied2?'<span class="muted" style="font-size:10px"> ・ 適用中</span>':'')+'</span>'+
+        '<span class="mono '+(applied2?"muted":"teal")+'" style="font-size:13px;font-weight:700">¥'+auto2.toLocaleString("ja-JP")+(applied2?'':' <span style="font-size:11px">›</span>')+'</span></div>'+
+        '<div class="muted" style="font-size:10px;margin-top:3px">前月給与から固定費・先取り・娯楽枠を引いた残り</div>';
+    }
   }
   h += '</div>';
   h += '<div class="row" style="gap:6px;margin-bottom:8px">'+
@@ -1070,22 +1088,27 @@ function viewLedger(){
       h += '<div class="row between" style="align-items:center"><span style="font-size:12px"><span style="font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span> <span class="mono muted">¥'+spent.toLocaleString("ja-JP")+'</span></span><span class="amber" style="font-size:11px">＋ 上限を設定</span></div>';
     }
     h += '</div>';
-    if(cat==="消費" && cap>0){
-      const wf=S.waterfall||{};
-      const pmk=leakMonths().filter(k2=>k2<mk).sort().reverse()[0];
-      const prevSal=pmk?leakAgg(pmk).salary:0;
-      if(prevSal>0){
-        /* v3.58: fxSpentの定義はv3.48の固定費行撤去で消えたが、ここが参照し続けていた(月替わりで前月給与>0になり発火)。
-           滝の自動案は当月の固定費総額を引くので、定義を再掲する */
-        const fxSpent = me.filter(e=>e.type==="expense" && e.category==="消費" && e.fixedId!=null && !isNetEntry(e)).reduce((a,e)=>a+e.amount,0);
-        const auto=prevSal - fxSpent - num(wf.invest) - num((S.budgets||{})["娯楽"]) - num(wf.sink);
-        const applied=(auto===cap);
-        h += '<div class="row between" style="font-size:10px;margin-top:7px;cursor:pointer" data-a="wfapply">'+
-          '<span class="muted">自動案: 前月給与−固定−投資−娯楽−積立</span>'+
-          '<span class="mono '+(applied?"muted":"teal")+'" style="font-weight:700">¥'+auto.toLocaleString("ja-JP")+(applied?" 適用中":" ← 適用")+'</span></div>';
-      }
-    }
   });
+  /* v3.61: 予算カードの3行目=先取り(ユーザー提案)。滝の定数が見えないと「¥89,508残る」が実態と乖離する
+     (先取り分は口座に残らない)。secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
+     消費/娯楽は「超えるな」の計器だが先取りは「届かせろ」の計器なので色はteal、残りは「あと」表記 */
+  {
+    const wf3=S.waterfall||{};
+    const svTarget=num(wf3.invest)+num(wf3.sink);
+    const svDone=leakAgg(mk).secured;
+    if(svTarget>0 || svDone>0){
+      const svPct=svTarget>0?Math.min(100,svDone/svTarget*100):100;
+      const svLeft=Math.max(0,svTarget-svDone);
+      h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="savings">'+
+        '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">先取り</span>'+
+        '<span><span class="mono teal" style="font-size:15px;font-weight:700">¥'+svDone.toLocaleString("ja-JP")+'</span>'+
+        (svTarget>0?'<span class="muted" style="font-size:11px"> / ¥'+svTarget.toLocaleString("ja-JP")+'</span>':'')+'</span></div>'+
+        '<div class="bar" style="margin-top:6px"><div style="width:'+svPct+'%;background:var(--teal)"></div></div>'+
+        '<div class="row between" style="font-size:10px;margin-top:5px">'+
+        (svTarget>0?'<span class="muted">'+(svLeft>0?'あと ¥'+svLeft.toLocaleString("ja-JP"):'達成')+'</span>':'<span class="muted">目標未設定</span>')+
+        '<span class="mono muted">貯金・投資へ ›</span></div></div>';
+    }
+  }
   h += '</div>';
 
   h += band("明細");
@@ -3455,8 +3478,9 @@ function bindMain(){
         const applied = String(calc())===String(num((S.budgets||{})["消費"]));
         if(needSetup || applied){
           if(applied && !confirm("定数(投資・積立の月額)を設定し直しますか?")) return;
-          const p1=prompt("投資の月額(円):", wf.invest||"110000"); if(p1==null)return;
-          const p2=prompt("目的積立の月額(円・無ければ0):", wf.sink||"0"); if(p2==null)return;
+          /* v3.61: 名称を実態へ。当面の行き先は投資でなく貯金(引越し資金→生活防衛費の梯子) */
+          const p1=prompt("毎月の先取り額(円)\n貯金・投資へ回す分。給与から最初に取り分ける額です。", wf.invest||"110000"); if(p1==null)return;
+          const p2=prompt("別枠の積立(円・無ければ0)\n上記と別に取り分ける分があれば。", wf.sink||"0"); if(p2==null)return;
           wf={invest:String(num(p1)), sink:String(num(p2))}; S.waterfall=wf;
         }
         const auto=calc();
