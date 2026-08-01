@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.57 (localStorage保存・完全オフライン)
+   Tally 3.58 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -681,7 +681,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.57";
+const APP_VERSION = "3.58";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -701,18 +701,33 @@ function render(){
     _renderLoc = loc;
   }
 }
+function navHtml(){
+  return tabBar() + '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ 通信不要</div>';
+}
 function _renderBody(){
   const app = document.getElementById("app");
   const navbar = document.getElementById("navbar");
   if(navbar){
-    if(UI.screen==="main"){
-      navbar.innerHTML = tabBar() + '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ 通信不要</div>';
-      navbar.style.display="";
-    }
+    if(UI.screen==="main"){ navbar.innerHTML = navHtml(); navbar.style.display=""; }
     else { navbar.innerHTML = ""; navbar.style.display = "none"; }
     /* ナビバー実高を--navhへ(インジケーター行追加等で背が変わっても自動追随) */
     document.documentElement.style.setProperty("--navh", (navbar.offsetHeight||0)+"px");
   }
+  /* v3.58: 描画例外の封じ込め。1画面の例外でアプリ全体が固まるのを防ぐ(v3.48のfxSpent欠落で実際に発生)。
+     エラーは隠さず表示し、ナビバーを強制表示して健全なタブへ逃がす。データはlocalStorageに無傷で残る */
+  try{ _renderScreen(app); }
+  catch(err){
+    console.error(err);
+    app.innerHTML = '<div class="hdr"><div style="width:44px"></div><div style="font-size:14px;font-weight:700">表示エラー</div><div style="width:44px"></div></div>'+
+      '<div class="card"><div class="red" style="font-size:13px;font-weight:700;margin-bottom:6px">この画面の描画に失敗しました</div>'+
+      '<div class="muted" style="font-size:11px;line-height:1.7">記録は無事です(保存済み)。<br>下のタブから他の画面へ移動できます。</div>'+
+      '<div class="mono muted" style="font-size:10px;margin-top:10px;word-break:break-all">'+esc(String((err&&err.message)||err))+'</div></div>';
+    if(navbar){ navbar.innerHTML = navHtml(); navbar.style.display="";
+      document.documentElement.style.setProperty("--navh", (navbar.offsetHeight||0)+"px"); }
+    bindMain();
+  }
+}
+function _renderScreen(app){
   if(UI.screen==="session"){ app.innerHTML = viewSession(); bindSession(); return; }
   if(UI.screen==="mahjong-edit"){ app.innerHTML = viewMj(); bindMj(); return; }
   if(UI.screen==="fixed"){ app.innerHTML = viewFixed(); bindFixed(); return; }
@@ -1060,6 +1075,9 @@ function viewLedger(){
       const pmk=leakMonths().filter(k2=>k2<mk).sort().reverse()[0];
       const prevSal=pmk?leakAgg(pmk).salary:0;
       if(prevSal>0){
+        /* v3.58: fxSpentの定義はv3.48の固定費行撤去で消えたが、ここが参照し続けていた(月替わりで前月給与>0になり発火)。
+           滝の自動案は当月の固定費総額を引くので、定義を再掲する */
+        const fxSpent = me.filter(e=>e.type==="expense" && e.category==="消費" && e.fixedId!=null && !isNetEntry(e)).reduce((a,e)=>a+e.amount,0);
         const auto=prevSal - fxSpent - num(wf.invest) - num((S.budgets||{})["娯楽"]) - num(wf.sink);
         const applied=(auto===cap);
         h += '<div class="row between" style="font-size:10px;margin-top:7px;cursor:pointer" data-a="wfapply">'+
@@ -3412,7 +3430,7 @@ function bindMain(){
   document.querySelectorAll("[data-a]").forEach(el=>{
     el.onclick = () => {
       const a = el.dataset.a, v = el.dataset.v;
-      if(a==="tab"){ UI.tab=v; render(); }
+      if(a==="tab"){ UI.tab=v; UI.screen="main"; render(); }  /* v3.58: 通常は無害(タブバーはmainのみ)、エラー画面からの脱出路として機能する */
       else if(a==="gamesub"){ UI.gameSub=v; render(); }
       else if(a==="mprev") moveMonth(-1);
       else if(a==="mnext") moveMonth(1);
