@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.58 (localStorage保存・完全オフライン)
+   Tally 3.59 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -681,7 +681,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.58";
+const APP_VERSION = "3.59";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3001,7 +3001,7 @@ function viewFixed(){
   let h = '<div class="hdr"><button class="navbtn" data-fa="fback">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">固定費(定期)</div><div style="width:44px"></div></div>';
   h += '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">'+
-    '登録した固定費は当年12月まで自動で計上。<br>金額が変わる月(光熱費など)は後から修正可。<br>停止すると未来分だけ消え、過去の記録は残る。</div>';
+    '登録した固定費は当年12月まで自動で計上。<br>金額が変わる月(光熱費など)は後から修正可。<br>停止すると未来分だけ消え、過去の記録は残る。<br><span class="teal">給与など定期収入も登録できます</span>(収入に切替)。</div>';
 
   const list = S.fixed||[];
   if(list.length){
