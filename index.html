@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.71 (localStorage保存・完全オフライン)
+   Tally 3.72 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -695,7 +695,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.71";
+const APP_VERSION = "3.72";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1119,14 +1119,18 @@ function viewLedger(){
      入金した瞬間に急落する(財務状況は不変なのに数字が暴れる)。支出が予定込みなのと同じ扱いに揃える */
   const _wf62=S.waterfall||{};
   const _sp62=securedSplit(mk);
-  const svPlan=Math.max(_sp62.sv, num(_wf62.sink));
-  const ivPlan=Math.max(_sp62.iv, num(_wf62.invest));
+  /* v3.72【設計バグ修正】max(実績,目標)は進行中の月にだけ正しい規則だった。
+     終わった月に「実行されなかった計画」を引くのは事実の歪曲(7月は貯金していないのに50,000引かれて残金が−30,634になっていた)。
+     過去の月は実績のみ、当月・未来は予定込み——アプリ全体の「過去は事実/未来は予定」の原則に揃える */
+  const _isPastM = mk < todayStr().slice(0,7);   /* monthKey()は表示中の月なので実際の今月と比較する */
+  const svPlan=_isPastM ? _sp62.sv : Math.max(_sp62.sv, num(_wf62.sink));
+  const ivPlan=_isPastM ? _sp62.iv : Math.max(_sp62.iv, num(_wf62.invest));
   const leftover=bal - svPlan - ivPlan;
   const hasPre=(svPlan+ivPlan)>0;
   let h = '<div class="card" style="margin-top:10px"><div style="text-align:center;margin:4px 0 6px">'+
     '<div style="font-size:12px;letter-spacing:.15em" class="muted">'+(hasPre?'当月残金':'当月収支')+(hasFuture?'(予定込)':'')+'</div>'+
     '<div class="mono '+clsPM(leftover)+'" style="font-size:36px;font-weight:700;line-height:1.2">'+signYen(leftover)+'</div>'+
-    (hasPre?'<div class="muted" style="font-size:10px;margin-top:3px">先取り ¥'+(svPlan+ivPlan).toLocaleString("ja-JP")+' を引いた後</div>':'')+
+    (hasPre?'<div class="muted" style="font-size:10px;margin-top:3px">先取り ¥'+(svPlan+ivPlan).toLocaleString("ja-JP")+' を引いた後'+(_isPastM?'(実績)':'')+'</div>':'')+
     '</div>'+
     '<div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px">'+
     '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">収入</div><div class="mono teal" style="font-size:18px;font-weight:700">'+yen(normIncome)+'</div></div>'+
@@ -1232,7 +1236,7 @@ function viewLedger(){
       (target>0?'<span class="muted" style="font-size:11px"> / ¥'+target.toLocaleString("ja-JP")+'</span>':'')+'</span></div>'+
       '<div class="bar" style="margin-top:6px"><div style="width:'+pct2+'%;background:var(--teal)"></div></div>'+
       '<div class="row between" style="font-size:10px;margin-top:5px">'+
-      (target>0?'<span class="muted">'+(left2>0?'あと ¥'+left2.toLocaleString("ja-JP"):'達成')+'</span>':'<span class="muted">上限未設定</span>')+
+      (target>0?'<span class="muted">'+(left2>0?(_isPastM?'未達 ¥':'あと ¥')+left2.toLocaleString("ja-JP"):'達成')+'</span>':'<span class="muted">上限未設定</span>')+
       '<span class="mono muted">'+nm+'へ ›</span></div></div>';
   });
   h += '</div>';
