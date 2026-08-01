@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.68 (localStorage保存・完全オフライン)
+   Tally 3.69 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -682,7 +682,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.68";
+const APP_VERSION = "3.69";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -852,7 +852,7 @@ function viewCatDrill(){
       h += '<div class="row between" style="align-items:center;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);cursor:pointer" data-a="wfapply">'+
         '<span style="font-size:12px'+(applied2?';color:var(--muted)':'')+'">変動消費を自動設定'+(applied2?'<span class="muted" style="font-size:10px"> ・ 適用中</span>':'')+'</span>'+
         '<span class="mono '+(applied2?"muted":"teal")+'" style="font-size:13px;font-weight:700">¥'+auto2.toLocaleString("ja-JP")+(applied2?'':' <span style="font-size:11px">›</span>')+'</span></div>'+
-        '<div class="muted" style="font-size:10px;margin-top:3px">前月収入から固定費・貯金・投資・娯楽枠を引いた残りを上限にします'+(_c2.rest>_c2.capMax?'(上限 ¥'+_c2.capMax.toLocaleString("ja-JP")+' で頭打ち)':(_c2.rest<=0?'(残余なし)':''))+'</div>';
+        '<div class="muted" style="font-size:10px;margin-top:3px">'+(_c2.basedOnPrev?'前月':'今月')+'の収入(予定込)から固定費・貯金・投資・娯楽枠を引いた残りを上限にします'+(_c2.rest>_c2.capMax?'(上限 ¥'+_c2.capMax.toLocaleString("ja-JP")+' で頭打ち)':(_c2.rest<=0?'(残余なし)':''))+'</div>';
     }
   }
   h += '</div>';
@@ -938,22 +938,30 @@ function viewCatDrill(){
    運用は月2回: 給料日前日=口座残高の20万超を貯金へ(先月の使い残しの回収・Tallyは残高を持たないので台帳外) /
    給料日当日=先取り(=sink)。 */
 function wfCalc(){
+  /* v3.69: 基準を「前月の収入」→「当月の収入(予定込)」へ。
+     前月ベースだったのは月初に当月収入が0で計算できなかった名残で、定期収入の登録により解消。
+     当月ベースなら当月残金と同じ収入を見るので、上の残金と下の予算枠が噛み合う
+     (収入 = 固定費 + 変動消費枠 + 娯楽枠 + 先取り という一つの式の別表示になる)。
+     当月の収入がまだ無い場合のみ前月にフォールバック */
   const cm=monthKey();
-  const pmk=leakMonths().filter(k2=>k2<cm).sort().reverse()[0];
-  const prevSal=pmk?leakAgg(pmk).salary:0;
   const me2=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(cm));
+  const NET=["slot","mahjong"];
+  const curSal=me2.filter(e=>e.type==="income"&&!NET.includes(e.src)).reduce((a,e)=>a+e.amount,0);
+  const pmk=leakMonths().filter(k2=>k2<cm).sort().reverse()[0];
+  const prevSal=curSal>0 ? curSal : (pmk?leakAgg(pmk).salary:0);
+  const basedOnPrev=(curSal<=0);
   const fx=me2.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&e.src!=="slot"&&e.src!=="mahjong").reduce((a,e)=>a+e.amount,0);
   const wf=S.waterfall||{};
   const pre=num(wf.sink)+num(wf.invest);
   const amuse=num((S.budgets||{})["娯楽"]);
   const capMax=num(wf.varMax)||90000;
   const rest=prevSal - fx - pre - amuse;
-  return {prevSal:prevSal, fx:fx, pre:pre, amuse:amuse, capMax:capMax,
+  return {prevSal:prevSal, fx:fx, pre:pre, amuse:amuse, capMax:capMax, basedOnPrev:basedOnPrev,
           rest:rest, auto:Math.max(0, Math.min(capMax, rest))};
 }
 function wfApply(){
   const wf=S.waterfall||{};
-  if(wfCalc().prevSal<=0){ alert("前月の収入データがまだありません。"); return; }
+  if(wfCalc().prevSal<=0){ alert("収入データがまだありません。\n固定費画面で給与を定期収入として登録すると、月初から予算を組めます。"); return; }
   const needSetup = !num(wf.sink) && !num(wf.invest);
   const applied = String(wfCalc().auto)===String(num((S.budgets||{})["消費"]));
   if(needSetup || applied){
