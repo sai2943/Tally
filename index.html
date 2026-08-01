@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.67 (localStorage保存・完全オフライン)
+   Tally 3.68 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -682,7 +682,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.67";
+const APP_VERSION = "3.68";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -877,8 +877,8 @@ function viewCatDrill(){
           '<span class="mono" style="flex:none;font-size:14px;font-weight:700">¥'+G.sum.toLocaleString("ja-JP")+'</span>'+
           /* v3.64: ジャンル内枠の設定導線。未分類には枠を持たせない(店の割当が先) */
           (G.gn!=="未分類"
-            ? '<button class="navbtn" data-a="gcap" data-v="'+esc(G.gn)+'" style="flex:none;font-size:10px;padding:3px 6px;color:'+(num((S.genreCaps||{})[G.gn])>0?"var(--teal)":"var(--muted)")+'">'+
-              (num((S.genreCaps||{})[G.gn])>0 ? '/ ¥'+num((S.genreCaps||{})[G.gn]).toLocaleString("ja-JP") : '枠')+'</button>'
+            ? '<button class="navbtn" data-a="gcap" data-v="'+esc(G.gn)+'" style="flex:none;font-size:10px;padding:3px 6px;color:'+(String((S.genreCaps||{})[G.gn]||"").trim()?"var(--teal)":"var(--muted)")+'">'+
+              (String((S.genreCaps||{})[G.gn]||"").trim() ? String((S.genreCaps||{})[G.gn]).trim().replace(/^(\d+)$/,(m)=>'¥'+num(m).toLocaleString("ja-JP")) : '枠')+'</button>'
             : '')+'</div>';
         if(open){
           G.chains.forEach(c=>{
@@ -988,16 +988,19 @@ function bindCatDrill(){
            bind側からは見えずReferenceError→ハンドラが死に、親行のタップだけが通って「押しても展開するだけ」だった。
            あわせてstopPropagationで親行への伝播を止める(枠設定と行の開閉が同時に起きるのを防ぐ) */
         if(ev&&ev.stopPropagation) ev.stopPropagation();
-        const gn=v; const cur=num((S.genreCaps||{})[gn])||"";
+        const gn=v; const cur=String((S.genreCaps||{})[gn]||"");
         const _mk=monthKey();
         const unassigned=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(_mk)&&e.type==="expense"
           &&e.category==="消費"&&e.fixedId==null&&e.src!=="slot"&&e.src!=="mahjong"
           &&!((S.genres||{})[chainKeyOf(e.store)])).reduce((a2,e)=>a2+e.amount,0);
         const warn=unassigned>0 ? "\n\n※未分類の店が ¥"+unassigned.toLocaleString("ja-JP")+" あります。\n先にジャンルを割り当てると枠が正確になります。" : "";
-        const p=prompt(gn+"の月間上限(円)\n変動消費の中の内枠として予算カードに表示されます。\n0で解除。"+warn, cur);
+        const p=prompt(gn+"の月間上限\n金額(35000)または変動消費に対する割合(35%)で入力。\n割合なら月ごとの枠に自動で追随します。\n0で解除。"+warn, cur);
         if(p===null)return;
         S.genreCaps=S.genreCaps||{};
-        if(num(p)>0) S.genreCaps[gn]=String(num(p)); else delete S.genreCaps[gn];
+        const ps=String(p).trim();
+        if(/%$/.test(ps) && parseFloat(ps)>0) S.genreCaps[gn]=String(parseFloat(ps))+"%";
+        else if(num(ps)>0) S.genreCaps[gn]=String(num(ps));
+        else delete S.genreCaps[gn];
         save(); render();
       }
       else if(a==="gclear"){ const ch=el.dataset.c; if(S.genres){ delete S.genres[ch]; } UI.drillAssign=null; save(); render(); }
@@ -1167,14 +1170,15 @@ function viewLedger(){
     if(cat==="消費" && cap>0){
       const gcaps=S.genreCaps||{};
       Object.keys(gcaps).forEach(gn=>{
-        const gcap=num(gcaps[gn]); if(gcap<=0) return;
+        const gcap=genreCapAmt(gcaps[gn], cap); if(gcap<=0) return;
+        const gIsPct=genreCapIsPct(gcaps[gn]);
         const gspent=me.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId==null&&!isNetEntry(e)
           &&((S.genres||{})[chainKeyOf(e.store)]||"未分類")===gn).reduce((a,e)=>a+e.amount,0);
         const gpct=Math.min(100,gspent/gcap*100), gover=gspent-gcap;
         h += '<div style="margin:8px 0 0 10px;padding-left:9px;border-left:2px solid var(--line)">'+
           '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">'+esc(gn)+'</span>'+
           '<span><span class="mono '+(gover>0?"red":"")+'" style="font-size:12px;font-weight:700">¥'+gspent.toLocaleString("ja-JP")+'</span>'+
-          '<span class="muted" style="font-size:10px"> / ¥'+gcap.toLocaleString("ja-JP")+'</span></span></div>'+
+          '<span class="muted" style="font-size:10px"> / ¥'+gcap.toLocaleString("ja-JP")+(gIsPct?' ('+String(gcaps[gn]).trim()+')':'')+'</span></span></div>'+
           '<div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:'+(gover>0?"var(--red)":"var(--muted)")+'"></div></div>'+
           '<div class="row between" style="font-size:9px;margin-top:3px"><span class="'+(gover>0?"red":"muted")+'">'+
           (gover>0?'超過 ¥'+gover.toLocaleString("ja-JP"):'残り ¥'+(gcap-gspent).toLocaleString("ja-JP"))+'</span>'+
@@ -2528,6 +2532,14 @@ function leakMonths(){
   return Object.keys(set).sort().reverse().slice(0,12);
 }
 /* v3.62: 先取りの月次実績を貯金/投資に分離。leakAgg.securedもこれを合算して使う(同じ数字は1箇所で計算する) */
+/* v3.68: ジャンル内枠は金額("35000")と割合("35%")の両方を受ける。
+   滝の反転で変動消費の枠が月ごとに動くようになったため、割合なら枠に追随する(固定額だと同じ数字が月により別の意味になる) */
+function genreCapAmt(val, baseCap){
+  const s=String(val==null?"":val).trim();
+  if(/%$/.test(s)) return Math.round(baseCap * (parseFloat(s)||0) / 100);
+  return num(s);
+}
+function genreCapIsPct(val){ return /%$/.test(String(val==null?"":val).trim()); }
 function securedSplit(mk){
   let sv=0, iv=0;
   ((S.invest||{}).holdings||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"").startsWith(mk)) iv+=num(b.amount); }));
