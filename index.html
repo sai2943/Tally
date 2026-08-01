@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.64 (localStorage保存・完全オフライン)
+   Tally 3.65 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -682,7 +682,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.64";
+const APP_VERSION = "3.65";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -960,7 +960,7 @@ function wfApply(){
       }
 function bindCatDrill(){
   document.querySelectorAll("[data-a]").forEach(el=>{
-    el.onclick = () => {
+    el.onclick = (ev) => {
       const a=el.dataset.a, v=el.dataset.v;
       if(a==="drillback"){ UI.screen="main"; UI.drillOpenStore=null; render(); }
       else if(a==="drillstore"){ UI.drillOpenStore = (UI.drillOpenStore===v ? null : v); render(); }
@@ -969,9 +969,15 @@ function bindCatDrill(){
       else if(a==="gset"){ const ch=el.dataset.c; S.genres=S.genres||{}; S.genres[ch]=v; UI.drillAssign=null; save(); render(); }
       else if(a==="gnew"){ const ch=el.dataset.c; const gn=prompt("新しいジャンル名:"); if(gn==null||!gn.trim())return; S.genres=S.genres||{}; S.genres[ch]=gn.trim(); UI.drillAssign=null; save(); render(); }
       else if(a==="gcap"){
-        /* v3.64: 内枠は「その月のジャンル集計」に対する上限。未分類の店があると枠が実態より小さく見えるため警告する */
+        /* v3.65: 未分類額はここで自前に集計する。v3.64はviewCatDrillのローカル変数ggroupsを参照しており
+           bind側からは見えずReferenceError→ハンドラが死に、親行のタップだけが通って「押しても展開するだけ」だった。
+           あわせてstopPropagationで親行への伝播を止める(枠設定と行の開閉が同時に起きるのを防ぐ) */
+        if(ev&&ev.stopPropagation) ev.stopPropagation();
         const gn=v; const cur=num((S.genreCaps||{})[gn])||"";
-        const unassigned=(ggroups.find(G=>G.gn==="未分類")||{}).sum||0;
+        const _mk=monthKey();
+        const unassigned=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(_mk)&&e.type==="expense"
+          &&e.category==="消費"&&e.fixedId==null&&e.src!=="slot"&&e.src!=="mahjong"
+          &&!((S.genres||{})[chainKeyOf(e.store)])).reduce((a2,e)=>a2+e.amount,0);
         const warn=unassigned>0 ? "\n\n※未分類の店が ¥"+unassigned.toLocaleString("ja-JP")+" あります。\n先にジャンルを割り当てると枠が正確になります。" : "";
         const p=prompt(gn+"の月間上限(円)\n変動消費の中の内枠として予算カードに表示されます。\n0で解除。"+warn, cur);
         if(p===null)return;
