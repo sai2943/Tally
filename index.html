@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.96 (localStorage保存・完全オフライン)
+   Tally 3.97 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -464,6 +464,10 @@ function applyData(d){
   S.openAddOnLaunch = !!d.openAddOnLaunch;   /* v3.13: ホワイトリスト漏れでトグルが毎起動リセットされていた */
   S.genres = (d.genres && typeof d.genres==="object") ? d.genres : {};   /* v3.16: 店→ジャンル辞書 */
   S.genreCaps = (d.genreCaps && typeof d.genreCaps==="object") ? d.genreCaps : {};   /* v3.64: ジャンル内枠(食費など) */
+  /* v3.97【バグ修正】ふるさと納税の限度額がホワイトリストから漏れており、applyDataを通るたびに失われていた
+     (=クラウド復元・インポート・スナップ復元・他端末からのpull の全経路で消える)。
+     同一セッション中はS上の値が生き残るため気付けなかった——v3.13(openAddOnLaunch)と全く同じ事故 */
+  S.furusato = (d.furusato && typeof d.furusato==="object") ? d.furusato : {};   /* v3.38: {year,limit} */
   S.invest = (d.invest && typeof d.invest==="object") ? d.invest : {policy:"",holdings:[],bufferTxns:[]};   /* v3.18: 投資台帳 */
   S.waterfall = (d.waterfall && typeof d.waterfall==="object") ? d.waterfall : {};   /* v3.23: 滝方式の定数(投資月額・目的積立月額) */
   if(!Array.isArray(S.savings.goals) || !S.savings.goals.length){
@@ -712,7 +716,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.96";
+const APP_VERSION = "3.97";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
