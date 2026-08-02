@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.82 (localStorage保存・完全オフライン)
+   Tally 3.83 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.82";
+const APP_VERSION = "3.83";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1219,7 +1219,14 @@ function viewLedger(){
         (over>0
         ? '<div style="height:16px;background:'+col+';border-radius:8px;display:flex;align-items:center;justify-content:center"><span style="font-size:9px;font-weight:700;color:var(--bg);letter-spacing:.12em">予算オーバー</span></div>'
         : '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+'"></div></div>')+
-        '<div class="row between" style="font-size:10px;margin-top:5px">'+(over>0?'<span class="'+colCls+'" style="font-weight:700">超過 ¥'+over.toLocaleString("ja-JP")+'</span>':'<span class="muted">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span>')+'<span class="mono muted">'+Math.floor(pct)+'% ・ 内訳を見る</span></div>';
+        '<div class="row between" style="font-size:10px;margin-top:5px">'+(over>0?'<span class="'+colCls+'" style="font-weight:700">超過 ¥'+over.toLocaleString("ja-JP")+'</span>':'<span class="muted">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span>')+'<span class="mono muted">'+Math.floor(pct)+'% ・ 内訳を見る</span></div>'+
+        /* v3.83: 月の枠とは別に、所持金から割り出した当座の上限を出す(現実に使える額) */
+        (function(){ const nc=nowCaps(mk); const k=(cat==="消費"?nc.varc:cat==="娯楽"?nc.amuse:null);
+          if(!k||!k.has||k.cap>=cap) return '';
+          const left=Math.max(0, k.cap-spent);
+          return '<div class="row between" style="font-size:10px;margin-top:4px;padding-top:4px;border-top:1px dashed var(--line)">'+
+            '<span class="muted">いま使えるのは <span class="mono" style="font-weight:700">¥'+k.cap.toLocaleString("ja-JP")+'</span> まで</span>'+
+            '<span class="mono '+(left<=0?colCls:"muted")+'">'+(left<=0?'上限':'残り ¥'+left.toLocaleString("ja-JP"))+'</span></div>'; })();
     } else {
       h += '<div class="row between" style="align-items:center"><span style="font-size:12px"><span style="font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span> <span class="mono muted">¥'+spent.toLocaleString("ja-JP")+'</span></span><span class="amber" style="font-size:11px">＋ 上限を設定</span></div>';
     }
@@ -2625,6 +2632,23 @@ function leakMonths(){
    可処分 − 娯楽 − 変動消費 = 残余 を、S.waterfall.sink/investの比で割る。
    低収入月は全項目が自動で縮み、増収月は残余がそのまま貯金・投資へ流れる。
    比の表記は割合("80%")でも素の数字("8")でもよく、合計が100%でなくても比として正規化する。 */
+/* v3.83: 「今使っていい上限」(ユーザー設計)。月の枠(可処分ベース)とは別に、
+   **所持金**を各枠の比率で割った当座の上限を出す。所持金3万で月枠6万なら現実には3万しか使えないため。
+   比率は予算設定の割合をそのまま使い、100%に引き伸ばさない——消費50/娯楽25なら所持金の25%が
+   自然なバッファとして残り、次の給料日までの不測の支出を吸収する。
+   月の枠を超えることはない(min)。割合が未設定の枠は当座の上限も出さない。 */
+function nowCaps(mk){
+  const base=disposableBase(mk), bg=S.budgets||{}, w=walletBalance();
+  const one=(key)=>{
+    const raw=String(bg[key]==null?"":bg[key]).trim();
+    const m=/(\d+(?:\.\d+)?)%/.exec(raw);
+    const monthCap=budgetAmt(raw, base);
+    if(!m || w<=0) return {pct:0, cap:0, monthCap:monthCap, has:false};
+    const pct=parseFloat(m[1])||0;
+    return {pct:pct, cap:Math.max(0, Math.min(monthCap, Math.round(w*pct/100))), monthCap:monthCap, has:pct>0};
+  };
+  return {wallet:w, varc:one("消費"), amuse:one("娯楽")};
+}
 function preSplit(mk){
   const base=disposableBase(mk);
   const bg=S.budgets||{}, wf=S.waterfall||{};
@@ -3116,13 +3140,14 @@ function viewBank(){
   h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">遊技専用の緩衝プール。<br>勝ち負けはこの中だけで増減。生活費・貯金に触れない。<br>上限を超えた分は貯金へ回収。<br>負けを外の金で埋める(入金)が漏れの正体。</div>';
   h+='<div class="card" style="margin-bottom:12px">'+
     '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">残高</span>'+
-    '<span class="mono '+(low?"red":"teal")+'" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>'+
+    /* v3.83: 残高が少ないだけでマイナスではないので数字は赤くしない。警告はバーと下の枠が担う */
+    '<span class="mono '+(bal<0?"red":"teal")+'" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>'+
     '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:9px 0 4px"><div style="height:100%;width:'+pct+'%;background:'+(low?"var(--red)":over>0?"var(--amber)":"var(--teal)")+'"></div></div>'+
     '<div class="row between" style="font-size:10px"><span class="muted">¥0</span><span class="muted">上限 ¥'+ceil.toLocaleString("ja-JP")+'</span></div></div>';
   if(low) h+='<div class="card" style="margin-bottom:12px;border-color:var(--red)"><div class="red" style="font-size:12px;font-weight:700">⚠ 軍資金が残りわずか</div><div class="muted" style="font-size:11px;margin-top:4px">尽きたら来月まで補充しない約束です。<br>ここで貯金から補充するのが20年来の漏れ。</div></div>';
   if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ回せます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="sweepover">¥'+over.toLocaleString("ja-JP")+' を貯金へ移す</button></div>';
   h+='<div class="card2" style="margin-bottom:14px;font-size:12px;padding:12px">'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">リセット日('+esc(b.switch||"未設定")+')以降の勝ち負け</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
+    '<div class="row between" style="margin-bottom:5px"><span class="muted">集計開始日('+esc(b.switch||"未設定")+')以降の勝ち負け</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">開始時の残高</span><span class="mono">¥'+num(b.seed).toLocaleString("ja-JP")+'</span></div>'+
     '<div class="row between"><span class="muted">貯金に回した累計</span><span class="mono teal">¥'+saved.toLocaleString("ja-JP")+'</span></div></div>';
   h+=band("操作");
@@ -3135,7 +3160,7 @@ function viewBank(){
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="seed">開始時の残高</button>'+
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="adjust">残高のズレを補正</button></div>';
   h+='<div class="card" style="margin:10px 0"><div class="row" style="gap:10px;align-items:flex-end">'+
-    '<div><div class="muted" style="font-size:9px;margin-bottom:3px">リセット日(給料日推奨)</div><input class="input mono" type="date" value="'+esc(b.switch||"")+'" data-ba-in="switch" style="width:auto;min-width:150px;text-align:left;-webkit-appearance:none;height:44px;box-sizing:border-box"></div>'+
+    '<div><div class="muted" style="font-size:9px;margin-bottom:3px">集計開始日(給料日推奨)</div><input class="input mono" type="date" value="'+esc(b.switch||"")+'" data-ba-in="switch" style="width:auto;min-width:150px;text-align:left;-webkit-appearance:none;height:44px;box-sizing:border-box"></div>'+
     '<div style="flex:1"><div class="muted" style="font-size:9px;margin-bottom:3px">上限(円)</div><input class="input r mono" type="number" inputmode="numeric" value="'+esc(b.ceiling||"")+'" data-ba-in="ceiling" style="height:44px;box-sizing:border-box"></div></div></div>';
   const txns=(b.txns||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
   if(txns.length){
