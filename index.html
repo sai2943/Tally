@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.02 (localStorage保存・完全オフライン)
+   Tally 4.03 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -729,7 +729,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.02";
+const APP_VERSION = "4.03";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3441,7 +3441,7 @@ const ACC_WALLET="__wallet__", ACC_BANK="__bank__";
 function transferAccounts(){
   const out=[{id:ACC_WALLET, name:"所持金", bal:walletBalance()},
              {id:ACC_BANK,   name:"軍資金", bal:bankBalance()}];
-  savingsPots().forEach(p=>out.push({id:String(p.id), name:p.name+"(貯金)", bal:savingsBalance(p.id)}));
+  savingsPots().forEach(p=>out.push({id:String(p.id), name:p.name, bal:savingsBalance(p.id)}));
   return out;
 }
 function doTransfer(from, to, amt, date){
@@ -3503,26 +3503,31 @@ function viewSavings(){
   }
   h+='</div>';
 
-  /* ---- 振替(v4.02: prompt連打をやめ、タップで選ぶ) ---- */
+  /* ---- 振替(v4.03: 左右2カラム。折り返しで幅がバラつく横並びチップをやめ、
+         同じ並びの列を「から」「へ」で対にする。行が揃うので目で追える) ---- */
   h+=band("振替");
   const accs=transferAccounts();
-  const chip=(a,sel,act)=>'<button class="btn" data-sa="'+act+'" data-v="'+a.id+'" style="padding:7px 10px;font-size:11px;border-radius:9px;'+
-    (sel?'border-color:var(--teal);color:var(--teal);background:rgba(47,212,181,.10)':'color:var(--muted)')+
-    '"><span style="font-weight:700">'+esc(a.name)+'</span><br><span class="mono" style="font-size:10px;opacity:.8">¥'+a.bal.toLocaleString("ja-JP")+'</span></button>';
-  h+='<div class="card" style="margin-bottom:14px">';
-  h+='<div class="muted" style="font-size:10px;margin-bottom:5px">どこから</div>'+
-     '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:11px">'+accs.map(a=>chip(a,String(UI.trFrom||"")===a.id,"trfrom")).join("")+'</div>';
-  h+='<div class="muted" style="font-size:10px;margin-bottom:5px">どこへ</div>'+
-     '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:11px">'+accs.filter(a=>a.id!==String(UI.trFrom||"")).map(a=>chip(a,String(UI.trTo||"")===a.id,"trto")).join("")+'</div>';
+  const opt=(a,sel,act)=>'<button class="btn" data-sa="'+act+'" data-v="'+a.id+'" style="width:100%;text-align:left;padding:8px 9px;margin-bottom:5px;border-radius:9px;'+
+    (sel?'border-color:var(--teal);background:rgba(47,212,181,.10)':'')+'">'+
+    '<div style="font-size:11px;font-weight:700;color:'+(sel?'var(--teal)':'var(--text)')+'">'+esc(a.name)+'</div>'+
+    '<div class="mono" style="font-size:10px;color:'+(sel?'var(--teal)':'var(--muted)')+'">¥'+a.bal.toLocaleString("ja-JP")+'</div></button>';
   const trReady = UI.trFrom && UI.trTo && String(UI.trFrom)!==String(UI.trTo);
-  h+='<div class="row" style="gap:8px;align-items:center">'+
+  h+='<div class="card" style="margin-bottom:14px">';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+     '<div><div class="muted" style="font-size:10px;margin-bottom:5px">から</div>'+
+       accs.map(a=>opt(a,String(UI.trFrom||"")===a.id,"trfrom")).join("")+'</div>'+
+     '<div><div class="muted" style="font-size:10px;margin-bottom:5px">へ</div>'+
+       accs.map(a=>String(a.id)===String(UI.trFrom||"")
+         ? '<div style="height:44px;margin-bottom:5px"></div>'      /* 行を対応させるため空けておく */
+         : opt(a,String(UI.trTo||"")===a.id,"trto")).join("")+'</div>'+
+     '</div>';
+  h+='<div class="row" style="gap:8px;align-items:center;margin-top:6px">'+
     '<input id="tramt" class="input mono r" type="number" inputmode="numeric" placeholder="金額" value="'+esc(String(UI.trAmt||""))+'" style="flex:1;font-size:17px;font-weight:700">'+
-    '<button class="btn'+(trReady?' tealb':'')+'" data-sa="trgo" style="flex-shrink:0;padding:10px 16px;font-weight:700;font-size:13px'+(trReady?'':';opacity:.45')+'">振替</button></div>';
+    '<button class="btn'+(trReady?' tealb':'')+'" data-sa="trgo" style="flex-shrink:0;padding:11px 18px;font-weight:700;font-size:13px'+(trReady?'':';opacity:.4')+'">振替</button></div>';
   if(trReady){
     const fa=accs.find(a=>a.id===String(UI.trFrom)), ta=accs.find(a=>a.id===String(UI.trTo));
-    if(fa&&ta) h+='<div class="muted" style="font-size:10px;margin-top:7px">'+esc(fa.name)+' → '+esc(ta.name)+'</div>';
+    if(fa&&ta) h+='<div class="teal" style="font-size:11px;margin-top:8px;text-align:center;font-weight:700">'+esc(fa.name)+' → '+esc(ta.name)+'</div>';
   }
-  h+='<button class="btn full" style="margin-top:9px;padding:8px 0;font-size:11px;color:var(--muted)" data-sa="adjust">調整(実残高との差を埋める)</button>';
   h+='</div>';
 
   /* ---- 箱: 残高 + 目標 + 進捗 ---- */
@@ -3543,7 +3548,12 @@ function viewSavings(){
     }
     h+='</div>';
   });
-  h+='<button class="btn" style="font-size:11px;padding:6px 12px;margin-top:2px;border-style:dashed;color:var(--muted)" data-sa="potadd">＋ 箱を追加</button>';
+  /* v4.03: 調整は振替カードから追い出す。**振替は金を動かす操作、調整は実残高との差を埋める記録**で
+     まったく別の行為。箱に対する操作なのでここが定位置 */
+  h+='<div class="row" style="gap:8px;margin-top:2px">'+
+    '<button class="btn" style="flex:1;font-size:11px;padding:7px 0;border-style:dashed;color:var(--muted)" data-sa="potadd">＋ 箱を追加</button>'+
+    '<button class="btn" style="flex:1;font-size:11px;padding:7px 0;color:var(--muted)" data-sa="adjust">残高を調整</button></div>'+
+    '<div class="muted" style="font-size:10px;margin-top:5px">調整は実際の口座残高とズレたときに差を埋める記録です。</div>';
 
   h+='<div class="card2" style="margin:14px 0;font-size:12px;padding:12px">'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">軍資金からの振替 累計</span><span class="mono teal">¥'+swept.toLocaleString("ja-JP")+'</span></div>'+
