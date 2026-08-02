@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.84 (localStorage保存・完全オフライン)
+   Tally 3.85 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.84";
+const APP_VERSION = "3.85";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1204,9 +1204,16 @@ function viewLedger(){
   h += '<div class="card" style="margin-bottom:14px">';
   EXPENSE_CATS.filter(c=>c!=="承認").forEach((cat,i)=>{  /* 承認は予算バー対象外(承認プロセス自体が統制) */
     const _bv=(S.budgets||{})[cat];
-    const cap = budgetAmt(_bv, disposableBase(mk));   /* v3.73: 割合対応 */
+    const monthCap = budgetAmt(_bv, disposableBase(mk));   /* v3.73: 割合対応 */
     const capIsPct = budgetIsPct(_bv);
     const spent = me.filter(e=>e.type==="expense" && e.category===cat && !isNetEntry(e) && (cat!=="消費" || e.fixedId==null)).reduce((a,e)=>a+e.amount,0);
+    /* v3.85: 所持金が月枠より厳しい時は**上限そのものを書き換える**(ユーザー設計・別行にするより見やすい)。
+       実効枠 = 使った額 + 所持金×割合。こうすると「残り」がそのまま「いま使える額」になり、
+       月の後半でも同じ式で成立する。月枠を超えることはない */
+    const _nc85=nowCaps(mk);
+    const _k85=(cat==="消費"?_nc85.varc:cat==="娯楽"?_nc85.amuse:null);
+    const walletBound = !!(_k85 && _k85.has && (spent + _k85.cap) < monthCap);
+    const cap = walletBound ? (spent + _k85.cap) : monthCap;
     const pct = cap>0 ? Math.min(100, spent/cap*100) : 0;
     const over = spent - cap;
     /* v3.35: 超過でも色相は分類固有色を維持(娯楽=琥珀のまま)——警報は帯+超過ラベルが担う */
@@ -1223,15 +1230,13 @@ function viewLedger(){
            当座の上限は「これから使える額」であり、所持金は既に過去の支出を差し引いた後なので
            そこから更に spent を引くのは二重計算(v3.83のバグ)。単独の値として出す */
         (function(){
-          const nc=nowCaps(mk); const k=(cat==="消費"?nc.varc:cat==="娯楽"?nc.amuse:null);
-          const nowTxt=(k&&k.has&&k.cap<cap)
-            ? ' <span class="muted">・</span> いま <span class="mono" style="font-weight:700">¥'+k.cap.toLocaleString("ja-JP")+'</span> まで'
-            : '';
           const head=over>0
             ? '<span class="'+colCls+'" style="font-weight:700">超過 ¥'+over.toLocaleString("ja-JP")+'</span>'
             : '<span class="muted">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span>';
+          /* 枠が所持金基準に縮んでいる時だけ、その理由を添える(月枠は設定画面で確認できる) */
+          const why=walletBound ? ' <span class="muted">・ 所持金に合わせた枠</span>' : '';
           return '<div class="row between" style="font-size:10px;margin-top:5px">'+
-            '<span>'+head+nowTxt+'</span><span class="mono muted">内訳を見る</span></div>';
+            '<span>'+head+why+'</span><span class="mono muted">内訳を見る</span></div>';
         })();
     } else {
       h += '<div class="row between" style="align-items:center"><span style="font-size:12px"><span style="font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span> <span class="mono muted">¥'+spent.toLocaleString("ja-JP")+'</span></span><span class="amber" style="font-size:11px">＋ 上限を設定</span></div>';
