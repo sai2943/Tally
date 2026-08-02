@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.93 (localStorage保存・完全オフライン)
+   Tally 3.94 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -516,7 +516,12 @@ function saveLocal(){
   LAST_LOCAL_SAVE = ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)+":"+("0"+d.getSeconds()).slice(-2);
   document.querySelectorAll(".savets").forEach(el=>{ el.textContent=LAST_LOCAL_SAVE; });
 }
-const saveIndicatorHtml = () => '<div class="muted" style="font-size:10px;text-align:center;margin:10px 0 2px">✓ この端末に自動保存済み <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span>(通信不要・オフラインでも消えません)</div>';
+/* v3.94: 保存インジケーターは**全画面で同一の文言**に統一(ユーザー指摘)。
+   画面によって出たり出なかったり書式が違うと、時刻を出している意味自体が失われる。
+   作業中(スコア表・記帳・各台帳)が最も不安な瞬間なので、そこにこそ常時出す。
+   navbar版と同じ短形+バージョン。挿入は_renderBodyが一元的に行うので、
+   **view関数の中でこれを呼ばないこと**(二重表示になる) */
+const saveIndicatorHtml = () => '<div class="muted" style="font-size:9px;text-align:center;padding:10px 0 2px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 /* ---------- 自動スナップショット(ローカル3世代) ----------
    起動時(日次)・復元前・同期上書き前に全データを退避。誤操作からの復旧用 */
 const SNAP_KEY = KEY + ":snaps";
@@ -698,7 +703,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.93";
+const APP_VERSION = "3.94";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -720,8 +725,9 @@ function render(){
 }
 function navHtml(){
   /* v3.93: navbarの「通信不要」をバージョン表記に置換(ユーザー要望)。
-     オフライン保証の文言は saveIndicatorHtml(バックアップ画面等)に残っているので断言は失われない。
-     常時見えるのはバージョンの方が実用的——更新が反映されたかを画面を移らずに確認できる */
+     常時見えるのはバージョンの方が実用的——更新が反映されたかを画面を移らずに確認できる。
+     v3.94: saveIndicatorHtml()も同じ文言に統一したため、オフライン保証の断言は
+     文言でなくバックアップ画面の説明が担う(同じ行を2つの書式で持たない) */
   return tabBar() + '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 }
 function _renderBody(){
@@ -735,7 +741,15 @@ function _renderBody(){
   }
   /* v3.58: 描画例外の封じ込め。1画面の例外でアプリ全体が固まるのを防ぐ(v3.48のfxSpent欠落で実際に発生)。
      エラーは隠さず表示し、ナビバーを強制表示して健全なタブへ逃がす。データはlocalStorageに無傷で残る */
-  try{ _renderScreen(app); }
+  try{
+    _renderScreen(app);
+    /* v3.94: navbarが無い画面(=作業中の画面)にも保存インジケーターを必ず出す。
+       規律でなく構造で担保する——view側に書くと今回のように書き忘れた画面が生まれる。
+       除外はmjsheetのみ(共有される紙面なので余計なものを焼き込まない) */
+    if(app && UI.screen!=="main" && UI.screen!=="mjsheet"){
+      app.insertAdjacentHTML("beforeend", saveIndicatorHtml());
+    }
+  }
   catch(err){
     console.error(err);
     app.innerHTML = '<div class="hdr"><div style="width:44px"></div><div style="font-size:14px;font-weight:700">表示エラー</div><div style="width:44px"></div></div>'+
@@ -863,7 +877,6 @@ function viewBudget(){
     ' → 貯金 ¥'+ps.sv.toLocaleString("ja-JP")+' / 投資 ¥'+ps.iv.toLocaleString("ja-JP")+'</div>'+
     '<div class="muted" style="font-size:10px;margin-top:6px">貯金が目標に達したら、この比を投資側へ移していきます。</div></div>';
   h+='<button class="btn full sel" style="margin-top:6px" data-bu="save">保存する</button>';
-  h+=saveIndicatorHtml();
   return h;
 }
 function bindBudget(){
@@ -1021,7 +1034,6 @@ function viewCatDrill(){
     });
     h += '</div>';
   }
-  h += saveIndicatorHtml();
   return h;
 }
 /* v3.79: 滝の自動設定(wfCalc/wfApply)は撤去。
@@ -2209,7 +2221,6 @@ function viewMjTable(){
   h += mjtKeypadHtml(t);
   h += '<div style="height:40px"></div>';
   }
-  h += saveIndicatorHtml();
   return h;
 }
 
@@ -2327,7 +2338,6 @@ function viewMjPlay(){
   h += '<div class="row" style="gap:6px;margin-top:8px">'+
     '<button class="btn" data-mt="tomid" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">途中経過を表示</button>'+
     '<button class="btn" data-mt="midshare" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">画像で共有</button></div>';
-  h += saveIndicatorHtml();
   h += '<div class="muted" style="font-size:10px;text-align:right;margin-top:6px">ヘッダー: 上段=合計 / 下段=1着·2着·3着'+(mjtSeats(t)>3?"·4着":"")+'の回数</div>';
   h += '<div style="height:40px"></div>';
   return h;
@@ -2789,7 +2799,6 @@ function viewLeak(){
     '<div class="row between" style="margin-bottom:5px"><span class="muted">回収率</span><span class="mono" style="font-weight:700">'+(posSum>0?Math.round(sweep/posSum*100)+"%":"—")+'</span></div>'+
     '<div class="row between"><span class="muted">外部から補充(生活→遊技の逆流)</span><span class="mono '+(topup>0?"red":"muted")+'">¥'+topup.toLocaleString("ja-JP")+'</span></div></div>';
   h+='<div class="muted" style="font-size:10px;margin-top:10px;line-height:1.6">読み方: 増収+10万・支出+4万なら漏れ40%=実効6割。<br>体感ほぼ100%だった時代から、壁と先取りの配管で<br>どこまで下げたかの実測です。</div>';
-  h+=saveIndicatorHtml();
   return h;
 }
 function bindLeak(){
@@ -2952,7 +2961,6 @@ function viewInvest(){
     h+='</div>';
   }
   h+='<button class="btn dash full" style="padding:12px 0;margin-top:10px" data-iv="new">＋ 銘柄を追加</button>';
-  h+=saveIndicatorHtml();
   return h;
 }
 function viewInvestDetail(){
@@ -2998,7 +3006,6 @@ function viewInvestDetail(){
     });
     h+='</div>';
   }
-  h+=saveIndicatorHtml();
   return h;
 }
 function bindInvest(){
@@ -3150,7 +3157,6 @@ function viewWallet(){
     '<span class="mono '+(bal<0?"red":"teal")+'">¥'+bal.toLocaleString("ja-JP")+'</span></div></div>';
   h+='<div class="muted" style="font-size:10px;margin:10px 2px">'+
     'お金の移動は各画面から行います。<br>貯金への先取り/引き出しは貯金画面、軍資金の補充/戻しは軍資金画面、投資の買付は投資画面。</div>';
-  h+=saveIndicatorHtml();
   return h;
 }
 function bindWallet(){
