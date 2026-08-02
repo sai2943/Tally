@@ -1,8 +1,16 @@
 /* 全画面 × 複数データシナリオ の描画スイープ */
 const vm = require("vm");
 const { buildContext, extractJS } = require("./harness");
-const path = require("path");
-const ROOT = path.join(__dirname, "..");
+const fs = require("fs"), path = require("path");
+/* v3.97b: 置き場所に依存しないルート探索。
+   iOSのWorking Copyへ手作業で入れるとリポジトリ直下に置かれることがあるため、
+   「自分と同じ階層」→「1つ上」の順に index.html を探す */
+function findRoot(){
+  const c = [__dirname, path.join(__dirname, "..")];
+  for(const d of c){ try{ if(fs.existsSync(path.join(d,"index.html"))) return d; }catch(e){} }
+  return __dirname;
+}
+const ROOT = findRoot();
 const _origErr=console.error; console.error=()=>{};
 const js = extractJS(path.join(ROOT,"index.html"));
 
