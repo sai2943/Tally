@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.76 (localStorage保存・完全オフライン)
+   Tally 3.77 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -695,7 +695,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.76";
+const APP_VERSION = "3.77";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3386,11 +3386,17 @@ function viewFixed(){
       ? '<div class="fxg"><div><div class="fxl">'+(isDays?"開始日":"起点日("+(freq==="weekly"?"毎週":"2週ごと")+")")+'</div>'+
         '<input class="input mono" type="date" id="fx-start" value="'+esc(f.start||todayStr())+'"></div>'+fxEnd+'</div>'+
         '<div class="fxg">'+fxAmt+'</div>'
-      : '<div class="fxg"><div><div class="fxl">発生日</div>'+
-        '<input class="input mono r" type="number" inputmode="numeric" id="fx-day" placeholder="1-31" value="'+esc(f.day)+'"></div>'+
+      : '<div class="fxg"><div><div class="fxl">毎月何日(1-31)</div>'+
+        /* v3.77: 「発生日」だと日付入力と誤解され、0815のような値が31に丸められて月末計上になる事故を招く。
+           何日かを入れる欄であることを明示し、解決後の日を直下に出して即座に気付けるようにする */
+        '<input class="input mono r" type="number" inputmode="numeric" min="1" max="31" id="fx-day" placeholder="15" value="'+esc(f.day)+'"></div>'+
         '<div><div class="fxl">周期(ヶ月ごと)</div>'+
         '<input class="input mono r" type="number" inputmode="numeric" id="fx-every" placeholder="1" value="'+esc(f.every||"")+'"></div></div>'+
         /* v3.71: 隔月以上のときだけ開始日を出す(どの月から始まるかで位相が決まる) */
+        (num(f.day)>0
+          ? '<div class="muted" style="font-size:10px;margin:-6px 2px 12px">毎月 '+Math.min(31,Math.max(1,num(f.day)))+' 日に計上されます'+
+            (num(f.day)>31?'(31を超える値は31に丸められます)':'')+'</div>'
+          : '')+
         (num(f.every)>1
           ? '<div class="fxg"><div><div class="fxl">開始日(この月から'+num(f.every)+'ヶ月ごと)</div>'+
             '<input class="input mono" type="date" id="fx-start" value="'+esc(f.start||"")+'"></div></div>'+
