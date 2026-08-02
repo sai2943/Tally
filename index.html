@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.74 (localStorage保存・完全オフライン)
+   Tally 3.76 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -695,7 +695,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.74";
+const APP_VERSION = "3.76";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -757,6 +757,7 @@ function _renderScreen(app){
   if(UI.screen==="mjsheet"){ app.innerHTML = viewMjSheet(); bindMjTable(); return; }
   if(UI.screen==="mjtable"){ app.innerHTML = viewMjTable(); bindMjTable(); return; }
   if(UI.screen==="mjtlist"){ app.innerHTML = viewMjtList(); bindMjtList(); return; }
+  if(UI.screen==="budget"){ app.innerHTML = viewBudget(); bindBudget(); return; }
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
   if(UI.screen==="mdb"){ app.innerHTML = viewMdb(); bindMdb(); return; }
   if(UI.screen==="stores"){ app.innerHTML = viewStores(); bindStores(); return; }
@@ -798,6 +799,91 @@ function tabBar(){
 }
 
 /* ---------- カテゴリ内訳(店別ドリルダウン) ---------- */
+/* v3.75: 予算の設定画面。金額と割合を別々の入力欄に分け(複合文字列の手打ちは直感的でないとの指摘)、
+   貯金・投資の按分比も同じ画面に集約する。保存時に "金額|割合" へ合成する */
+function budParts(v){
+  const s=String(v==null?"":v).trim();
+  if(!s) return {amt:"", pct:""};
+  const ps=s.split("|").map(x=>x.trim()).filter(Boolean);
+  let amt="", pct="";
+  ps.forEach(x=>{ if(/%$/.test(x)) pct=String(parseFloat(x)||""); else amt=String(num(x)||""); });
+  return {amt:amt, pct:pct};
+}
+function budJoin(amt, pct){
+  const a=num(amt), p=parseFloat(pct)||0;
+  const arr=[]; if(a>0) arr.push(String(a)); if(p>0) arr.push(String(p)+"%");
+  return arr.join("|");
+}
+function viewBudget(){
+  const bg=S.budgets||{}, wf=S.waterfall||{};
+  const base=disposableBase(monthKey());
+  const f=UI.budForm||{};
+  const row=(label, key, cur, hint)=>{
+    const pp=budParts(cur);
+    const amtV=(f[key+"_amt"]!==undefined)?f[key+"_amt"]:pp.amt;
+    const pctV=(f[key+"_pct"]!==undefined)?f[key+"_pct"]:pp.pct;
+    const solved=budgetAmt(budJoin(amtV,pctV), base);
+    return '<div class="card" style="margin-bottom:12px">'+
+      '<div style="font-size:13px;font-weight:700;margin-bottom:2px">'+label+'</div>'+
+      '<div class="muted" style="font-size:10px;margin-bottom:8px">'+hint+'</div>'+
+      '<div class="row" style="gap:8px">'+
+      '<div style="flex:1"><div class="fxl">金額(円)</div>'+
+      '<input class="input mono r" type="number" inputmode="numeric" id="bud-'+key+'-amt" placeholder="上限" value="'+esc(amtV)+'"></div>'+
+      '<div style="flex:1"><div class="fxl">割合(%)</div>'+
+      '<input class="input mono r" type="number" inputmode="numeric" id="bud-'+key+'-pct" placeholder="任意" value="'+esc(pctV)+'"></div></div>'+
+      '<div class="muted" style="font-size:10px;margin-top:6px">今月はこの枠 → <span class="mono teal">¥'+solved.toLocaleString("ja-JP")+'</span>'+
+      ((num(amtV)>0&&parseFloat(pctV)>0)?'(両方入れると小さい方)':'')+'</div></div>';
+  };
+  const rr=(label,key,cur,hint)=>{
+    const v=(f[key]!==undefined)?f[key]:String(parseFloat(String(cur||"").replace("%",""))||0);
+    return '<div style="flex:1"><div class="fxl">'+label+'</div>'+
+      '<input class="input mono r" type="number" inputmode="numeric" id="bud-'+key+'" placeholder="0" value="'+esc(v)+'"></div>';
+  };
+  const ps=preSplit(monthKey());
+  let h='<div class="hdr"><button class="navbtn" data-bu="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">予算の設定</div><div style="width:44px"></div></div>';
+  h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:12px">'+
+    '割合の基準は<b>可処分 = 収入 − 固定費</b>(今月 ¥'+base.toLocaleString("ja-JP")+')。<br>'+
+    '金額と割合の両方を入れると<b>小さい方</b>が採用され、低収入月だけ自動で絞ります。</div>';
+  h+=band("使う枠(上限)");
+  h+=row("変動消費","varc",bg["消費"],"日々の消費の上限。超えないための計器です。");
+  h+=row("娯楽","amuse",bg["娯楽"],"娯楽の上限。増収しても膨らませない額。");
+  h+=band("残りの配分");
+  h+='<div class="card"><div class="muted" style="font-size:10px;margin-bottom:8px">'+
+    '使う枠を引いて残った分を、貯金と投資で按分します。<br>合計が100でなくても比として扱います。</div>'+
+    '<div class="row" style="gap:8px">'+rr("貯金へ(%)","sink",wf.sink)+rr("投資へ(%)","invest",wf.invest)+'</div>'+
+    '<div class="muted" style="font-size:10px;margin-top:6px">今月の残り <span class="mono teal">¥'+ps.rest.toLocaleString("ja-JP")+'</span>'+
+    ' → 貯金 ¥'+ps.sv.toLocaleString("ja-JP")+' / 投資 ¥'+ps.iv.toLocaleString("ja-JP")+'</div>'+
+    '<div class="muted" style="font-size:10px;margin-top:6px">貯金が目標に達したら、この比を投資側へ移していきます。</div></div>';
+  h+='<button class="btn full sel" style="margin-top:6px" data-bu="save">保存する</button>';
+  h+=saveIndicatorHtml();
+  return h;
+}
+function bindBudget(){
+  const f=UI.budForm=UI.budForm||{};
+  [["varc","amt"],["varc","pct"],["amuse","amt"],["amuse","pct"]].forEach(([k,s])=>{
+    const el=document.getElementById("bud-"+k+"-"+s); if(el) el.oninput=e=>{ f[k+"_"+s]=e.target.value; };
+  });
+  ["sink","invest"].forEach(k=>{
+    const el=document.getElementById("bud-"+k); if(el) el.oninput=e=>{ f[k]=e.target.value; };
+  });
+  document.querySelectorAll("[data-bu]").forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset.bu;
+      if(a==="back"){ UI.budForm=null; UI.screen="main"; render(); }
+      else if(a==="save"){
+        const bg=S.budgets=S.budgets||{}, wf=S.waterfall||{};
+        const g=(k,s,cur)=>{ const pp=budParts(cur); return (f[k+"_"+s]!==undefined)?f[k+"_"+s]:(s==="amt"?pp.amt:pp.pct); };
+        bg["消費"]=budJoin(g("varc","amt",bg["消費"]), g("varc","pct",bg["消費"]));
+        bg["娯楽"]=budJoin(g("amuse","amt",bg["娯楽"]), g("amuse","pct",bg["娯楽"]));
+        const cs=(f.sink!==undefined)?f.sink:String(parseFloat(String(wf.sink||"").replace("%",""))||0);
+        const ci=(f.invest!==undefined)?f.invest:String(parseFloat(String(wf.invest||"").replace("%",""))||0);
+        S.waterfall=Object.assign({}, wf, {sink:String(parseFloat(cs)||0), invest:String(parseFloat(ci)||0)});
+        save(); UI.budForm=null; UI.screen="main"; render();
+      }
+    };
+  });
+}
 function viewCatDrill(){
   const cat = UI.drillCat || "消費";
   const mk = monthKey();
@@ -1039,7 +1125,8 @@ function bindCatDrill(){
         UI.screen="entry"; render();
       }
       else if(a==="wfapply"){ wfApply(); }
-      else if(a==="setbudget"){ const cat=v;
+      else if(a==="setbudget"){ UI.screen="budget"; UI.budForm=null; render(); }
+      else if(a==="setbudget_legacy"){ const cat=v;
         /* v3.73: 金額(30000)または可処分(収入−固定費)に対する割合(15%)。割合なら収入に自動追随する */
         const p=prompt(cat+"の月間予算(上限)\n金額(30000)/割合(30%)/複合(30000|30%)で入力。\n複合は小さい方を採用し、低収入月だけ自動で絞ります。\n割合の基準は 収入−固定費 です。", String(((S.budgets||{})[cat])||""));
         if(p===null)return; const ps=String(p).trim();
@@ -1196,7 +1283,7 @@ function viewLedger(){
     h += '<div style="cursor:pointer'+(i?';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)':'')+'" data-a="'+(cap>0?"catdrill":"setbudget")+'" data-v="'+cat+'">';
     if(cap>0){
       h += '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:12px;font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span>'+
-        '<span><span class="mono '+colCls+'" style="font-size:15px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span><span class="muted" style="font-size:11px"> / ¥'+cap.toLocaleString("ja-JP")+(capIsPct?' ('+String(_bv).trim()+')':'')+'</span></span></div>'+
+        '<span><span class="mono '+colCls+'" style="font-size:15px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span><span class="muted" style="font-size:11px"> / ¥'+cap.toLocaleString("ja-JP")+'</span></span></div>'+
         (over>0
         ? '<div style="height:16px;background:'+col+';border-radius:8px;display:flex;align-items:center;justify-content:center"><span style="font-size:9px;font-weight:700;color:var(--bg);letter-spacing:.12em">予算オーバー</span></div>'
         : '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+'"></div></div>')+
@@ -1217,7 +1304,7 @@ function viewLedger(){
         h += '<div style="margin:8px 0 0 10px;padding-left:9px;border-left:2px solid var(--line)">'+
           '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">'+esc(gn)+'</span>'+
           '<span><span class="mono '+(gover>0?"red":"")+'" style="font-size:12px;font-weight:700">¥'+gspent.toLocaleString("ja-JP")+'</span>'+
-          '<span class="muted" style="font-size:10px"> / ¥'+gcap.toLocaleString("ja-JP")+(gIsPct?' ('+String(gcaps[gn]).trim()+')':'')+'</span></span></div>'+
+          '<span class="muted" style="font-size:10px"> / ¥'+gcap.toLocaleString("ja-JP")+'</span></span></div>'+
           '<div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:'+(gover>0?"var(--red)":"var(--muted)")+'"></div></div>'+
           '<div class="row between" style="font-size:9px;margin-top:3px"><span class="'+(gover>0?"red":"muted")+'">'+
           (gover>0?'超過 ¥'+gover.toLocaleString("ja-JP"):'残り ¥'+(gcap-gspent).toLocaleString("ja-JP"))+'</span>'+
@@ -1248,7 +1335,7 @@ function viewLedger(){
     h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="'+act+'">'+
       '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">'+nm+'</span>'+
       '<span><span class="mono teal" style="font-size:15px;font-weight:700">¥'+done.toLocaleString("ja-JP")+'</span>'+
-      (target>0?'<span class="muted" style="font-size:11px"> / ¥'+target.toLocaleString("ja-JP")+(budgetIsPct(rawv)?' ('+String(rawv).trim()+')':'')+'</span>':'')+'</span></div>'+
+      (target>0?'<span class="muted" style="font-size:11px"> / ¥'+target.toLocaleString("ja-JP")+'</span>':'')+'</span></div>'+
       '<div class="bar" style="margin-top:6px"><div style="width:'+pct2+'%;background:var(--teal)"></div></div>'+
       '<div class="row between" style="font-size:10px;margin-top:5px">'+
       (target>0?'<span class="muted">'+(left2>0?(_isPastM?'未達 ¥':'あと ¥')+left2.toLocaleString("ja-JP"):'達成')+'</span>':'<span class="muted">上限未設定</span>')+
@@ -2588,13 +2675,20 @@ function preSplit(mk){
   const bg=S.budgets||{}, wf=S.waterfall||{};
   const amuse=budgetAmt(bg["娯楽"], base);
   const varc =budgetAmt(bg["消費"], base);
-  const rest =Math.max(0, base - amuse - varc);
-  const rs=parseFloat(String(wf.sink||"").replace("%",""))||0;
-  const ri=parseFloat(String(wf.invest||"").replace("%",""))||0;
+  /* v3.75【設計修正】按分の対象は「上限を引いた残り」ではなく**実際に余った分**。
+     上限は使い切る額ではないので、上限だけ引くと貯金が不当に小さくなる(¥4,535問題)。
+     実績ベース(可処分−実際の娯楽支出−実際の変動消費)を基本とし、
+     枠を使い切った場合の下限として「可処分−上限」を保証する */
+  /* 目標は「枠を使い切った時に残る額」で固定する。実績ベース(可処分−今の支出)にすると
+     月初に巨大な数字が出て日々縮み、目標として使えない。使い切らなければ実績が目標を上回り「達成」になる */
+  const rest = Math.max(0, base - amuse - varc);
+  const rs=Math.max(0, parseFloat(String(wf.sink||"").replace("%",""))||0);
+  const ri=Math.max(0, parseFloat(String(wf.invest||"").replace("%",""))||0);
   const tot=rs+ri;
   if(tot<=0) return {rest:rest, sv:0, iv:0, hasRatio:false};
-  const sv=Math.round(rest*rs/tot);
-  return {rest:rest, sv:sv, iv:rest-sv, hasRatio:true};
+  /* 丸め誤差で合計が残余を超えないよう、貯金を丸めて投資は差分で取る */
+  const sv=Math.min(rest, Math.round(rest*rs/tot));
+  return {rest:rest, sv:sv, iv:Math.max(0, rest-sv), hasRatio:true};
 }
 function disposableBase(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
@@ -3675,7 +3769,8 @@ function bindMain(){
       else if(a==="leak"){ UI.screen="leak"; render(); }
       else if(a==="invest"){ UI.screen="invest"; render(); }
       else if(a==="bank"){ UI.screen="bank"; render(); }
-      else if(a==="setpre"){
+      else if(a==="setpre"){ UI.screen="budget"; UI.budForm=null; render(); }
+      else if(a==="setpre_legacy"){
         /* v3.67: 貯金枠・投資枠をその場で設定。滝の定数と同一の実体(S.waterfall) */
         const key=v, nm=(key==="sink"?"貯金":"投資");
         const wf=S.waterfall||{};
@@ -3688,7 +3783,8 @@ function bindMain(){
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
       else if(a==="wfapply"){ wfApply(); }
       else if(a==="catdrill"){ UI.drillCat=v; UI.drillOpenStore=null; UI.drillMode="chain"; UI.drillAssign=null; UI.drillVarOnly=(v==="消費"); UI.screen="catdrill"; render(); }
-      else if(a==="setbudget"){ const cat=v;
+      else if(a==="setbudget"){ UI.screen="budget"; UI.budForm=null; render(); }
+      else if(a==="setbudget_legacy"){ const cat=v;
         /* v3.73: 金額(30000)または可処分(収入−固定費)に対する割合(15%)。割合なら収入に自動追随する */
         const p=prompt(cat+"の月間予算(上限)\n金額(30000)/割合(30%)/複合(30000|30%)で入力。\n複合は小さい方を採用し、低収入月だけ自動で絞ります。\n割合の基準は 収入−固定費 です。", String(((S.budgets||{})[cat])||""));
         if(p===null)return; const ps=String(p).trim();
