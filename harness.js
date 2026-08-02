@@ -1,9 +1,16 @@
 /* Tally 全体チェック用ハーネス
    実物のindex.htmlからインラインJSを抽出し、DOMスタブ上で起動して
    全画面のview関数を実際に呼ぶ。v3.58で確立した方式。 */
-const fs = require("fs"), vm = require("vm");
-const path = require("path");
-const ROOT = path.join(__dirname, "..");
+const fs = require("fs"), vm = require("vm"), path = require("path");
+/* v3.97b: 置き場所に依存しないルート探索。
+   iOSのWorking Copyへ手作業で入れるとリポジトリ直下に置かれることがあるため、
+   「自分と同じ階層」→「1つ上」の順に index.html を探す */
+function findRoot(){
+  const c = [__dirname, path.join(__dirname, "..")];
+  for(const d of c){ try{ if(fs.existsSync(path.join(d,"index.html"))) return d; }catch(e){} }
+  return __dirname;
+}
+const ROOT = findRoot();
 
 function makeEl(tag){
   const el = {
