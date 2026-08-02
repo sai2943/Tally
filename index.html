@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.07 (localStorage保存・完全オフライン)
+   Tally 4.08 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -737,7 +737,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.07";
+const APP_VERSION = "4.08";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3479,10 +3479,8 @@ function potProgress(){
   });
 }
 function potsShortfall(){ return potProgress().reduce((a,p)=>a+p.short,0); }
-function savingsDeposits(){ return ((S.savings&&S.savings.txns)||[]).filter(t=>t.type==="deposit").reduce((a,t)=>a+num(t.amount),0); }
 function viewSavings(){
   const sv=S.savings, bal=savingsBalance(), pots=potProgress();
-  const swept=bankSaved(), deposited=savingsDeposits();
   let h='<div class="hdr"><button class="navbtn" data-sa="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">貯金</div><div style="width:44px"></div></div>';
   h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">目的の違う金は<b>箱</b>で分ける。<br>目標額は箱ごとに設定します。</div>';
 
@@ -3530,9 +3528,9 @@ function viewSavings(){
   h+='<button class="btn full" style="padding:9px 0;font-size:12px;border-style:dashed;color:var(--muted);margin-top:2px" data-sa="potadd">＋ 箱を追加</button>';
   h+='<button class="btn tealb full" style="padding:11px 0;font-weight:700;font-size:13px;margin-top:10px" data-sa="gotr">振替する</button>';
 
-  h+='<div class="card2" style="margin:14px 0;font-size:12px;padding:12px">'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">軍資金からの振替 累計</span><span class="mono teal">¥'+swept.toLocaleString("ja-JP")+'</span></div>'+
-    '<div class="row between"><span class="muted">所持金からの振替 累計</span><span class="mono">¥'+deposited.toLocaleString("ja-JP")+'</span></div></div>';
+  /* v4.08: 振替の累計2行を撤去(ユーザー指摘)。**貯金画面で「どこから来たか」を出しても行動が変わらない**。
+     軍資金からの回収額はやる気に効くが、それは軍資金画面の「貯金に回した累計」が既に担っている
+     (同じ数字を2箇所に置かない) */
 
   const txns=(sv.txns||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
   if(txns.length){
