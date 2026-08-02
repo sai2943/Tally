@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.98 (localStorage保存・完全オフライン)
+   Tally 4.00 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -458,7 +458,10 @@ function applyData(d){
   S.fixed = Array.isArray(d.fixed)?d.fixed:[];
   S.wishlist = Array.isArray(d.wishlist)?d.wishlist:[];
   S.bank = Object.assign({switch:"",ceiling:"300000",seed:"",txns:[]}, d.bank||{});
-  S.savings = Object.assign({goals:[],txns:[]}, d.savings||{});
+  S.savings = Object.assign({goals:[],txns:[],pots:[]}, d.savings||{});
+  /* v4.00: 箱。既定箱"main"は必ず先頭に居る(既存txnはpotId無し=main扱いなので非破壊) */
+  if(!Array.isArray(S.savings.pots)) S.savings.pots=[];
+  if(!S.savings.pots.some(p=>String(p.id)==="main")) S.savings.pots.unshift({id:"main", name:"貯金"});
   S.wallet = Object.assign({seed:"", seedDate:""}, d.wallet||{});   /* v3.81: 所持金(論理残高)。seed=起点残高 */
   S.budgets = (d.budgets && typeof d.budgets==="object") ? d.budgets : {};
   S.openAddOnLaunch = !!d.openAddOnLaunch;   /* v3.13: ホワイトリスト漏れでトグルが毎起動リセットされていた */
@@ -716,7 +719,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.98";
+const APP_VERSION = "4.00";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1377,7 +1380,11 @@ function viewLedger(){
           '<span class="mono amber" style="font-size:17px;font-weight:700">¥'+_fs98.left.toLocaleString("ja-JP")+'</span>'+
           '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
           '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+_fpct+'%;background:var(--amber)"></div></div>'+
-          '<div class="muted" style="font-size:10px;margin-top:5px">年内が期限。この分を先に確保しています</div></div>';
+          /* v3.99: 何から出るのかを1行で示す。貯金で足りるなら予算は絞られない */
+          '<div class="muted" style="font-size:10px;margin-top:5px">年内が期限。'+
+          (_fs98.short>0
+            ? '貯金で ¥'+_fs98.covered.toLocaleString("ja-JP")+' 、不足 ¥'+_fs98.short.toLocaleString("ja-JP")+' は今月の予算から確保'
+            : '貯金から出せます(今月の予算は削りません)')+'</div></div>';
       }
       /* v3.61: 滝の定数が見えないと「¥89,508残る」が実態と乖離する(先取り分は口座に残らない)。
          secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
@@ -2727,7 +2734,7 @@ function saveMjt(persist){
 /* ---------- 資産タブ(概観) ---------- */
 function viewAssets(){
   const bBal=bankBalance(), ceil=num(S.bank.ceiling)||300000;
-  const sBal=savingsBalance(), goal=savingsCurGoal();
+  const sBal=savingsBalance(), sLad=ladderBalance(), goal=savingsCurGoal();   /* v4.00: 総資産は全箱、目標の進捗は既定箱 */
   const wBal=walletBalance(), wFc=walletForecast();
   const total=bBal+sBal+wBal;
   const bPct=Math.max(0,Math.min(100, ceil>0?bBal/ceil*100:0));
@@ -2754,10 +2761,10 @@ function viewAssets(){
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="savings">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">貯金</span><span><span class="mono teal" style="font-size:18px;font-weight:700">¥'+sBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>';
   if(goal){
-    const tgt=num(goal.target), pct=tgt>0?Math.min(100,sBal/tgt*100):0;
+    const tgt=num(goal.target), pct=tgt>0?Math.min(100,sLad/tgt*100):0;
     h+='<div class="row between" style="font-size:11px;margin-bottom:4px"><span class="muted">目標: '+esc(goal.name)+'</span><span class="mono muted">¥'+tgt.toLocaleString("ja-JP")+'</span></div>'+
       '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--amber)"></div></div>'+
-      '<div class="row between" style="font-size:10px;margin-top:4px"><span class="muted">'+(tgt>0&&sBal>=tgt?"達成!":tgt>0?"あと ¥"+Math.max(0,tgt-sBal).toLocaleString("ja-JP"):"目標額 未設定")+'</span><span class="mono muted">'+(tgt>0?Math.floor(pct):0)+'%</span></div>';
+      '<div class="row between" style="font-size:10px;margin-top:4px"><span class="muted">'+(tgt>0&&sLad>=tgt?"達成!":tgt>0?"あと ¥"+Math.max(0,tgt-sLad).toLocaleString("ja-JP"):"目標額 未設定")+'</span><span class="mono muted">'+(tgt>0?Math.floor(pct):0)+'%</span></div>';
   } else h+='<div class="muted" style="font-size:11px">全目標 達成</div>';
   h+='</div>';
   const inv=S.invest||{holdings:[]};
@@ -2828,13 +2835,16 @@ function preSplit(mk){
   const sv=Math.min(rest, Math.round(rest*rs/tot));
   return {rest:rest, sv:sv, iv:Math.max(0, rest-sv), hasRatio:true};
 }
-/* v3.98: **ふるさと納税を12月の最優先枠にする(ユーザー設計)**。
-   限度額は年内に使わないと消える権利で、しかも12月が最後の機会。だから
-   「余ったらやる」ではなく**可処分から真っ先に確保する**——他の枠(消費・娯楽・貯金・投資)は
-   その残りで決まる。控除をdisposableBaseの1箇所に入れるだけで、月枠の%も按分も全部が自動で縮む。
-   出す条件は先取り(v3.91)と揃える: 12月 かつ その年の枠 かつ (収入着弾済み or 一部寄付済み) かつ 残枠あり。
-   寄付を実行すると done が増えて left が減り、控除が縮んで他の枠が戻る(自己調整する)。
-   記帳規約はv3.38のまま(店名「ふるさと納税」固定・分類=承認なのでバー対象外) */
+/* v3.99【設計修正】**控除は「貯金で賄えない分」だけにする**(ユーザー設計)。
+   v3.98は残枠を丸ごと可処分から引いていたが、実際の捻出は貯金(ストック)から行う運用なので、
+   12月のフローからも同額を確保するのは**二重取り**だった(消費枠が寄付前だけ半減していた)。
+   控除 = max(0, 残枠 − 貯金残高)。
+   ・貯金が足りていれば控除ゼロ=12月の生活費は一切削られない
+   ・積立をサボっていれば不足分だけフローが締まる(正しいフィードバックになる)
+   ・「余ったら貯金に回す」は自動的に成立する。実額だけ引き出せば残りは元々貯金に居るので、
+     箱の移し替えという操作自体が発生しない
+   記帳規約はv3.38のまま(店名「ふるさと納税」固定・分類=承認なのでバー対象外)。
+   出す条件は先取り(v3.91)と同じ: 12月 かつ その年の枠 かつ (収入着弾済み or 一部寄付済み) かつ 残枠あり */
 function furusatoDue(mk){
   const fs=S.furusato||{}, y=String(mk).slice(0,4), mo=String(mk).slice(5,7);
   const target=num(fs.limit)||0;
@@ -2846,7 +2856,10 @@ function furusatoDue(mk){
   /* isNetEntryはviewMain/viewCatDrillのローカル定数なのでここからは見えない。同じ判定を自前で持つ */
   const _NET=["slot","mahjong"];
   const landed=me.some(e=>e.type==="income"&&!_NET.includes(e.src)&&e.date<=todayStr());
-  return {target:target, done:done, left:left,
+  /* v4.00: 原資は**紐づけた箱**の残高。未紐づけなら従来通り総額を見る */
+  const covered=Math.max(0, savingsBalance(fs.potId!=null ? fs.potId : undefined));
+  const short=Math.max(0, left-covered);              /* フローから確保すべき分 */
+  return {target:target, done:done, left:left, covered:Math.min(left,covered), short:short,
           active: !!(inMonth && left>0 && (landed || done>0))};
 }
 function disposableBase(mk){
@@ -2854,8 +2867,8 @@ function disposableBase(mk){
   const NET=["slot","mahjong"];
   const inc=me.filter(e=>e.type==="income"&&!NET.includes(e.src)).reduce((a,e)=>a+e.amount,0);
   const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&!NET.includes(e.src)).reduce((a,e)=>a+e.amount,0);
-  const fs=furusatoDue(mk);                      /* v3.98: 固定費の次に、他のどの枠よりも先に引く */
-  return Math.max(0, inc-fx-(fs.active?fs.left:0));
+  const fs=furusatoDue(mk);                      /* v3.99: 貯金で賄えない分(short)だけをフローから確保する */
+  return Math.max(0, inc-fx-(fs.active?fs.short:0));
 }
 function budgetAmt(val, base){
   /* v3.74: 複合指定 "30000|30%" に対応し**小さい方**を採る(ユーザー設計)。
@@ -2979,7 +2992,7 @@ function genInvestAudit(){
   /* v3.29: 生活防衛資金・現金ポジション(貯金台帳から自動導出・画面のロードマップと同一計算)。
      防衛資金なき投資=強制売却リスクの購入(v3.24)——現金の守備線を見せずにリスク監査はさせられない */
   L.push("## 生活防衛資金・現金ポジション(貯金台帳から自動導出)");
-  const sBal=savingsBalance();
+  const sBal=ladderBalance();   /* v4.00: 生活防衛資金の判定も既定箱 */
   L.push("- 貯金残高: ¥"+sBal.toLocaleString("ja-JP"));
   const nowD=new Date(); const spends=[];
   for(let i=1;i<=3;i++){
@@ -3029,7 +3042,7 @@ function viewInvest(){
   const goals=((S.savings||{}).goals||[]);
   const undone=goals.filter(g=>!g.done);
   if(undone.length){
-    const sBal=savingsBalance();
+    const sBal=ladderBalance();   /* v4.00: 梯子は既定箱の残高で測る(他の箱は目的が違う) */
     const cur=undone[0];
     const curTgt=num(cur.target);
     let remain=0, unknown=false;
@@ -3389,24 +3402,59 @@ function bindBank(){
 }
 
 /* ---------- 貯金(目標ゲージ・口座) ---------- */
-function savingsBalance(){
-  const tx=(S.savings&&S.savings.txns)||[];
-  const dep=tx.filter(t=>t.type==="deposit").reduce((a,t)=>a+num(t.amount),0);
-  const wd=tx.filter(t=>t.type==="withdraw").reduce((a,t)=>a+num(t.amount),0);
-  const adj=tx.filter(t=>t.type==="adjust").reduce((a,t)=>a+num(t.amount),0);
-  return bankSaved()+dep-wd+adj;
+/* v4.00: **貯金を複数の箱(pot)に分ける**(ユーザー設計)。実口座を分けられる(みんなの銀行)ので
+   アプリ側も実態に合わせる。目的の違う金——11月の引越し資金と12月のふるさと納税——を混ぜない。
+   ・箱はS.savings.pots。既定箱は"main"で、**potIdの無い既存txnは全てmain扱い**(非破壊移行)
+   ・軍資金からのスイープ(bankSaved)もmainへ入る
+   ・**梯子(引越し→生活防衛費→投資スタート)の進捗はmainの残高だけで測る**——
+     ふるさと納税用に積んだ金は引越しには使えないので、梯子に算入すると
+     「11月に達成と出たのに実際は足りない」という最悪の誤認が起きる
+   ・一方**先取り実績(securedSplit)は全箱合計のまま**。あちらは「生活口座から出した額」の計測なので
+     どの箱に入れたかは関係ない */
+const MAIN_POT="main";
+function savingsPots(){
+  const p=((S.savings||{}).pots)||[];
+  return p.length ? p : [{id:MAIN_POT, name:"貯金"}];
 }
+function potName(id){ const p=savingsPots().find(x=>String(x.id)===String(id)); return p?p.name:"貯金"; }
+function txPot(t){ return String(t.potId||MAIN_POT); }
+/* potId省略=全箱合計(総資産用)。指定=その箱だけ */
+function savingsBalance(potId){
+  const tx=(S.savings&&S.savings.txns)||[];
+  const hit = (potId==null) ? (()=>true) : (t=>txPot(t)===String(potId));
+  const dep=tx.filter(t=>t.type==="deposit"&&hit(t)).reduce((a,t)=>a+num(t.amount),0);
+  const wd=tx.filter(t=>t.type==="withdraw"&&hit(t)).reduce((a,t)=>a+num(t.amount),0);
+  const adj=tx.filter(t=>t.type==="adjust"&&hit(t)).reduce((a,t)=>a+num(t.amount),0);
+  const swept=(potId==null || String(potId)===MAIN_POT) ? bankSaved() : 0;
+  return swept+dep-wd+adj;
+}
+/* 梯子の進捗はここを見る(既定箱のみ) */
+function ladderBalance(){ return savingsBalance(MAIN_POT); }
 function savingsDeposits(){ return ((S.savings&&S.savings.txns)||[]).filter(t=>t.type==="deposit").reduce((a,t)=>a+num(t.amount),0); }
 function savingsCurGoal(){ return ((S.savings&&S.savings.goals)||[]).find(g=>!g.done)||null; }
 function viewSavings(){
-  const sv=S.savings, bal=savingsBalance(), goal=savingsCurGoal();
+  const sv=S.savings, bal=savingsBalance(), lad=ladderBalance(), goal=savingsCurGoal();
   const swept=bankSaved(), deposited=savingsDeposits();
+  const pots=savingsPots(), fsPot=String((S.furusato||{}).potId||"");
   let h='<div class="hdr"><button class="navbtn" data-sa="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">貯金</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">軍資金の天井超え(+EV回収)と先取りが積み上がる箱。<br>目標は順番に: まず引越し資金、次に生活防衛費。<br>同じ箱で目標だけが切り替わる。</div>';
+  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">軍資金の天井超え(+EV回収)と先取りが積み上がる場所。<br>目的の違う金は<b>箱</b>で分ける。<br>目標の進捗は「'+esc(potName(MAIN_POT))+'」の残高で測る。</div>';
   h+='<div class="card" style="margin-bottom:12px">';
-  h+='<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">残高</span><span class="mono teal" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>';
+  h+='<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">合計残高</span><span class="mono teal" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>';
+  /* v4.00: 箱が2つ以上あるときだけ内訳を出す(1つなら従来と同じ見た目=摩擦を増やさない) */
+  if(pots.length>1){
+    h+='<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">';
+    pots.forEach(pt=>{
+      const pb=savingsBalance(pt.id), isMain=String(pt.id)===MAIN_POT, isFs=String(pt.id)===fsPot;
+      h+='<div class="row between" style="align-items:baseline;padding:5px 0">'+
+        '<span style="font-size:12px"><span style="font-weight:700">'+esc(pt.name)+'</span>'+
+        (isMain?' <span class="muted" style="font-size:9px">目標の対象</span>':'')+
+        (isFs?' <span class="amber" style="font-size:9px">ふるさと納税の原資</span>':'')+'</span>'+
+        '<span class="mono'+(isMain?' teal':'')+'" style="font-size:15px;font-weight:700">¥'+pb.toLocaleString("ja-JP")+'</span></div>';
+    });
+    h+='</div>';
+  }
   if(goal){
-    const tgt=num(goal.target), pct=tgt>0?Math.min(100,bal/tgt*100):0, remain=Math.max(0,tgt-bal), reached=tgt>0&&bal>=tgt;
+    const tgt=num(goal.target), pct=tgt>0?Math.min(100,lad/tgt*100):0, remain=Math.max(0,tgt-lad), reached=tgt>0&&lad>=tgt;
     h+='<div style="margin-top:12px"><div class="row between" style="font-size:12px;margin-bottom:6px"><span style="font-weight:700">目標: '+esc(goal.name)+'</span><span class="mono muted">¥'+tgt.toLocaleString("ja-JP")+'</span></div>';
     h+='<div style="height:10px;background:var(--surface2);border-radius:5px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+(reached?"var(--teal)":"var(--amber)")+'"></div></div>';
     h+='<div class="row between" style="font-size:11px;margin-top:6px">'+(reached?'<span class="teal" style="font-weight:700">達成!</span>':tgt>0?'<span class="muted">あと ¥'+remain.toLocaleString("ja-JP")+'</span>':'<span class="muted">目標額を設定してください(下でタップ)</span>')+'<span class="mono muted">'+(tgt>0?Math.floor(pct):0)+'%</span></div>';
@@ -3422,6 +3470,18 @@ function viewSavings(){
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-sa="deposit">先取り入金</button>'+
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-sa="withdraw">引き出し</button>'+
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-sa="adjust">調整</button></div>';
+  if(pots.length>1) h+='<button class="btn full" style="font-size:12px;padding:9px 0;margin-bottom:8px" data-sa="move">箱の間で移す</button>';
+  /* v4.00: 箱の管理。目的別に分けるための最小限の操作だけ置く */
+  h+=band("箱");
+  pots.forEach(pt=>{
+    const isMain=String(pt.id)===MAIN_POT, isFs=String(pt.id)===fsPot;
+    h+='<div class="listitem"><div style="flex:1;min-width:0;cursor:pointer" data-sa="potedit" data-v="'+pt.id+'">'+
+      '<div style="font-size:13px;font-weight:700">'+esc(pt.name)+'</div>'+
+      '<div class="muted mono" style="font-size:10px">残高 ¥'+savingsBalance(pt.id).toLocaleString("ja-JP")+(isMain?'(既定・タップで改名)':'(タップで改名)')+'</div></div>'+
+      '<button class="btn" style="flex-shrink:0;height:30px;padding:0 9px;font-size:10px;margin-left:6px;'+(isFs?'color:var(--amber);border-color:var(--amber)':'color:var(--muted)')+'" data-sa="potfuru" data-v="'+pt.id+'">ふるさと</button>'+
+      (isMain?'':'<button class="xbtn" style="font-size:13px;flex-shrink:0;margin-left:4px" data-sa="potdel" data-v="'+pt.id+'">×</button>')+'</div>';
+  });
+  h+='<button class="btn" style="font-size:11px;padding:6px 12px;margin-top:4px;border-style:dashed;color:var(--muted)" data-sa="potadd">＋ 箱を追加</button>';
   h+=band("目標");
   (sv.goals||[]).forEach(g=>{
     const cur = goal && g.id===goal.id;
@@ -3437,7 +3497,9 @@ function viewSavings(){
     const LBL={deposit:"先取り入金",withdraw:"引き出し",adjust:"調整"};
     txns.forEach(t=>{
       const amt = t.type==="withdraw"? -num(t.amount) : num(t.amount);
-      h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+'</div><div class="muted mono" style="font-size:10px">'+esc(t.date)+'</div></div>'+
+      h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+
+        (pots.length>1?' <span class="muted" style="font-size:10px;font-weight:400">'+esc(potName(txPot(t)))+'</span>':'')+
+        '</div><div class="muted mono" style="font-size:10px">'+esc(t.date)+'</div></div>'+
         '<div class="mono '+clsPM(amt)+'" style="font-size:14px;font-weight:700">'+signYen(amt)+'</div>'+
         '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0" data-sa="txndel" data-v="'+t.id+'">×</button></div>';
     });
@@ -3449,9 +3511,53 @@ function bindSavings(){
     const a=el.dataset.sa, v=el.dataset.v, sv=S.savings;
     el.onclick=()=>{
       if(a==="back"){ UI.screen="main"; render(); return; }
-      if(a==="deposit"){ const p=prompt("先取り入金する額(円):",""); if(p===null)return; const amt=num(p); if(amt<=0)return; (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"deposit",amount:String(amt)}); save(); render(); return; }
-      if(a==="withdraw"){ const p=prompt("引き出す額(円):",""); if(p===null)return; const amt=num(p); if(amt<=0)return; (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"withdraw",amount:String(amt)}); save(); render(); return; }
-      if(a==="adjust"){ const p=prompt("調整額(円・マイナス可):",""); if(p===null)return; const amt=num(p); if(amt===0)return; (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt)}); save(); render(); return; }
+      /* v4.00: 箱が1つなら訊かない(摩擦を増やさない)。2つ以上のときだけ番号で選ばせる */
+      const pickPot=(verb)=>{
+        const ps=savingsPots();
+        if(ps.length<=1) return ps[0].id;
+        const menu=ps.map((x,i)=>(i+1)+". "+x.name+"(¥"+savingsBalance(x.id).toLocaleString("ja-JP")+")").join("\n");
+        const r=prompt(verb+"箱を選んでください:\n"+menu, "1");
+        if(r===null) return null;
+        const i=num(r)-1;
+        return (i>=0 && i<ps.length) ? ps[i].id : null;
+      };
+      if(a==="deposit"){ const pid=pickPot("入金する"); if(pid===null)return;
+        const p=prompt("先取り入金する額(円)  →  "+potName(pid),""); if(p===null)return; const amt=num(p); if(amt<=0)return;
+        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"deposit",amount:String(amt),potId:pid}); save(); render(); return; }
+      if(a==="withdraw"){ const pid=pickPot("引き出す"); if(pid===null)return;
+        const p=prompt("引き出す額(円)  →  "+potName(pid),""); if(p===null)return; const amt=num(p); if(amt<=0)return;
+        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"withdraw",amount:String(amt),potId:pid}); save(); render(); return; }
+      if(a==="adjust"){ const pid=pickPot("調整する"); if(pid===null)return;
+        const p=prompt("調整額(円・マイナス可)  →  "+potName(pid),""); if(p===null)return; const amt=num(p); if(amt===0)return;
+        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt),potId:pid}); save(); render(); return; }
+      /* 箱の間の移動。**外部との出入りではないので所持金は動かさない**——
+         出金側にwithdraw、入金側にdepositを立てると所持金が二重に動くため、両方adjustで表現する */
+      if(a==="move"){
+        const from=pickPot("移す元の"); if(from===null)return;
+        const to=pickPot("移す先の"); if(to===null||String(to)===String(from))return;
+        const p=prompt("移す額(円)  "+potName(from)+" → "+potName(to),""); if(p===null)return;
+        const amt=num(p); if(amt<=0)return;
+        const bal=savingsBalance(from);
+        if(amt>bal && !confirm(potName(from)+"の残高 ¥"+bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
+        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(-amt),potId:from});
+        sv.txns.push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt),potId:to});
+        save(); render(); toast("¥"+amt.toLocaleString("ja-JP")+" を移しました"); return;
+      }
+      if(a==="potadd"){ const name=prompt("箱の名前(例: ふるさと納税):",""); if(name===null||!name.trim())return;
+        (sv.pots=sv.pots||[]).push({id:uid(), name:name.trim()}); save(); render(); return; }
+      if(a==="potedit"){ const pt=savingsPots().find(x=>String(x.id)===String(v)); if(!pt)return;
+        const name=prompt("箱の名前:",pt.name||""); if(name===null||!name.trim())return;
+        const t2=(sv.pots||[]).find(x=>String(x.id)===String(v)); if(t2) t2.name=name.trim(); save(); render(); return; }
+      if(a==="potfuru"){ S.furusato=S.furusato||{};
+        S.furusato.potId = (String(S.furusato.potId||"")===String(v)) ? "" : String(v);
+        save(); render(); toast(S.furusato.potId? potName(v)+"をふるさと納税の原資に" : "紐づけを解除"); return; }
+      if(a==="potdel"){ if(String(v)===MAIN_POT) return;
+        const bal=savingsBalance(v);
+        if(!confirm("箱「"+potName(v)+"」を削除します。\n残高 ¥"+bal.toLocaleString("ja-JP")+" と履歴は「"+potName(MAIN_POT)+"」へ移ります。\nよろしいですか?")) return;
+        (sv.txns||[]).forEach(t=>{ if(txPot(t)===String(v)) t.potId=MAIN_POT; });   /* 記録は失わない */
+        sv.pots=(sv.pots||[]).filter(x=>String(x.id)!==String(v));
+        if(String((S.furusato||{}).potId||"")===String(v)) S.furusato.potId="";
+        save(); render(); return; }
       if(a==="achieve"){ const g=(sv.goals||[]).find(x=>String(x.id)===String(v)); if(g && confirm("「"+g.name+"」を達成にして次の目標へ進みます。よろしいですか?")){ g.done=true; g.doneDate=todayStr(); save(); render(); } return; }
       if(a==="goaledit"){ const g=(sv.goals||[]).find(x=>String(x.id)===String(v)); if(!g)return; const name=prompt("目標の名前:",g.name||""); if(name===null)return; const tg=prompt("目標額(円):",g.target||""); if(tg===null)return; g.name=(name.trim()||g.name); g.target=String(num(tg)); save(); render(); return; }
       if(a==="goaladd"){ const name=prompt("目標の名前:",""); if(name===null||!name.trim())return; const tg=prompt("目標額(円):",""); if(tg===null)return; (sv.goals=sv.goals||[]).push({id:uid(),name:name.trim(),target:String(num(tg)),done:false,doneDate:""}); save(); render(); return; }
