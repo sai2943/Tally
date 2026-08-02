@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.97 (localStorage保存・完全オフライン)
+   Tally 3.98 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -716,7 +716,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.97";
+const APP_VERSION = "3.98";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1355,20 +1355,37 @@ function viewLedger(){
      ※設定入口が消える件はv3.67の教訓に抵触しない: 按分比の正規の入口は予算設定画面(v3.75) */
   const _ps74=preSplit(mk);
   {
+    const _fs98=furusatoDue(mk);
     const _isCur = (mk === todayStr().slice(0,7));
     const _incomeLanded = me.some(e=>e.type==="income" && !isNetEntry(e) && e.date<=todayStr());
     const _left = Math.max(0,_ps74.sv-_sp62.sv) + Math.max(0,_ps74.iv-_sp62.iv);
     const _anyDone = (_sp62.sv+_sp62.iv) > 0;
-    if(_isCur && (_incomeLanded || _anyDone) && _left > 0){
+    if(_isCur && ((_incomeLanded || _anyDone) && _left > 0 || _fs98.active)){
       h += band("先取り");
       h += '<div class="card" style="margin-bottom:14px">';
-      h += '<div class="amber" style="font-size:11px;font-weight:700;margin-bottom:10px">今月の先取りがまだです</div>';
+      h += '<div class="amber" style="font-size:11px;font-weight:700;margin-bottom:10px">'+
+        (_fs98.active ? '今年のふるさと納税枠が未消化です' : '今月の先取りがまだです')+'</div>';
+      /* v3.98: ふるさと納税を最上段に置く=可処分から最初に引かれる順番と表示順を一致させる。
+         色はバー連動(v3.92)でamber——消費でも貯蓄でもない「期限付きの権利行使」なので固有色を当てる */
+      if(_fs98.active){
+        const _fpct=Math.min(100, _fs98.done/_fs98.target*100);
+        h += '<div style="cursor:pointer" data-a="furuset">'+
+          '<div class="row between" style="align-items:baseline">'+
+          '<span><span class="muted" style="font-size:12px;font-weight:700">ふるさと納税</span>'+
+          '<span class="mono muted" style="font-size:10px"> ¥'+_fs98.done.toLocaleString("ja-JP")+' / ¥'+_fs98.target.toLocaleString("ja-JP")+'</span></span>'+
+          '<span><span class="mono muted" style="font-size:10px">あと</span> '+
+          '<span class="mono amber" style="font-size:17px;font-weight:700">¥'+_fs98.left.toLocaleString("ja-JP")+'</span>'+
+          '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
+          '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+_fpct+'%;background:var(--amber)"></div></div>'+
+          '<div class="muted" style="font-size:10px;margin-top:5px">年内が期限。この分を先に確保しています</div></div>';
+      }
       /* v3.61: 滝の定数が見えないと「¥89,508残る」が実態と乖離する(先取り分は口座に残らない)。
          secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
          v3.62: 貯金/投資の2枠に分割 */
       [["貯金", _sp62.sv, _ps74.sv, "savings", "sink"],
        ["投資", _sp62.iv, _ps74.iv, "invest", "invest"]].forEach(([nm,done,target,act,key],pi)=>{
-        const _sep = pi ? ';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)' : '';
+        /* v3.98: ふるさと納税行が上にある場合は1行目にも区切りを入れる */
+        const _sep = (pi || _fs98.active) ? ';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)' : '';
         if(target<=0){
           h += '<div style="cursor:pointer'+_sep+'" data-a="setpre" data-v="'+key+'">'+
             '<div class="row between" style="align-items:center"><span style="font-size:12px"><span class="muted" style="font-weight:700">'+nm+'</span> '+
@@ -2811,12 +2828,34 @@ function preSplit(mk){
   const sv=Math.min(rest, Math.round(rest*rs/tot));
   return {rest:rest, sv:sv, iv:Math.max(0, rest-sv), hasRatio:true};
 }
+/* v3.98: **ふるさと納税を12月の最優先枠にする(ユーザー設計)**。
+   限度額は年内に使わないと消える権利で、しかも12月が最後の機会。だから
+   「余ったらやる」ではなく**可処分から真っ先に確保する**——他の枠(消費・娯楽・貯金・投資)は
+   その残りで決まる。控除をdisposableBaseの1箇所に入れるだけで、月枠の%も按分も全部が自動で縮む。
+   出す条件は先取り(v3.91)と揃える: 12月 かつ その年の枠 かつ (収入着弾済み or 一部寄付済み) かつ 残枠あり。
+   寄付を実行すると done が増えて left が減り、控除が縮んで他の枠が戻る(自己調整する)。
+   記帳規約はv3.38のまま(店名「ふるさと納税」固定・分類=承認なのでバー対象外) */
+function furusatoDue(mk){
+  const fs=S.furusato||{}, y=String(mk).slice(0,4), mo=String(mk).slice(5,7);
+  const target=num(fs.limit)||0;
+  const done=(S.entries||[]).filter(e=>e.type==="expense"&&e.date&&e.date.startsWith(y)&&(e.store||"").trim()==="ふるさと納税")
+    .reduce((a,e)=>a+e.amount,0);
+  const left=Math.max(0, target-done);
+  const inMonth = (mo==="12" && String(fs.year)===y && target>0);
+  const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
+  /* isNetEntryはviewMain/viewCatDrillのローカル定数なのでここからは見えない。同じ判定を自前で持つ */
+  const _NET=["slot","mahjong"];
+  const landed=me.some(e=>e.type==="income"&&!_NET.includes(e.src)&&e.date<=todayStr());
+  return {target:target, done:done, left:left,
+          active: !!(inMonth && left>0 && (landed || done>0))};
+}
 function disposableBase(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
   const NET=["slot","mahjong"];
   const inc=me.filter(e=>e.type==="income"&&!NET.includes(e.src)).reduce((a,e)=>a+e.amount,0);
   const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&!NET.includes(e.src)).reduce((a,e)=>a+e.amount,0);
-  return Math.max(0, inc-fx);
+  const fs=furusatoDue(mk);                      /* v3.98: 固定費の次に、他のどの枠よりも先に引く */
+  return Math.max(0, inc-fx-(fs.active?fs.left:0));
 }
 function budgetAmt(val, base){
   /* v3.74: 複合指定 "30000|30%" に対応し**小さい方**を採る(ユーザー設計)。
