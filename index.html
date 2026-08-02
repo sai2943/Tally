@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.90 (localStorage保存・完全オフライン)
+   Tally 3.91 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.90";
+const APP_VERSION = "3.91";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1153,7 +1153,6 @@ function viewLedger(){
   /* v3.62: 見出しを「当月残金」へ(ユーザー提案)。収支は純資産の増分だが、先取り分は生活口座に残らないため
      「いくら残るか」を答えられていなかった。**先取りはmax(実績,目標)で引く**——実績だけだと月初は過大に見え
      入金した瞬間に急落する(財務状況は不変なのに数字が暴れる)。支出が予定込みなのと同じ扱いに揃える */
-  const _wf62=S.waterfall||{};
   const _sp62=securedSplit(mk);
   /* v3.72【設計バグ修正】max(実績,目標)は進行中の月にだけ正しい規則だった。
      終わった月に「実行されなかった計画」を引くのは事実の歪曲(7月は貯金していないのに50,000引かれて残金が−30,634になっていた)。
@@ -1227,8 +1226,10 @@ function viewLedger(){
     if(cap>0){
       /* v3.87: **残りを主役に**(ユーザー設計)。使った額は振り返りの数字、残りは意思決定の数字。
          導線行は廃止しカード全体をタップ可能に(›で示す)——行が1つ減り視認性が上がる */
+      /* v3.91: **白は行に1つだけ**。ラベルも数字も白だと視線が跳ね、白の意味が薄まる。
+         白=その行で決断に使う数字、と決めてラベルはmutedへ落とす(内枠の食費ラベルと同格になる) */
       h += '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
-        '<span><span style="font-size:12px;font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span>'+
+        '<span><span class="muted" style="font-size:12px;font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span>'+
         '<span class="mono muted" style="font-size:10px"> ¥'+spent.toLocaleString("ja-JP")+' / ¥'+cap.toLocaleString("ja-JP")+'</span></span>'+
         /* v3.88: 主役の数字に1語のラベルを付ける。無名の数字は意味が伝わらず、
            かつ「残り(あと使える)」と貯金の「あと(あと入れる)」は意味が正反対なので語で方向を示す。
@@ -1241,7 +1242,7 @@ function viewLedger(){
            「所持金に合わせた枠」の注記は撤去(自分で設定した仕組みなので説明不要・シンプルさを損なう) */
         '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+'"></div></div>';
     } else {
-      h += '<div class="row between" style="align-items:center"><span style="font-size:12px"><span style="font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span> <span class="mono muted">¥'+spent.toLocaleString("ja-JP")+'</span></span><span class="amber" style="font-size:11px">＋ 上限を設定</span></div>';
+      h += '<div class="row between" style="align-items:center"><span style="font-size:12px"><span class="muted" style="font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span> <span class="mono muted">¥'+spent.toLocaleString("ja-JP")+'</span></span><span class="amber" style="font-size:11px">＋ 上限を設定</span></div>';
     }
     /* v3.64: ジャンル内枠(ユーザー要望「食費上限」)。変動消費の中の一部なので独立行でなく親の直下に細いサブバーで置く。
        集計はジャンル辞書(店→ジャンル・チェーン単位)。未割当の店は拾えないため、内枠設定時は割当漏れを警告する */
@@ -1267,43 +1268,50 @@ function viewLedger(){
   });
   h += '</div>';   /* 予算カード(使う)を閉じる */
 
-  /* v3.90: **「使う」と「移す」を別の箱に分ける**(ユーザー指摘)。
-     消費・娯楽=使ってよい額 / 貯金・投資=移すべき額——行為の種類が違うものを同じカードに積むと、
-     同じ位置・同じ書式のせいで同じものに見え、色だけで区別しようとして破綻していた。
-     カードと見出しで分ければ語(残り/あと)の違いも自然に読める。
-     ※「先取り」はv3.61以来の内部語彙だが「先取り貯蓄」として一般に通じるため画面語彙に昇格
-        (v3.67で却下した「滝」は開発上の内輪呼びなので別件) */
-  h += band("先取り");
-  h += '<div class="card" style="margin-bottom:14px">';
-  /* v3.61: 滝の定数が見えないと「¥89,508残る」が実態と乖離する(先取り分は口座に残らない)。
-     secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
-     v3.62: 貯金/投資の2枠に分割。v3.67: 枠が0でも行を出す(隠すと設定する場所自体が消える) */
+  /* v3.91: **先取りは常設をやめ、給料日に催促して終わったら消える**(ユーザー設計)。
+     先取りは月に一度やれば終わる仕事なので、済んだ後も居座るのは計器でなく雑音。
+     出す条件 = 表示中が今月 かつ (当月の収入が着弾済み or 既に一部実行済み) かつ 未達。
+     達成した瞬間にカードごと消える=「終わった」ことが最も強い報酬になる。
+     ※プッシュ通知は却下済み(§8)——画面上の出し分けが同じ役割を果たす。
+     ※設定入口が消える件はv3.67の教訓に抵触しない: 按分比の正規の入口は予算設定画面(v3.75) */
   const _ps74=preSplit(mk);
-  [["貯金", _sp62.sv, _ps74.sv, "savings", "sink", _wf62.sink],
-   ["投資", _sp62.iv, _ps74.iv, "invest", "invest", _wf62.invest]].forEach(([nm,done,target,act,key,rawv],pi)=>{
-    const _sep = pi ? ';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)' : '';
-    if(target<=0){
-      h += '<div style="cursor:pointer'+_sep+'" data-a="setpre" data-v="'+key+'">'+
-        '<div class="row between" style="align-items:center"><span style="font-size:12px"><span style="font-weight:700">'+nm+'</span> '+
-        '<span class="mono muted">¥'+done.toLocaleString("ja-JP")+'</span></span>'+
-        '<span class="amber" style="font-size:11px">＋ 上限を設定</span></div></div>';
-      return;
+  {
+    const _isCur = (mk === todayStr().slice(0,7));
+    const _incomeLanded = me.some(e=>e.type==="income" && !isNetEntry(e) && e.date<=todayStr());
+    const _left = Math.max(0,_ps74.sv-_sp62.sv) + Math.max(0,_ps74.iv-_sp62.iv);
+    const _anyDone = (_sp62.sv+_sp62.iv) > 0;
+    if(_isCur && (_incomeLanded || _anyDone) && _left > 0){
+      h += band("先取り");
+      h += '<div class="card" style="margin-bottom:14px">';
+      h += '<div class="amber" style="font-size:11px;font-weight:700;margin-bottom:10px">今月の先取りがまだです</div>';
+      /* v3.61: 滝の定数が見えないと「¥89,508残る」が実態と乖離する(先取り分は口座に残らない)。
+         secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
+         v3.62: 貯金/投資の2枠に分割 */
+      [["貯金", _sp62.sv, _ps74.sv, "savings", "sink"],
+       ["投資", _sp62.iv, _ps74.iv, "invest", "invest"]].forEach(([nm,done,target,act,key],pi)=>{
+        const _sep = pi ? ';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)' : '';
+        if(target<=0){
+          h += '<div style="cursor:pointer'+_sep+'" data-a="setpre" data-v="'+key+'">'+
+            '<div class="row between" style="align-items:center"><span style="font-size:12px"><span class="muted" style="font-weight:700">'+nm+'</span> '+
+            '<span class="mono muted">¥'+done.toLocaleString("ja-JP")+'</span></span>'+
+            '<span class="amber" style="font-size:11px">＋ 上限を設定</span></div></div>';
+          return;
+        }
+        const pct2=Math.min(100,done/target*100);
+        const left2=Math.max(0,target-done);
+        h += '<div style="cursor:pointer'+_sep+'" data-a="'+act+'">'+
+          '<div class="row between" style="align-items:baseline">'+
+          '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
+          '<span class="mono muted" style="font-size:10px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+target.toLocaleString("ja-JP")+'</span></span>'+
+          /* v3.88: 「あと」=これから入れる額(消費の「残り」と方向が逆なので語で示す) */
+          '<span><span class="mono muted" style="font-size:10px">あと</span> '+
+          '<span class="mono" style="font-size:17px;font-weight:700">¥'+left2.toLocaleString("ja-JP")+'</span>'+
+          '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
+          '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+pct2+'%;background:var(--teal)"></div></div></div>';
+      });
+      h += '</div>';
     }
-    const pct2=target>0?Math.min(100,done/target*100):100;
-    const left2=Math.max(0,target-done);
-    h += '<div style="cursor:pointer'+_sep+'" data-a="'+act+'">'+
-      '<div class="row between" style="align-items:baseline">'+
-      '<span><span style="font-size:12px;font-weight:700">'+nm+'</span>'+
-      '<span class="mono muted" style="font-size:10px"> ¥'+done.toLocaleString("ja-JP")+(target>0?' / ¥'+target.toLocaleString("ja-JP"):'')+'</span></span>'+
-      /* v3.88: 「あと」=これから入れる額(消費の「残り」=これから使える額と方向が逆なので語で示す)。
-         常時tealをやめ、達成した時だけ色が点く(逸脱・到達のときだけ色を使う原則) */
-      '<span>'+(left2>0?'<span class="mono muted" style="font-size:10px">あと</span> ':'')+
-      '<span class="mono '+(left2>0?'':'teal')+'" style="font-size:17px;font-weight:700">'+
-      (target>0?(left2>0?'¥'+left2.toLocaleString("ja-JP"):'達成'):'—')+'</span>'+
-      '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
-      '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+pct2+'%;background:var(--teal)"></div></div></div>';
-  });
-  h += '</div>';
+  }
 
   /* v3.82: 所持金の不足アラートは家計簿に出す(支出を見直すのはこの画面だから)。
      資産タブは残高を見る場所であって、行動を促す場所ではない */
