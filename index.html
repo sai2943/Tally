@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.04 (localStorage保存・完全オフライン)
+   Tally 4.05 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -737,7 +737,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.04";
+const APP_VERSION = "4.05";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3342,7 +3342,7 @@ function viewBank(){
     '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:9px 0 4px"><div style="height:100%;width:'+pct+'%;background:'+(low?"var(--red)":over>0?"var(--amber)":"var(--teal)")+'"></div></div>'+
     '<div class="row between" style="font-size:10px"><span class="muted">¥0</span><span class="muted">上限 ¥'+ceil.toLocaleString("ja-JP")+'</span></div></div>';
   if(low) h+='<div class="card" style="margin-bottom:12px;border-color:var(--red)"><div class="red" style="font-size:12px;font-weight:700">⚠ 軍資金が残りわずか</div><div class="muted" style="font-size:11px;margin-top:4px">尽きたら来月まで補充しない約束です。<br>ここで貯金から補充するのが20年来の漏れ。</div></div>';
-  if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="sweepover">¥'+over.toLocaleString("ja-JP")+' を貯金へ移す</button></div>';
+  if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
   h+='<div class="card2" style="margin-bottom:14px;font-size:12px;padding:12px">'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">集計開始日('+esc(b.switch||"未設定")+')以降の勝ち負け</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">開始時の残高</span><span class="mono">¥'+num(b.seed).toLocaleString("ja-JP")+'</span></div>'+
@@ -3351,8 +3351,8 @@ function viewBank(){
   h+='<div class="row" style="gap:8px;margin-bottom:8px">'+
     /* v3.82: 用語を日本語に統一し、移動は「どこから/どこへ」を明示する。
        シード設定=開始時の残高、調整=残高のズレ補正、と役割を名前で言う */
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="topup">入金</button>'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="sweep">出金</button></div>'+
+    /* v4.05: 入金/出金は記帳画面の振替へ集約。ここは導線だけ */
+    '<button class="btn tealb" style="flex:1;font-size:13px;padding:11px 0;font-weight:700" data-ba="gotr">振替する</button></div>'+
     '<div class="row" style="gap:8px;margin-bottom:8px">'+
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="seed">開始時の残高</button>'+
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="adjust">残高のズレを補正</button></div>';
@@ -3378,30 +3378,11 @@ function bindBank(){
     const a=el.dataset.ba, v=el.dataset.v, b=S.bank;
     el.onclick=()=>{
       if(a==="back"){ UI.screen="main"; render(); return; }
+      /* v4.05: 実装は記帳画面の振替へ一本化。ここからは行き先を指定して開くだけ */
+      if(a==="gotr"){ openTransfer("", "", "bank"); return; }
+      if(a==="gotrover"){ const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000));
+        openTransfer(ACC_BANK, "", "bank", over); return; }
       if(a==="seed"){ const p=prompt("開始時の残高(円)\n記録を始めた時点の遊技資金。\nここに以後の勝ち負けと入出金を積み上げます。", b.seed||""); if(p===null)return; b.seed=String(num(p)); save(); render(); return; }
-      /* v3.82: 移動は「どこから/どこへ」を先に聞く。所持金からは通常運用、貯金からは漏れなので警告を残す */
-      if(a==="topup"){
-        const src=prompt("軍資金へ入金します。\nどこから移しますか?\n\n1 = 所持金から\n2 = 貯金から", "1");
-        if(src===null)return;
-        const fromSavings=(String(src).trim()==="2");
-        const p=prompt("入金額(円)\n"+(fromSavings?"貯金 → 軍資金":"所持金 → 軍資金"),""); if(p===null)return;
-        const amt=num(p); if(amt<=0)return;
-        if(fromSavings && !confirm("貯金から ¥"+amt.toLocaleString("ja-JP")+"\n\nこれは負けを外の金で埋める行為です。あなたの20年来の漏れそのもの。本当に移しますか?")) return;
-        (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"topup",amount:String(amt),from:(fromSavings?"savings":"wallet")});
-        if(fromSavings){ S.savings=S.savings||{txns:[]}; (S.savings.txns=S.savings.txns||[]).push({id:uid(),date:todayStr(),type:"withdraw",amount:String(amt)}); }
-        save(); render(); return; }
-      if(a==="sweepover"){ const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000));
-        const p=prompt("貯金へ移す額(円)\n軍資金 → 貯金", String(over)); if(p===null)return; const amt=num(p); if(amt<=0)return;
-        (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"sweep",amount:String(amt)}); save(); render(); return; }
-      if(a==="sweep"){
-        const dst=prompt("軍資金から出金します。\nどこへ移しますか?\n\n1 = 貯金へ(上限超えの回収)\n2 = 所持金へ", "1");
-        if(dst===null)return;
-        const toWallet=(String(dst).trim()==="2");
-        const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000));
-        const p=prompt("出金額(円)\n"+(toWallet?"軍資金 → 所持金":"軍資金 → 貯金"), toWallet?"":String(over));
-        if(p===null)return; const amt=num(p); if(amt<=0)return;
-        (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:(toWallet?"return":"sweep"),amount:String(amt)});
-        save(); render(); return; }
       if(a==="adjust"){ const p=prompt("残高のズレを補正(円・マイナス可)\n実際の残高と合わない分を入れてください。",""); if(p===null)return; const amt=num(p); if(amt===0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt)}); save(); render(); return; }
       if(a==="txndel"){ if(confirm("この記録を削除?")){ b.txns=(b.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
     };
@@ -3453,6 +3434,15 @@ function transferAccounts(){
              {id:ACC_BANK,   name:"軍資金", bal:bankBalance()}];
   savingsPots().forEach(p=>out.push({id:String(p.id), name:p.name, bal:savingsBalance(p.id)}));
   return out;
+}
+/* v4.05: 各台帳から記帳画面(振替モード)へ飛ばす。**入口は複数・実装は1つ**——
+   貯金画面で残高を見て「移そう」と思った瞬間に操作できないと摩擦になる(v3.67の教訓) */
+function openTransfer(fromId, toId, backScreen, amount){
+  UI.editEntryId=null;
+  UI.entryForm={date:todayStr(), type:"transfer", category:"", amount:(amount?String(amount):""), store:"", item:"", memo:""};
+  UI.trFrom=fromId?String(fromId):""; UI.trTo=toId?String(toId):""; UI.trAmt="";
+  UI.entryReturn=backScreen||"main";
+  UI.screen="entry"; render();
 }
 function doTransfer(from, to, amt, date){
   const d=date||todayStr(), sv=S.savings, bk=S.bank;
@@ -3513,32 +3503,8 @@ function viewSavings(){
   }
   h+='</div>';
 
-  /* ---- 振替(v4.03: 左右2カラム。折り返しで幅がバラつく横並びチップをやめ、
-         同じ並びの列を「から」「へ」で対にする。行が揃うので目で追える) ---- */
-  h+=band("振替");
-  const accs=transferAccounts();
-  const opt=(a,sel,act)=>'<button class="btn" data-sa="'+act+'" data-v="'+a.id+'" style="width:100%;text-align:left;padding:8px 9px;margin-bottom:5px;border-radius:9px;'+
-    (sel?'border-color:var(--teal);background:rgba(47,212,181,.10)':'')+'">'+
-    '<div style="font-size:11px;font-weight:700;color:'+(sel?'var(--teal)':'var(--text)')+'">'+esc(a.name)+'</div>'+
-    '<div class="mono" style="font-size:10px;color:'+(sel?'var(--teal)':'var(--muted)')+'">¥'+a.bal.toLocaleString("ja-JP")+'</div></button>';
-  const trReady = UI.trFrom && UI.trTo && String(UI.trFrom)!==String(UI.trTo);
-  h+='<div class="card" style="margin-bottom:14px">';
-  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-     '<div><div class="muted" style="font-size:10px;margin-bottom:5px">振替元</div>'+
-       accs.map(a=>opt(a,String(UI.trFrom||"")===a.id,"trfrom")).join("")+'</div>'+
-     '<div><div class="muted" style="font-size:10px;margin-bottom:5px">振替先</div>'+
-       accs.map(a=>String(a.id)===String(UI.trFrom||"")
-         ? '<div style="height:44px;margin-bottom:5px"></div>'      /* 行を対応させるため空けておく */
-         : opt(a,String(UI.trTo||"")===a.id,"trto")).join("")+'</div>'+
-     '</div>';
-  h+='<div class="row" style="gap:8px;align-items:center;margin-top:6px">'+
-    '<input id="tramt" class="input mono r" type="number" inputmode="numeric" placeholder="金額" value="'+esc(String(UI.trAmt||""))+'" style="flex:1;font-size:17px;font-weight:700">'+
-    '<button class="btn'+(trReady?' tealb':'')+'" data-sa="trgo" style="flex-shrink:0;padding:11px 18px;font-weight:700;font-size:13px'+(trReady?'':';opacity:.4')+'">振替</button></div>';
-  if(trReady){
-    const fa=accs.find(a=>a.id===String(UI.trFrom)), ta=accs.find(a=>a.id===String(UI.trTo));
-    if(fa&&ta) h+='<div class="teal" style="font-size:11px;margin-top:8px;text-align:center;font-weight:700">'+esc(fa.name)+' → '+esc(ta.name)+'</div>';
-  }
-  h+='</div>';
+  /* v4.05: 振替の実装は記帳画面へ移した。ここは導線だけ残す(操作できない台帳は不便) */
+  h+='<button class="btn tealb full" style="padding:11px 0;font-weight:700;font-size:13px;margin-bottom:14px" data-sa="gotr">振替する</button>';
 
   /* ---- 箱: 残高 + 目標 + 進捗 ---- */
   h+=band("箱");
@@ -3586,29 +3552,11 @@ function viewSavings(){
   return h;
 }
 function bindSavings(){
-  /* v4.02: 金額入力はDOMから直に読む(再描画で消えないようUI.trAmtへ保持) */
-  const amtEl=document.getElementById("tramt");
-  if(amtEl) amtEl.oninput=e=>{ UI.trAmt=e.target.value; };
   document.querySelectorAll("[data-sa]").forEach(el=>{
     const a=el.dataset.sa, v=el.dataset.v, sv=S.savings;
     el.onclick=(ev)=>{
       if(a==="back"){ UI.screen="main"; render(); return; }
-      /* --- 振替: タップで選ぶ(v4.02) --- */
-      if(a==="trfrom"){ UI.trFrom=(String(UI.trFrom||"")===String(v))?"":String(v);
-        if(String(UI.trTo||"")===String(UI.trFrom)) UI.trTo=""; render(); return; }
-      if(a==="trto"){ UI.trTo=(String(UI.trTo||"")===String(v))?"":String(v); render(); return; }
-      if(a==="trgo"){
-        const el2=document.getElementById("tramt");
-        const amt=num(el2?el2.value:UI.trAmt);
-        if(!UI.trFrom||!UI.trTo||String(UI.trFrom)===String(UI.trTo)){ toast("振替元と振替先を選んでください"); return; }
-        if(amt<=0){ toast("金額を入れてください"); return; }
-        const accs=transferAccounts();
-        const fa=accs.find(x=>x.id===String(UI.trFrom)), ta=accs.find(x=>x.id===String(UI.trTo));
-        if(!fa||!ta) return;
-        if(amt>fa.bal && !confirm(fa.name+"の残高 ¥"+fa.bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
-        if(!doTransfer(fa.id, ta.id, amt)) return;
-        UI.trAmt=""; save(); render(); toast(fa.name+" → "+ta.name+" ¥"+amt.toLocaleString("ja-JP")); return;
-      }
+      if(a==="gotr"){ openTransfer("", "", "savings"); return; }
       if(a==="adjust"){
         const pots=savingsPots();
         let pid=pots[0].id;
@@ -4508,15 +4456,42 @@ function viewEntry(){
     '<input class="input" id="e-item" list="e-itemlist" placeholder="品目(任意)" value="'+esc(f.item||"")+'" autocomplete="off" style="margin-bottom:'+(itemChips?"6":"14")+'px">'+
     '<datalist id="e-itemlist">'+entryItemHintsFor(f.store).map(v=>'<option value="'+esc(v)+'"></option>').join("")+'</datalist>'+
     itemChips+amtChips;
+  /* v4.05: **振替を記帳画面へ移植(ユーザー設計)**。金を動かす行為の入口を1箇所に集約し、
+     貯金・軍資金の各画面は「見る」台帳に純化させる。振替は収支ではないので
+     S.entriesには一切書かず、doTransfer経由で各台帳のtxnになる(当月収支は動かない=v3.80の定義通り)。
+     編集中(editEntryId!==null)はタイプを切り替えさせない——既存の収支エントリを振替に化けさせないため */
+  const isTr = (f.type==="transfer");
+  let trHtml="";
+  if(isTr){
+    const accs=transferAccounts();
+    const opt=(a,sel,act)=>'<button class="btn" data-a="'+act+'" data-v="'+a.id+'" style="width:100%;text-align:left;padding:8px 9px;margin-bottom:5px;border-radius:9px;'+
+      (sel?'border-color:var(--teal);background:rgba(47,212,181,.10)':'')+'">'+
+      '<div style="font-size:11px;font-weight:700;color:'+(sel?'var(--teal)':'var(--text)')+'">'+esc(a.name)+'</div>'+
+      '<div class="mono" style="font-size:10px;color:'+(sel?'var(--teal)':'var(--muted)')+'">¥'+a.bal.toLocaleString("ja-JP")+'</div></button>';
+    trHtml='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">'+
+      '<div><div class="muted" style="font-size:10px;margin-bottom:5px">振替元</div>'+
+        accs.map(a=>opt(a,String(UI.trFrom||"")===a.id,"trfrom")).join("")+'</div>'+
+      '<div><div class="muted" style="font-size:10px;margin-bottom:5px">振替先</div>'+
+        accs.map(a=>String(a.id)===String(UI.trFrom||"")
+          ? '<div style="height:44px;margin-bottom:5px"></div>'
+          : opt(a,String(UI.trTo||"")===a.id,"trto")).join("")+'</div></div>';
+    const fa=accs.find(a=>a.id===String(UI.trFrom)), ta=accs.find(a=>a.id===String(UI.trTo));
+    if(fa&&ta&&fa!==ta) trHtml+='<div class="teal" style="font-size:11px;margin-bottom:12px;text-align:center;font-weight:700">'+esc(fa.name)+' → '+esc(ta.name)+'</div>';
+    else trHtml+='<div class="muted" style="font-size:10px;margin-bottom:12px;text-align:center">振替元と振替先を選んでください</div>';
+    trHtml+='<div class="muted" style="font-size:10px;margin:0 2px 12px;line-height:1.7">振替は収支に含まれません。<br>財布の間で金が動いただけだからです。</div>';
+  }
+  const TYPES = UI.editEntryId!==null ? [["expense","支出"],["income","収入"]]
+                                      : [["expense","支出"],["income","収入"],["transfer","振替"]];
   return '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">'+(UI.editEntryId!==null?"記録を編集":"記録を追加")+'</div><div style="width:44px"></div></div>'+
+    '<div style="font-size:14px;font-weight:700">'+(UI.editEntryId!==null?"記録を編集":isTr?"振替":"記録を追加")+'</div><div style="width:44px"></div></div>'+
     '<div class="row" style="gap:8px;margin-bottom:12px">'+
-    [["expense","支出"],["income","収入"]].map(([v,l])=>
+    TYPES.map(([v,l])=>
       '<button class="btn '+(f.type===v?"sel":"")+'" style="flex:1" data-a="etype" data-v="'+v+'">'+l+'</button>').join("")+'</div>'+
     '<div class="row" style="gap:8px;margin-bottom:12px">'+
     '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="flex:1">'+
     '<input class="input mono r" type="number" inputmode="numeric" id="e-amount" placeholder="金額" value="'+esc(f.amount)+'" style="flex:1"></div>'+
-    (f.type==="expense"
+    (isTr ? trHtml
+      : f.type==="expense"
       ? ((f.tmode && UI.editEntryId===null) ? '' :
         '<div class="muted" style="font-size:11px;margin:0 2px 6px">支出の分類</div>'+
         '<div class="row" style="gap:8px;margin-bottom:12px">'+
@@ -4526,11 +4501,11 @@ function viewEntry(){
         /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
            日付はフォームの値を引き継ぐ */
         (UI.editEntryId===null?'<button class="btn full" style="margin-bottom:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''))+
-    transHtml + (composerHtml || fieldsHtml) +
+    (isTr ? '' : transHtml + (composerHtml || fieldsHtml)) +
     (UI.editEntryId!==null?'<button class="btn full" style="margin-bottom:8px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="tofixed">この内容で固定費に登録</button>':'')+
     '<div class="row" style="gap:8px">'+
     (UI.editEntryId!==null?'<button class="btn danger" data-a="edel">削除</button>':'')+
-    '<button class="btn primary" style="flex:1" data-a="esave">'+(UI.editEntryId!==null?"更新する":"追加する")+'</button></div>';
+    '<button class="btn primary" style="flex:1" data-a="esave">'+(UI.editEntryId!==null?"更新する":isTr?"振り替える":"追加する")+'</button></div>';
 }
 function bindEntry(){
   const f = UI.entryForm;
@@ -4547,7 +4522,10 @@ function bindEntry(){
     el.onclick = ()=>{
       const a=el.dataset.a, v=el.dataset.v;
       if(a==="back"){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }
-      else if(a==="etype"){ f.type=v; f.category = v==="expense"?"消費":"給与"; render(); }
+      else if(a==="etype"){ f.type=v; if(v!=="transfer") f.category = v==="expense"?"消費":"給与"; render(); }
+      else if(a==="trfrom"){ UI.trFrom=(String(UI.trFrom||"")===String(v))?"":String(v);
+        if(String(UI.trTo||"")===String(UI.trFrom)) UI.trTo=""; render(); }
+      else if(a==="trto"){ UI.trTo=(String(UI.trTo||"")===String(v))?"":String(v); render(); }
       else if(a==="todai"){ UI.tab="games"; UI.gameSub="slot";
           UI.draft={id:uid(),date:(f.date||todayStr()),store:"",mode:"dai",partnerName:"",fee:"",startAt:"",endAt:"",
             exchange:S.rates.exchange||"",pExchange:S.rates.pExchange||"",pushPayout:S.rates.pushPayout||"",pushDraw:S.rates.pushDraw||"",machines:[],expenses:[],memo:""};
@@ -4597,6 +4575,22 @@ function bindEntry(){
       else if(a==="esave"){
         const amt = num(f.amount);
         if(!f.date || amt<=0) return;
+        /* v4.05: 振替はS.entriesに書かない(収支ではない)。doTransferが各台帳のtxnへ落とす */
+        if(f.type==="transfer"){
+          if(!UI.trFrom||!UI.trTo||String(UI.trFrom)===String(UI.trTo)){ toast("振替元と振替先を選んでください"); return; }
+          const accs=transferAccounts();
+          const fa=accs.find(x=>x.id===String(UI.trFrom)), ta=accs.find(x=>x.id===String(UI.trTo));
+          if(!fa||!ta) return;
+          if(amt>fa.bal && !confirm(fa.name+"の残高 ¥"+fa.bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
+          /* v4.05: 旧軍資金画面(v3.82)にあった警告をここへ移植。**貯金から軍資金への補充=負けを外の金で埋める行為**で、
+             これがアプリの存在理由そのもの(20年来の漏れ)。入口を集約しても警告は絶対に落とさない */
+          if(fa.id!==ACC_WALLET && fa.id!==ACC_BANK && ta.id===ACC_BANK){
+            if(!confirm("貯金から ¥"+amt.toLocaleString("ja-JP")+"\n\nこれは負けを外の金で埋める行為です。あなたの20年来の漏れそのもの。本当に移しますか?")) return;
+          }
+          if(!doTransfer(fa.id, ta.id, amt, f.date)) return;
+          save(); toast(fa.name+" → "+ta.name+" ¥"+amt.toLocaleString("ja-JP"));
+          UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); return;
+        }
         /* v3.31: 交通コンポーザの合成(新規のみ)。表記規約を構造で強制し、データは従来の文字列規約に落とす */
         if(f.type==="expense" && f.tmode && UI.editEntryId===null){
           if(f.tmode==="駐輪"){ const pl=(f.tplace||"").trim(); if(!pl) return; f.store=pl; f.item="駐輪"; }
