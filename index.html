@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.87 (localStorage保存・完全オフライン)
+   Tally 3.88 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.87";
+const APP_VERSION = "3.88";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1230,8 +1230,12 @@ function viewLedger(){
       h += '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
         '<span><span style="font-size:12px;font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span>'+
         '<span class="mono muted" style="font-size:10px"> ¥'+spent.toLocaleString("ja-JP")+' / ¥'+cap.toLocaleString("ja-JP")+'</span></span>'+
-        '<span><span class="mono '+(over>0?colCls:"")+'" style="font-size:17px;font-weight:700">'+
-        (over>0?'−¥'+over.toLocaleString("ja-JP"):'¥'+Math.max(0,cap-spent).toLocaleString("ja-JP"))+'</span>'+
+        /* v3.88: 主役の数字に1語のラベルを付ける。無名の数字は意味が伝わらず、
+           かつ「残り(あと使える)」と貯金の「あと(あと入れる)」は意味が正反対なので語で方向を示す。
+           数字の色は通常時は統一(白)——色はバーが担い、逸脱(超過/達成)の時だけ点く */
+        '<span><span class="mono muted" style="font-size:10px">'+(over>0?'超過':'残り')+'</span> '+
+        '<span class="mono '+(over>0?colCls:"")+'" style="font-size:17px;font-weight:700">'+
+        '¥'+(over>0?over:Math.max(0,cap-spent)).toLocaleString("ja-JP")+'</span>'+
         '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
         /* v3.86: 残額をバーの中へ。空のバーは情報を持たないので、そこに数字を置けば行が1つ減り視認性も上がる。
            「所持金に合わせた枠」の注記は撤去(自分で設定した仕組みなので説明不要・シンプルさを損なう) */
@@ -1253,8 +1257,9 @@ function viewLedger(){
           '<div class="row between" style="align-items:baseline">'+
           '<span><span class="muted" style="font-size:11px">'+esc(gn)+'</span>'+
           '<span class="mono muted" style="font-size:9px"> ¥'+gspent.toLocaleString("ja-JP")+' / ¥'+gcap.toLocaleString("ja-JP")+'</span></span>'+
+          '<span><span class="mono muted" style="font-size:9px">'+(gover>0?'超過':'残り')+'</span> '+
           '<span class="mono '+(gover>0?"red":"muted")+'" style="font-size:13px;font-weight:700">'+
-          (gover>0?'−¥'+gover.toLocaleString("ja-JP"):'¥'+(gcap-gspent).toLocaleString("ja-JP"))+'</span></div>'+
+          '¥'+(gover>0?gover:(gcap-gspent)).toLocaleString("ja-JP")+'</span></span></div>'+
           '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:'+(gover>0?"var(--red)":"var(--muted)")+'"></div></div></div>';
       });
     }
@@ -1283,7 +1288,10 @@ function viewLedger(){
       '<div class="row between" style="align-items:baseline">'+
       '<span><span style="font-size:12px;font-weight:700">'+nm+'</span>'+
       '<span class="mono muted" style="font-size:10px"> ¥'+done.toLocaleString("ja-JP")+(target>0?' / ¥'+target.toLocaleString("ja-JP"):'')+'</span></span>'+
-      '<span><span class="mono teal" style="font-size:17px;font-weight:700">'+
+      /* v3.88: 「あと」=これから入れる額(消費の「残り」=これから使える額と方向が逆なので語で示す)。
+         常時tealをやめ、達成した時だけ色が点く(逸脱・到達のときだけ色を使う原則) */
+      '<span>'+(left2>0?'<span class="mono muted" style="font-size:10px">あと</span> ':'')+
+      '<span class="mono '+(left2>0?'':'teal')+'" style="font-size:17px;font-weight:700">'+
       (target>0?(left2>0?'¥'+left2.toLocaleString("ja-JP"):'達成'):'—')+'</span>'+
       '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
       '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+pct2+'%;background:var(--teal)"></div></div></div>';
