@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.94 (localStorage保存・完全オフライン)
+   Tally 3.95 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -703,7 +703,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.94";
+const APP_VERSION = "3.95";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -713,6 +713,9 @@ function render(){
     const _ip=mjtInProgress(UI.mjt);
     UI.rulesOpen=!_ip; UI.chipsOpen=!_ip; UI.feesOpen=false;
   }
+  /* v3.95: 削除モードもエフェメラル(v3.00の思想)。他画面から一覧へ入るたび必ず解除し、
+     「前に開いた時の削除モードが生きていた」という最悪の事故を構造的に消す */
+  if(UI.screen==="mjtlist" && RENDER_PREV_SCREEN!=="mjtlist") UI.mjtDelMode=false;
   RENDER_PREV_SCREEN = UI.screen;
   _renderBody();
   /* タブ・画面・遊技サブタブが変わった時だけ先頭へ。同一画面の再描画は位置を保持 */
@@ -730,12 +733,40 @@ function navHtml(){
      文言でなくバックアップ画面の説明が担う(同じ行を2つの書式で持たない) */
   return tabBar() + '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 }
+/* v3.95: **navbarの無い画面に「戻る」バーを出す**(ユーザー設計・案B)。
+   従来は戻るがヘッダー左上にしか無く、下へスクロールすると一度上まで戻らないと画面を出られなかった。
+   しかもiPhoneの上端は片手だと届かないので「スクロール+持ち替え」の二重苦だった。
+   #navbarは既に#appの兄弟でフロー最下段・--navh実測注入・フェード帯・safe-area対応が済んでいるので、
+   非表示にしていた枠にバーを入れるだけで済む(新しい浮遊物は作らない=v3.04の方針を維持)。
+   保存インジケーターもここへ同居させ、v3.94の「本文末尾へ追記」という間に合わせを廃止した。 */
+function subNavHtml(){
+  return '<div class="tabs"><button data-a="subback" aria-label="前の画面へ戻る">'+TAB_ICONS.back+'<span>戻る</span></button></div>'+
+    '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
+}
+/* 戻る先の判定は各画面の既存ハンドラに任せ、**ヘッダーの戻るボタンをclick()するだけ**にする。
+   属性名は画面ごとにdata-a/wa/sa/mt/lk/iv/fa/bu/baとバラバラだが、全て.navbtnで先頭が「‹」。
+   ここで遷移先を書くと同じ挙動が2箇所に増える(v3.63の教訓)ので絶対に書かないこと */
+function goBackViaHeader(){
+  const btns = document.querySelectorAll("#app .navbtn");
+  for(let i=0;i<btns.length;i++){
+    if(((btns[i].textContent||"").trim()).indexOf("‹")===0){ btns[i].click(); return; }
+  }
+  UI.screen="main"; render();   /* ヘッダーに戻るが無い画面の保険 */
+}
+/* 下バーを出さない画面: mjsheet=共有される紙面 / mjplay=既にstickyヘッダーに「‹」があり
+   下端はsticky キーパッドが使っている */
+const SUBNAV_SKIP = ["main","mjsheet","mjplay"];
 function _renderBody(){
   const app = document.getElementById("app");
   const navbar = document.getElementById("navbar");
   if(navbar){
     if(UI.screen==="main"){ navbar.innerHTML = navHtml(); navbar.style.display=""; }
-    else { navbar.innerHTML = ""; navbar.style.display = "none"; }
+    else if(SUBNAV_SKIP.indexOf(UI.screen)>=0){ navbar.innerHTML = ""; navbar.style.display = "none"; }
+    else {
+      navbar.innerHTML = subNavHtml(); navbar.style.display="";
+      const bb = navbar.querySelector('[data-a="subback"]');
+      if(bb) bb.onclick = goBackViaHeader;
+    }
     /* ナビバー実高を--navhへ(インジケーター行追加等で背が変わっても自動追随) */
     document.documentElement.style.setProperty("--navh", (navbar.offsetHeight||0)+"px");
   }
@@ -743,10 +774,9 @@ function _renderBody(){
      エラーは隠さず表示し、ナビバーを強制表示して健全なタブへ逃がす。データはlocalStorageに無傷で残る */
   try{
     _renderScreen(app);
-    /* v3.94: navbarが無い画面(=作業中の画面)にも保存インジケーターを必ず出す。
-       規律でなく構造で担保する——view側に書くと今回のように書き忘れた画面が生まれる。
-       除外はmjsheetのみ(共有される紙面なので余計なものを焼き込まない) */
-    if(app && UI.screen!=="main" && UI.screen!=="mjsheet"){
+    /* v3.95: 保存インジケーターは下バー(subNavHtml)へ移した。
+       下バーを出さない画面のうちmjplayだけは本文末尾に残す(mjsheetは共有紙面なので出さない) */
+    if(app && UI.screen==="mjplay"){
       app.insertAdjacentHTML("beforeend", saveIndicatorHtml());
     }
   }
@@ -804,6 +834,8 @@ const monthNav = () =>
   '<button class="navbtn" style="font-size:22px;padding:0 12px" data-a="mnext">›</button></div>';
 
 const TAB_ICONS = {
+  /* v3.95: 下バー用。他のタブアイコンと同じ線画様式(stroke1.7・丸端)で揃える */
+  back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>',
   ledger: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-1.8-1.5-4.2-2-8-2v14c3.8 0 6.2.5 8 2 1.8-1.5 4.2-2 8-2V4c-3.8 0-6.2.5-8 2z"/><path d="M12 6v14"/></svg>',
   games: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.6 19.6 7v9.8L12 21.4 4.4 16.8V7z"/><path d="M4.4 7 12 11.4l7.6-4.4M12 11.4v10"/><g fill="currentColor" stroke="none"><circle cx="12" cy="6.9" r="1.15"/><circle cx="8.2" cy="12.9" r="1.05"/><circle cx="8.2" cy="16.4" r="1.05"/><circle cx="14.3" cy="12.7" r="1"/><circle cx="15.8" cy="14.5" r="1"/><circle cx="17.3" cy="16.3" r="1"/></g></svg>',
   assets: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 19.5v-6.2M8.1 19.5v-9.8M12 19.5v-4.6M15.9 19.5v-13.8M19.8 19.5v-8.6"/></svg>',
@@ -1536,9 +1568,18 @@ function mjStatRow(label, val, isYen, raw, unit){
 /* カテゴリ別ツールの受け皿。投資はツールでなく資産タブの投資台帳(v3.18)が担当——プレースホルダーはv3.29で廃止済み。 */
 /* ---------- 麻雀スコア表 一覧(専用画面) ---------- */
 function viewMjtList(){
-  let h = '<div class="hdr"><button class="navbtn" data-a="mjtlback">‹ 戻る</button><div style="font-size:14px;font-weight:700">麻雀 スコア表</div><div style="width:44px"></div></div>';
-  h += '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">当日のセットの半荘ごとのスコアを記録・集計します。</div>';
+  /* v3.95: 削除はここが唯一の入口(スコア表画面からは撤去)。
+     v2.89で確立した**削除モード方式**を踏襲——行内に×を浮かせず、モード中だけ削除チップを出し、
+     1件削除で自動解除する。進行中の卓を触っている最中に消える経路を構造的に無くすのが狙い */
   const tables = (S.mjTables||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
+  const delMode = !!UI.mjtDelMode && tables.length>0;
+  let h = '<div class="hdr"><button class="navbtn" data-a="mjtlback">‹ 戻る</button><div style="font-size:14px;font-weight:700">麻雀 スコア表</div>'+
+    (tables.length
+      ? '<button class="navbtn" data-a="mjtdelmode" style="font-size:12px;color:'+(delMode?"var(--muted)":"var(--red)")+'">'+(delMode?"完了":"削除")+'</button>'
+      : '<div style="width:44px"></div>')+'</div>';
+  h += '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">'+
+    (delMode ? '消すスコア表の「削除」を押してください。<br>1件消すと削除モードは解除されます。'
+             : '当日のセットの半荘ごとのスコアを記録・集計します。')+'</div>';
   if(!tables.length) h += '<div class="muted" style="text-align:center;padding:22px 0;font-size:13px">まだスコア表がありません。下から作成できます。</div>';
   tables.forEach(t=>{
     const names = (t.players||[]).map((p,i)=>p||("P"+(i+1))).join("・");
@@ -1547,18 +1588,20 @@ function viewMjtList(){
     const title = (t.ruleName||"").trim() || "ルール未設定";
     const hasMe = t.meIdx!=null && (t.players||[])[t.meIdx]!=null;
     const meNet = hasMe ? mjtSettle(t).pays[t.meIdx] : null;   /* 端数調整・場代移転込みの精算値 */
-    h += '<div class="listitem" data-a="mjtopen" data-v="'+t.id+'">'+
+    h += '<div class="listitem"'+(delMode?'':' data-a="mjtopen" data-v="'+t.id+'"')+'>'+
       '<div style="flex:1;min-width:0"><div class="row" style="font-size:13px;gap:6px;align-items:center">'+
       '<span class="mono muted" style="font-size:11px;flex-shrink:0">'+t.date.slice(5).replace("-","/")+'</span>'+
       '<span class="tag" style="border:1px solid var(--teal);color:var(--teal);flex-shrink:0">'+seats+'人</span>'+
       '<span class="ellip" style="font-weight:700">'+esc(title)+'</span></div>'+
       '<div class="muted ellip" style="font-size:11px;margin-top:3px">'+esc(names)+' ・ '+rounds+'半荘</div></div>'+
-      (hasMe
-        ? '<div class="mono '+clsPM(meNet)+'" style="font-size:16px;font-weight:700;flex-shrink:0;margin-left:8px">'+signYen(meNet)+'</div>'
-        : '<span style="font-size:18px;color:var(--muted);flex-shrink:0;margin-left:8px">›</span>')+
+      (delMode
+        ? '<button class="btn" data-a="mjtdel" data-v="'+t.id+'" style="flex-shrink:0;margin-left:8px;height:36px;padding:0 12px;font-size:12px;color:var(--red);border-color:var(--red)">削除</button>'
+        : hasMe
+          ? '<div class="mono '+clsPM(meNet)+'" style="font-size:16px;font-weight:700;flex-shrink:0;margin-left:8px">'+signYen(meNet)+'</div>'
+          : '<span style="font-size:18px;color:var(--muted);flex-shrink:0;margin-left:8px">›</span>')+
       '</div>';
   });
-  h += '<button class="btn dash full" style="padding:13px 0;margin-top:4px" data-a="mjtnew">＋ 新しいスコア表</button>';
+  if(!delMode) h += '<button class="btn dash full" style="padding:13px 0;margin-top:4px" data-a="mjtnew">＋ 新しいスコア表</button>';
   return h;
 }
 function bindMjtList(){
@@ -1568,6 +1611,26 @@ function bindMjtList(){
       if(a==="mjtlback"){ UI.screen="main"; UI.tab="tool"; render(); return; }
       if(a==="mjtnew"){ UI.mjt=newMjTable(); UI.mjtCell=null; saveMjt(false); UI.screen="mjtable"; render(); return; }
       if(a==="mjtopen"){ const t=(S.mjTables||[]).find(x=>String(x.id)===String(v)); if(t){ UI.mjt=t; UI.mjtCell=null; UI.screen="mjtable"; render(); } return; }
+      if(a==="mjtdelmode"){ UI.mjtDelMode=!UI.mjtDelMode; render(); return; }
+      /* v3.95: 削除の確認は**卓の中身を読み上げてから**聞く。半荘数と同卓者を出せば
+         「どれを消そうとしているか」が分かり、進行中の卓を取り違える事故が減る。
+         収支反映済み(fromTableで生成された遊技セッション)がある場合はその旨も明記する——
+         ただし**セッション自体は消さない**(金の記録は残す。消えるのは卓のスコアだけ) */
+      if(a==="mjtdel"){
+        const t=(S.mjTables||[]).find(x=>String(x.id)===String(v)); if(!t) return;
+        const rounds=(t.rows||[]).filter(r=>r.some(x=>x!=="")).length;
+        const names=(t.players||[]).map((p,i)=>p||("P"+(i+1))).join("・");
+        const linked=(S.mjSessions||[]).some(s=>String(s.fromTable)===String(t.id));
+        let msg="このスコア表を削除します。\n"+t.date.replace(/-/g,"/")+" "+names+"\n"+rounds+"半荘の記録が消えます。";
+        if(linked) msg+="\n\n遊技タブの収支記録は残ります\n(消えるのは半荘ごとのスコアのみ)。";
+        msg+="\n\n元に戻せません。よろしいですか?";
+        if(!confirm(msg)) return;
+        S.mjTables=(S.mjTables||[]).filter(x=>String(x.id)!==String(t.id));
+        if(UI.mjt && String(UI.mjt.id)===String(t.id)){ UI.mjt=null; UI.mjtCell=null; }
+        UI.mjtDelMode=false;   /* v2.89と同じく1件で自動解除 */
+        save(); render(); toast("スコア表を削除しました");
+        return;
+      }
     };
   });
 }
@@ -2026,9 +2089,12 @@ function viewMjTable(){
   const P = t.players;
   const colW = 'style="min-width:54px"';
 
+  /* v3.95: **削除はこの画面から撤去し一覧(mjtlist)へ移した**(ユーザー指摘)。
+     ここは対局中・清算中に開いている画面なので、進行中の卓が消える事故の入口を置かない。
+     一覧なら卓の外から入る場所なので誤爆しにくい */
   let h = '<div class="hdr"><button class="navbtn" data-mt="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">麻雀スコア表</div>'+
-    '<button class="navbtn" data-mt="del" style="color:var(--red)">削除</button></div>';
+    '<div style="width:44px"></div></div>';
 
   /* セッション情報: 日付・時間・ルール名を行文法の1カードへ(日時は1行に統合)
      プレイ時間: 開始=名前入力完了で自動、終了=初回の収支反映で自動。ズレたらここで修正 */
@@ -2380,7 +2446,6 @@ function bindMjTable(){
       if(a==="delpreset"){ mjtDelPreset(el.dataset.v); return; }
       if(a==="back"){ saveMjt(true); UI.screen="mjtlist"; UI.mjt=null; UI.mjtCell=null; UI.rulesOpen=UI.chipsOpen=UI.feesOpen=null; render(); }
       else if(a==="pdf"){ mjtPrint(); }
-      else if(a==="del"){ if(confirm("このスコア表を削除しますか?")){ S.mjTables=(S.mjTables||[]).filter(x=>String(x.id)!==String(t.id)); save(); UI.screen="mjtlist"; UI.mjt=null; UI.mjtCell=null; render(); } }
       else if(a==="rule"){ const nv=el.dataset.v; if(nv!==t.rule && confirm((nv==="3"?"3麻":"4麻")+"に変更しますか?\nウマ・着順計算が"+(nv==="3"?"3人":"4人")+"用に変わります(スコアのデータは消えません)。")){ t.rule=nv; const seats=num(t.rule)||3; while(t.players.length<seats){ t.players.push(String.fromCharCode(65+t.players.length)); t.rows.forEach(r=>r.push("")); t.chipStart.push(""); t.chipEnd.push(""); (t.fees=t.fees||[]).push(""); } UI.mjtCell=null; saveMjt(false); render(); } }
       else if(a==="setme"){ const i=num(el.dataset.v); t.meIdx = (t.meIdx===i?null:i); saveMjt(false); render(); }
       else if(a==="addp"){ if(t.players.length<6){ t.players.push(String.fromCharCode(65+t.players.length)); t.rows.forEach(r=>r.push("")); t.chipStart.push(""); t.chipEnd.push(""); (t.fees=t.fees||[]).push(""); UI.mjtCell=null; saveMjt(false); render(); } }
