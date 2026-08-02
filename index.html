@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.85 (localStorage保存・完全オフライン)
+   Tally 3.86 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.85";
+const APP_VERSION = "3.86";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -936,10 +936,14 @@ function viewCatDrill(){
     const colCls = cat==="娯楽" ? "amber" : "red";
     h += '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:12px;font-weight:700">合計</span>'+
       '<span><span class="mono '+(over>0?colCls:"")+'" style="font-size:16px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span><span class="muted" style="font-size:11px"> / ¥'+cap.toLocaleString("ja-JP")+'</span></span></div>'+
+      /* v3.86: 家計簿と同じ文法(残額はバー内・下段は件数のみ) */
       (over>0
-        ? '<div style="height:16px;background:'+col+';border-radius:8px;display:flex;align-items:center;justify-content:center"><span style="font-size:9px;font-weight:700;color:var(--bg);letter-spacing:.12em">予算オーバー</span></div>'
-        : '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+'"></div></div>')+
-      '<div class="row between" style="font-size:10px;margin-top:5px">'+(over>0?'<span class="'+colCls+'" style="font-weight:700">超過 ¥'+over.toLocaleString("ja-JP")+'</span>':'<span class="muted">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span>')+'<span class="mono muted">'+list.length+'件</span></div>';
+        ? '<div style="height:18px;background:'+col+';border-radius:9px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;font-weight:700;color:var(--bg)">超過 ¥'+over.toLocaleString("ja-JP")+'</span></div>'
+        : '<div style="height:18px;background:var(--surface2);border-radius:9px;position:relative;overflow:hidden">'+
+          '<div style="height:100%;width:'+pct+'%;background:'+col+'"></div>'+
+          '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:9px">'+
+          '<span class="mono muted" style="font-size:10px;font-weight:700">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span></div></div>')+
+      '<div style="text-align:right;font-size:10px;margin-top:4px" class="mono muted">'+list.length+'件</div>';
   } else {
     h += '<div class="row between"><span style="font-size:12px;font-weight:700">合計</span><span class="mono" style="font-size:16px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span></div>';
   }
@@ -1223,21 +1227,15 @@ function viewLedger(){
     if(cap>0){
       h += '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:12px;font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span>'+
         '<span><span class="mono '+colCls+'" style="font-size:15px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span><span class="muted" style="font-size:11px"> / ¥'+cap.toLocaleString("ja-JP")+'</span></span></div>'+
+        /* v3.86: 残額をバーの中へ。空のバーは情報を持たないので、そこに数字を置けば行が1つ減り視認性も上がる。
+           「所持金に合わせた枠」の注記は撤去(自分で設定した仕組みなので説明不要・シンプルさを損なう) */
         (over>0
-        ? '<div style="height:16px;background:'+col+';border-radius:8px;display:flex;align-items:center;justify-content:center"><span style="font-size:9px;font-weight:700;color:var(--bg);letter-spacing:.12em">予算オーバー</span></div>'
-        : '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+'"></div></div>')+
-        /* v3.84: 下段を1行に統合。%はバーが示すので撤去。
-           当座の上限は「これから使える額」であり、所持金は既に過去の支出を差し引いた後なので
-           そこから更に spent を引くのは二重計算(v3.83のバグ)。単独の値として出す */
-        (function(){
-          const head=over>0
-            ? '<span class="'+colCls+'" style="font-weight:700">超過 ¥'+over.toLocaleString("ja-JP")+'</span>'
-            : '<span class="muted">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span>';
-          /* 枠が所持金基準に縮んでいる時だけ、その理由を添える(月枠は設定画面で確認できる) */
-          const why=walletBound ? ' <span class="muted">・ 所持金に合わせた枠</span>' : '';
-          return '<div class="row between" style="font-size:10px;margin-top:5px">'+
-            '<span>'+head+why+'</span><span class="mono muted">内訳を見る</span></div>';
-        })();
+        ? '<div style="height:18px;background:'+col+';border-radius:9px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;font-weight:700;color:var(--bg)">超過 ¥'+over.toLocaleString("ja-JP")+'</span></div>'
+        : '<div style="height:18px;background:var(--surface2);border-radius:9px;position:relative;overflow:hidden">'+
+          '<div style="height:100%;width:'+pct+'%;background:'+col+'"></div>'+
+          '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:9px">'+
+          '<span class="mono muted" style="font-size:10px;font-weight:700">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span></div></div>')+
+        '<div style="text-align:right;font-size:10px;margin-top:4px" class="mono muted">内訳を見る</div>';
     } else {
       h += '<div class="row between" style="align-items:center"><span style="font-size:12px"><span style="font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span> <span class="mono muted">¥'+spent.toLocaleString("ja-JP")+'</span></span><span class="amber" style="font-size:11px">＋ 上限を設定</span></div>';
     }
@@ -1255,9 +1253,11 @@ function viewLedger(){
           '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">'+esc(gn)+'</span>'+
           '<span><span class="mono '+(gover>0?"red":"")+'" style="font-size:12px;font-weight:700">¥'+gspent.toLocaleString("ja-JP")+'</span>'+
           '<span class="muted" style="font-size:10px"> / ¥'+gcap.toLocaleString("ja-JP")+'</span></span></div>'+
-          '<div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:'+(gover>0?"var(--red)":"var(--muted)")+'"></div></div>'+
-          /* v3.84: 残りは(上限−使った)で自明。超過という異常時のみ言葉にする */
-          (gover>0?'<div style="font-size:9px;margin-top:3px" class="red">超過 ¥'+gover.toLocaleString("ja-JP")+'</div>':'')+'</div>';
+          '<div style="height:15px;background:var(--surface2);border-radius:8px;position:relative;overflow:hidden;margin-top:4px">'+
+          '<div style="height:100%;width:'+gpct+'%;background:'+(gover>0?"var(--red)":"var(--muted)")+'"></div>'+
+          '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:8px">'+
+          '<span class="mono '+(gover>0?"red":"muted")+'" style="font-size:9px;font-weight:700">'+
+          (gover>0?'超過 ¥'+gover.toLocaleString("ja-JP"):'残り ¥'+(gcap-gspent).toLocaleString("ja-JP"))+'</span></div></div></div>';
       });
     }
     h += '</div>';
@@ -1285,10 +1285,13 @@ function viewLedger(){
       '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">'+nm+'</span>'+
       '<span><span class="mono teal" style="font-size:15px;font-weight:700">¥'+done.toLocaleString("ja-JP")+'</span>'+
       (target>0?'<span class="muted" style="font-size:11px"> / ¥'+target.toLocaleString("ja-JP")+'</span>':'')+'</span></div>'+
-      '<div class="bar" style="margin-top:6px"><div style="width:'+pct2+'%;background:var(--teal)"></div></div>'+
-      '<div class="row between" style="font-size:10px;margin-top:5px">'+
-      (target>0?'<span class="muted">'+(left2>0?(_isPastM?'未達 ¥':'あと ¥')+left2.toLocaleString("ja-JP"):'達成')+'</span>':'<span class="muted">上限未設定</span>')+
-      '<span class="mono muted">'+nm+'へ ›</span></div></div>';
+      /* v3.86: 消費・娯楽と同じ文法に統一(残額はバー内・下段は導線のみ) */
+      '<div style="height:18px;background:var(--surface2);border-radius:9px;position:relative;overflow:hidden;margin-top:6px">'+
+      '<div style="height:100%;width:'+pct2+'%;background:var(--teal)"></div>'+
+      '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:9px">'+
+      '<span class="mono muted" style="font-size:10px;font-weight:700">'+
+      (target>0?(left2>0?'残り ¥'+left2.toLocaleString("ja-JP"):'達成'):'上限未設定')+'</span></div></div>'+
+      '<div style="text-align:right;font-size:10px;margin-top:4px" class="mono muted">'+nm+'へ ›</div></div>';
   });
   h += '</div>';
 
