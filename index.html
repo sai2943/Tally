@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.06 (localStorage保存・完全オフライン)
+   Tally 4.07 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -737,7 +737,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.06";
+const APP_VERSION = "4.07";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3504,34 +3504,31 @@ function viewSavings(){
   }
   h+='</div>';
 
-  /* v4.05: 振替の実装は記帳画面へ移した。ここは導線だけ残す(操作できない台帳は不便) */
-  h+='<button class="btn tealb full" style="padding:11px 0;font-weight:700;font-size:13px;margin-bottom:14px" data-sa="gotr">振替する</button>';
-
   /* ---- 箱: 残高 + 目標 + 進捗 ---- */
   h+=band("箱");
   pots.forEach(pt=>{
-    /* v4.04: 「既定」の特別扱いを撤去。**どの箱も対等で、2つ以上あればどれでも消せる**
-       (引越しが終われば引越し用の箱は不要になる——消せない方が設計として間違っている) */
-    h+='<div class="card" style="margin-bottom:8px;padding:12px;cursor:pointer" data-sa="potedit" data-v="'+pt.id+'">'+
+    /* v4.04: 「既定」の特別扱いを撤去。どの箱も対等で、2つ以上あればどれでも消せる。
+       v4.07: 操作は**固定費と同じ「編集/調整」の小ボタン方式**に統一(ユーザー指摘)。
+       カード全面タップをやめたので、何が押せるのかが見て分かる */
+    h+='<div class="card" style="margin-bottom:8px;padding:12px">'+
       '<div class="row between" style="align-items:baseline">'+
       '<span style="font-size:13px;font-weight:700">'+esc(pt.name)+'</span>'+
-      '<span><span class="mono'+(pt.done?' teal':'')+'" style="font-size:17px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span>'+
-      (pots.length>1?' <button class="xbtn" style="font-size:13px" data-sa="potdel" data-v="'+pt.id+'">×</button>':'')+'</span></div>';
+      '<span class="mono'+(pt.done?' teal':'')+'" style="font-size:17px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span></div>';
     if(pt.hasTarget){
       h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:8px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
         '<div class="row between" style="font-size:10px;margin-top:5px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+'</span>'+
         '<span class="mono '+(pt.done?'teal':'muted')+'">'+(pt.done?'達成':'あと ¥'+pt.short.toLocaleString("ja-JP"))+'</span></div>';
-    } else {
-      h+='<div class="muted" style="font-size:10px;margin-top:6px">タップで名前と目標額を設定</div>';
     }
-    h+='</div>';
+    h+='<div class="row" style="gap:6px;justify-content:flex-end;margin-top:9px">'+
+      '<button class="btn" style="font-size:10px;padding:3px 12px" data-sa="potedit" data-v="'+pt.id+'">編集</button>'+
+      '<button class="btn" style="font-size:10px;padding:3px 12px" data-sa="adjust" data-v="'+pt.id+'">調整</button>'+
+      (pots.length>1?'<button class="btn" style="font-size:10px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-sa="potdel" data-v="'+pt.id+'">削除</button>':'')+
+      '</div></div>';
   });
-  /* v4.03: 調整は振替カードから追い出す。**振替は金を動かす操作、調整は実残高との差を埋める記録**で
-     まったく別の行為。箱に対する操作なのでここが定位置 */
-  h+='<div class="row" style="gap:8px;margin-top:2px">'+
-    '<button class="btn" style="flex:1;font-size:11px;padding:7px 0;border-style:dashed;color:var(--muted)" data-sa="potadd">＋ 箱を追加</button>'+
-    '<button class="btn" style="flex:1;font-size:11px;padding:7px 0;color:var(--muted)" data-sa="adjust">残高を調整</button></div>'+
-    '<div class="muted" style="font-size:10px;margin-top:5px">調整は実際の口座残高とズレたときに差を埋める記録です。</div>';
+  /* v4.07: 調整は各箱の小ボタンへ移したのでここには置かない。説明文も撤去。
+     振替は**箱の操作を一通り見せた後**に置く方が動線として自然(ユーザー指摘) */
+  h+='<button class="btn full" style="padding:9px 0;font-size:12px;border-style:dashed;color:var(--muted);margin-top:2px" data-sa="potadd">＋ 箱を追加</button>';
+  h+='<button class="btn tealb full" style="padding:11px 0;font-weight:700;font-size:13px;margin-top:10px" data-sa="gotr">振替する</button>';
 
   h+='<div class="card2" style="margin:14px 0;font-size:12px;padding:12px">'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">軍資金からの振替 累計</span><span class="mono teal">¥'+swept.toLocaleString("ja-JP")+'</span></div>'+
@@ -3558,14 +3555,9 @@ function bindSavings(){
     el.onclick=(ev)=>{
       if(a==="back"){ UI.screen="main"; render(); return; }
       if(a==="gotr"){ openTransfer("", "", "savings"); return; }
+      /* v4.07: 箱の行から呼ばれるので、どの箱かはdata-vで確定している(選ばせる必要がない) */
       if(a==="adjust"){
-        const pots=savingsPots();
-        let pid=pots[0].id;
-        if(pots.length>1){
-          const menu=pots.map((x,i)=>(i+1)+". "+x.name+"(¥"+savingsBalance(x.id).toLocaleString("ja-JP")+")").join("\n");
-          const r=prompt("どの箱を調整しますか:\n"+menu,"1"); if(r===null)return;
-          const i=num(r)-1; if(i<0||i>=pots.length) return; pid=pots[i].id;
-        }
+        const pid = v || savingsPots()[0].id;
         const p=prompt("調整額(円・マイナス可)  →  "+potName(pid)+"\n実際の口座残高との差を埋める用です","");
         if(p===null)return; const amt=num(p); if(amt===0)return;
         (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt),potId:pid}); save(); render(); return;
