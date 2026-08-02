@@ -1,9 +1,16 @@
 /* 死んだボタンの検出
    HTMLに出力される data-XX="値" のうち、対応するハンドラ分岐が存在しないものを洗う。
    v3.63(wfapply)・v3.65(gcap)・v3.95(subback)と同型の事故を機械で捕まえる。 */
-const fs = require("fs");
-const path = require("path");
-const ROOT = path.join(__dirname, "..");
+const fs = require("fs"), path = require("path");
+/* v3.97b: 置き場所に依存しないルート探索。
+   iOSのWorking Copyへ手作業で入れるとリポジトリ直下に置かれることがあるため、
+   「自分と同じ階層」→「1つ上」の順に index.html を探す */
+function findRoot(){
+  const c = [__dirname, path.join(__dirname, "..")];
+  for(const d of c){ try{ if(fs.existsSync(path.join(d,"index.html"))) return d; }catch(e){} }
+  return __dirname;
+}
+const ROOT = findRoot();
 const src = fs.readFileSync(path.join(ROOT,"index.html"),"utf8");
 
 /* JSブロックだけを対象にする(HTML地の文の静的属性は除外) */
