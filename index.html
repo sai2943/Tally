@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.03 (localStorage保存・完全オフライン)
+   Tally 4.04 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -465,6 +465,14 @@ function applyData(d){
   /* v4.02: **目標は箱ごとに持つ**(ユーザー設計)。旧goals(順次切り替わる梯子)は廃止。
      既定箱に目標が未設定なら、進行中だった旧goalの目標額を一度だけ引き継ぐ(手で入れ直す手間をなくす)。
      旧goals自体はバックアップの往復のため保持するがUIからは外した */
+  /* v4.04: **potIdの無いtxnに先頭の箱のidを書き込む**(冪等)。
+     これで「potId無し=既定箱」という暗黙の規則が消え、**どの箱も対等になって削除できる**ようになる。
+     意味は変えていない(今まで既定箱として集計していたものを明示するだけ)ので実質無害な移行 */
+  {
+    const first=String(S.savings.pots[0].id);
+    (S.savings.txns||[]).forEach(t=>{ if(t.potId==null||t.potId==="") t.potId=first; });
+    ((S.bank&&S.bank.txns)||[]).forEach(t=>{ if(t.type==="sweep" && (t.potId==null||t.potId==="")) t.potId=first; });
+  }
   if(Array.isArray(d.savings&&d.savings.goals) && S.savings.pots.length){
     const mainPot=S.savings.pots.find(p=>String(p.id)==="main");
     if(mainPot && (mainPot.target==null || mainPot.target==="")){
@@ -729,7 +737,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.03";
+const APP_VERSION = "4.04";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3416,7 +3424,9 @@ function savingsPots(){
   return p.length ? p : [{id:MAIN_POT, name:"貯金"}];
 }
 function potName(id){ const p=savingsPots().find(x=>String(x.id)===String(id)); return p?p.name:"貯金"; }
-function txPot(t){ return String(t.potId||MAIN_POT); }
+function txPot(t){ return String(t.potId || (savingsPots()[0]||{id:MAIN_POT}).id); }
+/* v4.04: potId無しのtxnはapplyDataで先頭の箱へ書き込み済み。ここのフォールバックは
+   万一の取りこぼし用の保険で、**箱の対等性はもう壊さない**(どの箱も削除できる) */
 /* potId省略=全箱合計(総資産用)。指定=その箱だけ */
 function savingsBalance(potId){
   const tx=(S.savings&&S.savings.txns)||[];
@@ -3426,7 +3436,7 @@ function savingsBalance(potId){
   const adj=tx.filter(t=>t.type==="adjust"&&hit(t)).reduce((a,t)=>a+num(t.amount),0);
   /* v4.01: 軍資金からのスイープも箱を持てる(potId無し=既定箱) */
   const bk=((S.bank||{}).txns)||[];
-  const swept=bk.filter(t=>t.type==="sweep" && (potId==null || String(t.potId||MAIN_POT)===String(potId)))
+  const swept=bk.filter(t=>t.type==="sweep" && (potId==null || txPot(t)===String(potId)))
     .reduce((a,t)=>a+num(t.amount),0);
   return swept+dep-wd+adj;
 }
@@ -3514,9 +3524,9 @@ function viewSavings(){
   const trReady = UI.trFrom && UI.trTo && String(UI.trFrom)!==String(UI.trTo);
   h+='<div class="card" style="margin-bottom:14px">';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-     '<div><div class="muted" style="font-size:10px;margin-bottom:5px">から</div>'+
+     '<div><div class="muted" style="font-size:10px;margin-bottom:5px">振替元</div>'+
        accs.map(a=>opt(a,String(UI.trFrom||"")===a.id,"trfrom")).join("")+'</div>'+
-     '<div><div class="muted" style="font-size:10px;margin-bottom:5px">へ</div>'+
+     '<div><div class="muted" style="font-size:10px;margin-bottom:5px">振替先</div>'+
        accs.map(a=>String(a.id)===String(UI.trFrom||"")
          ? '<div style="height:44px;margin-bottom:5px"></div>'      /* 行を対応させるため空けておく */
          : opt(a,String(UI.trTo||"")===a.id,"trto")).join("")+'</div>'+
@@ -3533,12 +3543,13 @@ function viewSavings(){
   /* ---- 箱: 残高 + 目標 + 進捗 ---- */
   h+=band("箱");
   pots.forEach(pt=>{
-    const isMain=pt.id===MAIN_POT;
+    /* v4.04: 「既定」の特別扱いを撤去。**どの箱も対等で、2つ以上あればどれでも消せる**
+       (引越しが終われば引越し用の箱は不要になる——消せない方が設計として間違っている) */
     h+='<div class="card" style="margin-bottom:8px;padding:12px;cursor:pointer" data-sa="potedit" data-v="'+pt.id+'">'+
       '<div class="row between" style="align-items:baseline">'+
-      '<span style="font-size:13px;font-weight:700">'+esc(pt.name)+(isMain?' <span class="muted" style="font-size:9px;font-weight:400">既定</span>':'')+'</span>'+
+      '<span style="font-size:13px;font-weight:700">'+esc(pt.name)+'</span>'+
       '<span><span class="mono'+(pt.done?' teal':'')+'" style="font-size:17px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span>'+
-      (isMain?'':' <button class="xbtn" style="font-size:13px" data-sa="potdel" data-v="'+pt.id+'">×</button>')+'</span></div>';
+      (pots.length>1?' <button class="xbtn" style="font-size:13px" data-sa="potdel" data-v="'+pt.id+'">×</button>':'')+'</span></div>';
     if(pt.hasTarget){
       h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:8px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
         '<div class="row between" style="font-size:10px;margin-top:5px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+'</span>'+
@@ -3620,16 +3631,26 @@ function bindSavings(){
         if(name.trim()) pt.name=name.trim();
         pt.target=(num(tg)>0?String(num(tg)):"");
         save(); render(); return; }
+      /* v4.04: どの箱も削除できる(最後の1つを除く)。**残高と履歴の引き取り先はユーザーが選ぶ**——
+         勝手に特定の箱へ寄せると、目的の違う金が混ざって箱を分けた意味が消える */
       if(a==="potdel"){ if(ev&&ev.stopPropagation) ev.stopPropagation();
-        if(String(v)===MAIN_POT) return;
+        const all=savingsPots();
+        if(all.length<=1){ toast("最後の箱は削除できません"); return; }
+        const others=all.filter(x=>String(x.id)!==String(v));
+        let dest=others[0].id;
+        if(others.length>1){
+          const menu=others.map((x,i)=>(i+1)+". "+x.name+"(¥"+savingsBalance(x.id).toLocaleString("ja-JP")+")").join("\n");
+          const r=prompt("「"+potName(v)+"」の残高と履歴をどの箱へ移しますか:\n"+menu,"1"); if(r===null)return;
+          const i=num(r)-1; if(i<0||i>=others.length) return; dest=others[i].id;
+        }
         const bal=savingsBalance(v);
-        if(!confirm("箱「"+potName(v)+"」を削除します。\n残高 ¥"+bal.toLocaleString("ja-JP")+" と履歴は「"+potName(MAIN_POT)+"」へ移ります。\nよろしいですか?")) return;
-        (sv.txns||[]).forEach(t=>{ if(txPot(t)===String(v)) t.potId=MAIN_POT; });   /* 記録は失わない */
-        ((S.bank||{}).txns||[]).forEach(t=>{ if(t.type==="sweep" && String(t.potId||MAIN_POT)===String(v)) t.potId=MAIN_POT; });
+        if(!confirm("箱「"+potName(v)+"」を削除します。\n残高 ¥"+bal.toLocaleString("ja-JP")+" と履歴は「"+potName(dest)+"」へ移ります。\nよろしいですか?")) return;
+        (sv.txns||[]).forEach(t=>{ if(txPot(t)===String(v)) t.potId=dest; });          /* 記録は失わない */
+        ((S.bank||{}).txns||[]).forEach(t=>{ if(t.type==="sweep" && txPot(t)===String(v)) t.potId=dest; });
         sv.pots=(sv.pots||[]).filter(x=>String(x.id)!==String(v));
         if(String(UI.trFrom||"")===String(v)) UI.trFrom="";
         if(String(UI.trTo||"")===String(v)) UI.trTo="";
-        save(); render(); return; }
+        save(); render(); toast("「"+potName(dest)+"」へ移しました"); return; }
       if(a==="txndel"){ if(confirm("この記録を削除?")){ sv.txns=(sv.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
     };
   });
