@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.00 (localStorage保存・完全オフライン)
+   Tally 4.01 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -719,7 +719,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.00";
+const APP_VERSION = "4.01";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2856,8 +2856,9 @@ function furusatoDue(mk){
   /* isNetEntryはviewMain/viewCatDrillのローカル定数なのでここからは見えない。同じ判定を自前で持つ */
   const _NET=["slot","mahjong"];
   const landed=me.some(e=>e.type==="income"&&!_NET.includes(e.src)&&e.date<=todayStr());
-  /* v4.00: 原資は**紐づけた箱**の残高。未紐づけなら従来通り総額を見る */
-  const covered=Math.max(0, savingsBalance(fs.potId!=null ? fs.potId : undefined));
+  /* v4.01: 箱の紐づけは撤去(ユーザー指摘)。**どの箱から出すかは支出の記帳時に選ぶ**方が自然なので、
+     ここでは「貯金全体で払えるか」だけを見る。払えるなら12月の予算は絞らない */
+  const covered=Math.max(0, savingsBalance());
   const short=Math.max(0, left-covered);              /* フローから確保すべき分 */
   return {target:target, done:done, left:left, covered:Math.min(left,covered), short:short,
           active: !!(inMonth && left>0 && (landed || done>0))};
@@ -3425,8 +3426,47 @@ function savingsBalance(potId){
   const dep=tx.filter(t=>t.type==="deposit"&&hit(t)).reduce((a,t)=>a+num(t.amount),0);
   const wd=tx.filter(t=>t.type==="withdraw"&&hit(t)).reduce((a,t)=>a+num(t.amount),0);
   const adj=tx.filter(t=>t.type==="adjust"&&hit(t)).reduce((a,t)=>a+num(t.amount),0);
-  const swept=(potId==null || String(potId)===MAIN_POT) ? bankSaved() : 0;
+  /* v4.01: 軍資金からのスイープも箱を持てる(potId無し=既定箱) */
+  const bk=((S.bank||{}).txns)||[];
+  const swept=bk.filter(t=>t.type==="sweep" && (potId==null || String(t.potId||MAIN_POT)===String(potId)))
+    .reduce((a,t)=>a+num(t.amount),0);
   return swept+dep-wd+adj;
+}
+/* v4.01: **資金移動を「振替」1つに統一する(ユーザー設計)**。
+   従来は所持金・軍資金・貯金の間の移動が topup / return / sweep / deposit / withdraw と
+   5つの別名で3画面に散っていて、「先取り入金」のように行為の名前が意味を伝えていなかった。
+   財布(所持金・軍資金・各貯金箱)を並べて from→to を選ぶ形に一本化する。
+   **データ構造は変えない**——既存のtxn種別へ機械的にマップするだけなので、過去の記録は無変換で生き続ける。
+   所持金を経由しない移動(軍資金→箱)はsweep、箱→軍資金はwithdraw+topupの組で表す
+   (この組は所持金への影響がプラスマイナスゼロになるため、所持金は動かない) */
+const ACC_WALLET="__wallet__", ACC_BANK="__bank__";
+function transferAccounts(){
+  const out=[{id:ACC_WALLET, name:"所持金", bal:walletBalance()},
+             {id:ACC_BANK,   name:"軍資金", bal:bankBalance()}];
+  savingsPots().forEach(p=>out.push({id:String(p.id), name:p.name+"(貯金)", bal:savingsBalance(p.id)}));
+  return out;
+}
+function doTransfer(from, to, amt, date){
+  const d=date||todayStr(), sv=S.savings, bk=S.bank;
+  const isPot=id=>id!==ACC_WALLET && id!==ACC_BANK;
+  sv.txns=sv.txns||[]; bk.txns=bk.txns||[];
+  if(from===ACC_WALLET && to===ACC_BANK){ bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt)}); }
+  else if(from===ACC_BANK && to===ACC_WALLET){ bk.txns.push({id:uid(),date:d,type:"return",amount:String(amt)}); }
+  else if(from===ACC_WALLET && isPot(to)){ sv.txns.push({id:uid(),date:d,type:"deposit",amount:String(amt),potId:to}); }
+  else if(isPot(from) && to===ACC_WALLET){ sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from}); }
+  else if(from===ACC_BANK && isPot(to)){ bk.txns.push({id:uid(),date:d,type:"sweep",amount:String(amt),potId:to}); }
+  else if(isPot(from) && to===ACC_BANK){
+    /* 所持金を経由させず、出入りを相殺して軍資金へ */
+    sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from});
+    bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt)});
+  }
+  else if(isPot(from) && isPot(to)){
+    /* 箱同士は外部と出入りしないので両側adjust(depositとwithdrawだと所持金が二重に動く) */
+    sv.txns.push({id:uid(),date:d,type:"adjust",amount:String(-amt),potId:from});
+    sv.txns.push({id:uid(),date:d,type:"adjust",amount:String(amt),potId:to});
+  }
+  else return false;
+  return true;
 }
 /* 梯子の進捗はここを見る(既定箱のみ) */
 function ladderBalance(){ return savingsBalance(MAIN_POT); }
@@ -3435,7 +3475,7 @@ function savingsCurGoal(){ return ((S.savings&&S.savings.goals)||[]).find(g=>!g.
 function viewSavings(){
   const sv=S.savings, bal=savingsBalance(), lad=ladderBalance(), goal=savingsCurGoal();
   const swept=bankSaved(), deposited=savingsDeposits();
-  const pots=savingsPots(), fsPot=String((S.furusato||{}).potId||"");
+  const pots=savingsPots();
   let h='<div class="hdr"><button class="navbtn" data-sa="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">貯金</div><div style="width:44px"></div></div>';
   h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">軍資金の天井超え(+EV回収)と先取りが積み上がる場所。<br>目的の違う金は<b>箱</b>で分ける。<br>目標の進捗は「'+esc(potName(MAIN_POT))+'」の残高で測る。</div>';
   h+='<div class="card" style="margin-bottom:12px">';
@@ -3444,11 +3484,10 @@ function viewSavings(){
   if(pots.length>1){
     h+='<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">';
     pots.forEach(pt=>{
-      const pb=savingsBalance(pt.id), isMain=String(pt.id)===MAIN_POT, isFs=String(pt.id)===fsPot;
+      const pb=savingsBalance(pt.id), isMain=String(pt.id)===MAIN_POT;
       h+='<div class="row between" style="align-items:baseline;padding:5px 0">'+
         '<span style="font-size:12px"><span style="font-weight:700">'+esc(pt.name)+'</span>'+
-        (isMain?' <span class="muted" style="font-size:9px">目標の対象</span>':'')+
-        (isFs?' <span class="amber" style="font-size:9px">ふるさと納税の原資</span>':'')+'</span>'+
+        (isMain?' <span class="muted" style="font-size:9px">目標の対象</span>':'')+'</span>'+
         '<span class="mono'+(isMain?' teal':'')+'" style="font-size:15px;font-weight:700">¥'+pb.toLocaleString("ja-JP")+'</span></div>';
     });
     h+='</div>';
@@ -3466,19 +3505,19 @@ function viewSavings(){
     '<div class="row between" style="margin-bottom:5px"><span class="muted">軍資金からのスイープ累計</span><span class="mono teal">¥'+swept.toLocaleString("ja-JP")+'</span></div>'+
     '<div class="row between"><span class="muted">先取り累計</span><span class="mono">¥'+deposited.toLocaleString("ja-JP")+'</span></div></div>';
   h+=band("操作");
+  /* v4.01: 「先取り入金/引き出し」という行為名をやめ**振替**に一本化(ユーザー指摘)。
+     どこからどこへ動かすかを選ぶだけにして、言葉で意味を説明する必要をなくす */
   h+='<div class="row" style="gap:8px;margin-bottom:8px">'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-sa="deposit">先取り入金</button>'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-sa="withdraw">引き出し</button>'+
+    '<button class="btn tealb" style="flex:2;font-size:13px;padding:10px 0;font-weight:700" data-sa="transfer">振替</button>'+
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-sa="adjust">調整</button></div>';
-  if(pots.length>1) h+='<button class="btn full" style="font-size:12px;padding:9px 0;margin-bottom:8px" data-sa="move">箱の間で移す</button>';
+  h+='<div class="muted" style="font-size:10px;margin:-2px 0 10px">所持金・軍資金・各箱の間で動かします。調整は実残高との差を埋める用。</div>';
   /* v4.00: 箱の管理。目的別に分けるための最小限の操作だけ置く */
   h+=band("箱");
   pots.forEach(pt=>{
-    const isMain=String(pt.id)===MAIN_POT, isFs=String(pt.id)===fsPot;
+    const isMain=String(pt.id)===MAIN_POT;
     h+='<div class="listitem"><div style="flex:1;min-width:0;cursor:pointer" data-sa="potedit" data-v="'+pt.id+'">'+
       '<div style="font-size:13px;font-weight:700">'+esc(pt.name)+'</div>'+
       '<div class="muted mono" style="font-size:10px">残高 ¥'+savingsBalance(pt.id).toLocaleString("ja-JP")+(isMain?'(既定・タップで改名)':'(タップで改名)')+'</div></div>'+
-      '<button class="btn" style="flex-shrink:0;height:30px;padding:0 9px;font-size:10px;margin-left:6px;'+(isFs?'color:var(--amber);border-color:var(--amber)':'color:var(--muted)')+'" data-sa="potfuru" data-v="'+pt.id+'">ふるさと</button>'+
       (isMain?'':'<button class="xbtn" style="font-size:13px;flex-shrink:0;margin-left:4px" data-sa="potdel" data-v="'+pt.id+'">×</button>')+'</div>';
   });
   h+='<button class="btn" style="font-size:11px;padding:6px 12px;margin-top:4px;border-style:dashed;color:var(--muted)" data-sa="potadd">＋ 箱を追加</button>';
@@ -3521,36 +3560,30 @@ function bindSavings(){
         const i=num(r)-1;
         return (i>=0 && i<ps.length) ? ps[i].id : null;
       };
-      if(a==="deposit"){ const pid=pickPot("入金する"); if(pid===null)return;
-        const p=prompt("先取り入金する額(円)  →  "+potName(pid),""); if(p===null)return; const amt=num(p); if(amt<=0)return;
-        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"deposit",amount:String(amt),potId:pid}); save(); render(); return; }
-      if(a==="withdraw"){ const pid=pickPot("引き出す"); if(pid===null)return;
-        const p=prompt("引き出す額(円)  →  "+potName(pid),""); if(p===null)return; const amt=num(p); if(amt<=0)return;
-        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"withdraw",amount:String(amt),potId:pid}); save(); render(); return; }
-      if(a==="adjust"){ const pid=pickPot("調整する"); if(pid===null)return;
-        const p=prompt("調整額(円・マイナス可)  →  "+potName(pid),""); if(p===null)return; const amt=num(p); if(amt===0)return;
-        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt),potId:pid}); save(); render(); return; }
-      /* 箱の間の移動。**外部との出入りではないので所持金は動かさない**——
-         出金側にwithdraw、入金側にdepositを立てると所持金が二重に動くため、両方adjustで表現する */
-      if(a==="move"){
-        const from=pickPot("移す元の"); if(from===null)return;
-        const to=pickPot("移す先の"); if(to===null||String(to)===String(from))return;
-        const p=prompt("移す額(円)  "+potName(from)+" → "+potName(to),""); if(p===null)return;
+      /* v4.01: 振替=財布を2つ選んで額を入れるだけ。行為名を覚える必要をなくす */
+      if(a==="transfer"){
+        const accs=transferAccounts();
+        const menu=accs.map((x,i)=>(i+1)+". "+x.name+"  ¥"+x.bal.toLocaleString("ja-JP")).join("\n");
+        const f=prompt("どこから出しますか:\n"+menu,"1"); if(f===null)return;
+        const fi=num(f)-1; if(fi<0||fi>=accs.length) return;
+        const menu2=accs.map((x,i)=>(i+1)+". "+x.name+(i===fi?"  ← 振替元":"")).join("\n");
+        const t=prompt("どこへ入れますか:\n"+menu2,""); if(t===null)return;
+        const ti=num(t)-1; if(ti<0||ti>=accs.length||ti===fi) return;
+        const p=prompt(accs[fi].name+" → "+accs[ti].name+"\n振り替える額(円):",""); if(p===null)return;
         const amt=num(p); if(amt<=0)return;
-        const bal=savingsBalance(from);
-        if(amt>bal && !confirm(potName(from)+"の残高 ¥"+bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
-        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(-amt),potId:from});
-        sv.txns.push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt),potId:to});
-        save(); render(); toast("¥"+amt.toLocaleString("ja-JP")+" を移しました"); return;
+        if(amt>accs[fi].bal && !confirm(accs[fi].name+"の残高 ¥"+accs[fi].bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
+        if(!doTransfer(accs[fi].id, accs[ti].id, amt)) return;
+        save(); render(); toast(accs[fi].name+" → "+accs[ti].name+" ¥"+amt.toLocaleString("ja-JP")); return;
       }
+      if(a==="adjust"){ const pid=pickPot("調整する"); if(pid===null)return;
+        const p=prompt("調整額(円・マイナス可)  →  "+potName(pid)+"\n実際の口座残高との差を埋める用です",""); if(p===null)return;
+        const amt=num(p); if(amt===0)return;
+        (sv.txns=sv.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt),potId:pid}); save(); render(); return; }
       if(a==="potadd"){ const name=prompt("箱の名前(例: ふるさと納税):",""); if(name===null||!name.trim())return;
         (sv.pots=sv.pots||[]).push({id:uid(), name:name.trim()}); save(); render(); return; }
       if(a==="potedit"){ const pt=savingsPots().find(x=>String(x.id)===String(v)); if(!pt)return;
         const name=prompt("箱の名前:",pt.name||""); if(name===null||!name.trim())return;
         const t2=(sv.pots||[]).find(x=>String(x.id)===String(v)); if(t2) t2.name=name.trim(); save(); render(); return; }
-      if(a==="potfuru"){ S.furusato=S.furusato||{};
-        S.furusato.potId = (String(S.furusato.potId||"")===String(v)) ? "" : String(v);
-        save(); render(); toast(S.furusato.potId? potName(v)+"をふるさと納税の原資に" : "紐づけを解除"); return; }
       if(a==="potdel"){ if(String(v)===MAIN_POT) return;
         const bal=savingsBalance(v);
         if(!confirm("箱「"+potName(v)+"」を削除します。\n残高 ¥"+bal.toLocaleString("ja-JP")+" と履歴は「"+potName(MAIN_POT)+"」へ移ります。\nよろしいですか?")) return;
