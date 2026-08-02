@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.79 (localStorage保存・完全オフライン)
+   Tally 3.81 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -450,6 +450,7 @@ function applyData(d){
   S.wishlist = Array.isArray(d.wishlist)?d.wishlist:[];
   S.bank = Object.assign({switch:"",ceiling:"300000",seed:"",txns:[]}, d.bank||{});
   S.savings = Object.assign({goals:[],txns:[]}, d.savings||{});
+  S.wallet = Object.assign({seed:"", seedDate:""}, d.wallet||{});   /* v3.81: 所持金(論理残高)。seed=起点残高 */
   S.budgets = (d.budgets && typeof d.budgets==="object") ? d.budgets : {};
   S.openAddOnLaunch = !!d.openAddOnLaunch;   /* v3.13: ホワイトリスト漏れでトグルが毎起動リセットされていた */
   S.genres = (d.genres && typeof d.genres==="object") ? d.genres : {};   /* v3.16: 店→ジャンル辞書 */
@@ -697,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.79";
+const APP_VERSION = "3.81";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -760,6 +761,7 @@ function _renderScreen(app){
   if(UI.screen==="mjtable"){ app.innerHTML = viewMjTable(); bindMjTable(); return; }
   if(UI.screen==="mjtlist"){ app.innerHTML = viewMjtList(); bindMjtList(); return; }
   if(UI.screen==="budget"){ app.innerHTML = viewBudget(); bindBudget(); return; }
+  if(UI.screen==="wallet"){ app.innerHTML = viewWallet(); bindWallet(); return; }
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
   if(UI.screen==="mdb"){ app.innerHTML = viewMdb(); bindMdb(); return; }
   if(UI.screen==="stores"){ app.innerHTML = viewStores(); bindStores(); return; }
@@ -1153,15 +1155,13 @@ function viewLedger(){
      終わった月に「実行されなかった計画」を引くのは事実の歪曲(7月は貯金していないのに50,000引かれて残金が−30,634になっていた)。
      過去の月は実績のみ、当月・未来は予定込み——アプリ全体の「過去は事実/未来は予定」の原則に揃える */
   const _isPastM = mk < todayStr().slice(0,7);   /* monthKey()は表示中の月なので実際の今月と比較する */
-  const _ps0=preSplit(mk);
-  const svPlan=_isPastM ? _sp62.sv : Math.max(_sp62.sv, _ps0.sv);
-  const ivPlan=_isPastM ? _sp62.iv : Math.max(_sp62.iv, _ps0.iv);
-  const leftover=bal - svPlan - ivPlan;
-  const hasPre=(svPlan+ivPlan)>0;
+  /* v3.80: 見出しを「当月収支」へ差し戻し(ユーザー指摘)。
+     収支は収入−支出という定義の明確な事実であり、計画(先取り)を引いて実態を模擬するのは
+     事実と意図の混在だった。手元にいくら残るかは所持金が語るべき役割。 */
+  const leftover=bal;
   let h = '<div class="card" style="margin-top:10px"><div style="text-align:center;margin:4px 0 6px">'+
-    '<div style="font-size:12px;letter-spacing:.15em" class="muted">'+(hasPre?'当月残金':'当月収支')+(hasFuture?'(予定込)':'')+'</div>'+
+    '<div style="font-size:12px;letter-spacing:.15em" class="muted">当月収支'+(hasFuture?'(予定込)':'')+'</div>'+
     '<div class="mono '+clsPM(leftover)+'" style="font-size:36px;font-weight:700;line-height:1.2">'+signYen(leftover)+'</div>'+
-    (hasPre?'<div class="muted" style="font-size:10px;margin-top:3px">先取り ¥'+(svPlan+ivPlan).toLocaleString("ja-JP")+' を引いた後'+(_isPastM?'(実績)':'')+'</div>':'')+
     '</div>'+
     '<div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px">'+
     '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">収入</div><div class="mono teal" style="font-size:18px;font-weight:700">'+yen(normIncome)+'</div></div>'+
@@ -2548,16 +2548,29 @@ function saveMjt(persist){
 function viewAssets(){
   const bBal=bankBalance(), ceil=num(S.bank.ceiling)||300000;
   const sBal=savingsBalance(), goal=savingsCurGoal();
-  const total=bBal+sBal;
+  const wBal=walletBalance(), wFc=walletForecast();
+  const total=bBal+sBal+wBal;
   const bPct=Math.max(0,Math.min(100, ceil>0?bBal/ceil*100:0));
   let h='';
   h+='<div class="card" style="margin-bottom:14px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">総資産</div>'+
     '<div class="mono teal" style="font-size:34px;font-weight:700;line-height:1.25">¥'+total.toLocaleString("ja-JP")+'</div>'+
     '<div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px">'+
+    '<div style="flex:1;text-align:center"><div class="muted" style="font-size:10px">所持金</div><div class="mono" style="font-size:15px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</div></div>'+
+    '<div style="width:1px;background:var(--line)"></div>'+
     '<div style="flex:1;text-align:center"><div class="muted" style="font-size:10px">軍資金</div><div class="mono" style="font-size:15px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</div></div>'+
     '<div style="width:1px;background:var(--line)"></div>'+
     '<div style="flex:1;text-align:center"><div class="muted" style="font-size:10px">貯金</div><div class="mono" style="font-size:15px;font-weight:700">¥'+sBal.toLocaleString("ja-JP")+'</div></div></div></div>';
+  /* v3.81: 所持金カード。予定を払えない場合はここで警告する(アプリが今まで答えられなかった唯一の問い) */
+  h+='<div class="card" style="margin-bottom:12px;cursor:pointer'+(wFc.short>0?';border-color:var(--red)':'')+'" data-a="wallet">'+
+    '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:13px;font-weight:700">所持金 <span class="muted" style="font-size:10px;font-weight:400">生活口座</span></span>'+
+    '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
+    (wFc.short>0
+      ? '<div style="height:16px;background:var(--red);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:5px"><span style="font-size:9px;font-weight:700;color:var(--bg);letter-spacing:.12em">予定を払えません</span></div>'+
+        '<div class="red" style="font-size:10px;font-weight:700">不足 ¥'+wFc.short.toLocaleString("ja-JP")+'</div>'
+      : '')+
+    '<div class="muted" style="font-size:10px">今後の予定 収入 ¥'+wFc.futIncome.toLocaleString("ja-JP")+' / 支出 ¥'+wFc.futExpense.toLocaleString("ja-JP")+
+    ' → 月末見込み <span class="mono '+(wFc.end<0?"red":"")+'">¥'+wFc.end.toLocaleString("ja-JP")+'</span></div></div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金 <span class="muted" style="font-size:10px;font-weight:400">緩衝プール</span></span><span><span class="mono '+(bBal<ceil*0.15?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+bPct+'%;background:'+(bBal<ceil*0.15?"var(--red)":bBal>ceil?"var(--amber)":"var(--teal)")+'"></div></div>'+
@@ -2984,13 +2997,105 @@ function bankGameNet(){
   return (S.entries||[]).filter(e=>(e.src==="slot"||e.src==="mahjong") && e.date>=sw)
     .reduce((a,e)=> a + (e.type==="income"?e.amount:-e.amount), 0);
 }
+/* v3.81: 所持金(論理残高)。実際の銀行残高ではなく帳簿上の位置——カード払いの決済ズレは吸収しない。
+   入: 収入 / 貯金の引き出し / 軍資金からの戻し
+   出: 支出 / 貯金の先取り入金 / 軍資金の補充 / 投資の買付・バッファ拠出
+   無関係: 遊技の勝ち負け(軍資金内で完結・isNetEntryで家計簿からも除外済み) / スイープ(軍資金→貯金)
+   asOf を渡すとその日までの実績で計算する(省略時は今日) */
+function walletFlows(asOf){
+  const lim = asOf || todayStr();
+  const NET=["slot","mahjong"];
+  const ent=(S.entries||[]).filter(e=>e.date && e.date<=lim && !NET.includes(e.src));
+  const income=ent.filter(e=>e.type==="income").reduce((a,e)=>a+e.amount,0);
+  const expense=ent.filter(e=>e.type==="expense").reduce((a,e)=>a+e.amount,0);
+  const sv=((S.savings||{}).txns)||[];
+  const svIn =sv.filter(t=>t.type==="deposit" &&(t.date||"")<=lim).reduce((a,t)=>a+num(t.amount),0);
+  const svOut=sv.filter(t=>t.type==="withdraw"&&(t.date||"")<=lim).reduce((a,t)=>a+num(t.amount),0);
+  const bk=((S.bank||{}).txns)||[];
+  const bkIn =bk.filter(t=>t.type==="topup" &&(t.date||"")<=lim).reduce((a,t)=>a+num(t.amount),0);
+  const bkOut=bk.filter(t=>t.type==="return"&&(t.date||"")<=lim).reduce((a,t)=>a+num(t.amount),0);
+  let ivOut=0, ivIn=0;
+  (((S.invest||{}).holdings)||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"")<=lim) ivOut+=num(b.amount); }));
+  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"")<=lim){ const v=num(t.amount); if(v>0) ivOut+=v; else ivIn+=-v; } });
+  return {income:income, expense:expense, svIn:svIn, svOut:svOut, bkIn:bkIn, bkOut:bkOut, ivOut:ivOut, ivIn:ivIn};
+}
+function walletBalance(asOf){
+  const f=walletFlows(asOf), w=S.wallet||{};
+  return num(w.seed) + f.income - f.expense - f.svIn + f.svOut - f.bkIn + f.bkOut - f.ivOut + f.ivIn;
+}
+/* 予定の着地: 今日以降(当月末まで)の予定収支を今の残高に足した見込み。
+   予定の支出を払えるかの判定に使う */
+function walletForecast(){
+  const today=todayStr(), endM=today.slice(0,7)+"-31";
+  const NET=["slot","mahjong"];
+  const fut=(S.entries||[]).filter(e=>e.date && e.date>today && e.date<=endM && !NET.includes(e.src));
+  const inc=fut.filter(e=>e.type==="income").reduce((a,e)=>a+e.amount,0);
+  const exp=fut.filter(e=>e.type==="expense").reduce((a,e)=>a+e.amount,0);
+  const now=walletBalance();
+  return {now:now, futIncome:inc, futExpense:exp, end:now+inc-exp, short:Math.max(0,-(now+inc-exp))};
+}
 function bankSaved(){ return ((S.bank&&S.bank.txns)||[]).filter(t=>t.type==="sweep").reduce((a,t)=>a+num(t.amount),0); }
 function bankBalance(){
   const b=S.bank||{}, tx=b.txns||[];
   const topup=tx.filter(t=>t.type==="topup").reduce((a,t)=>a+num(t.amount),0);
   const sweep=tx.filter(t=>t.type==="sweep").reduce((a,t)=>a+num(t.amount),0);
+  const ret=tx.filter(t=>t.type==="return").reduce((a,t)=>a+num(t.amount),0);   /* v3.81: 所持金へ戻す */
   const adj=tx.filter(t=>t.type==="adjust").reduce((a,t)=>a+num(t.amount),0);
-  return num(b.seed)+bankGameNet()+topup-sweep+adj;
+  return num(b.seed)+bankGameNet()+topup-sweep-ret+adj;
+}
+/* v3.81: 所持金画面。残高の内訳(何が入って何が出たか)を全て見せ、起点残高だけを手で設定する。
+   移動そのものは各ポットの画面(貯金の先取り入金・軍資金の補充/戻し・投資の買付)で行う */
+function viewWallet(){
+  const w=S.wallet||{}, f=walletFlows(), bal=walletBalance(), fc=walletForecast();
+  let h='<div class="hdr"><button class="navbtn" data-wa="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">所持金</div><div style="width:44px"></div></div>';
+  h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:12px">'+
+    '生活口座の帳簿上の残高。<br>収入で増え、支出と各ポットへの移動で減ります。<br>'+
+    'カード払いの決済ズレは反映されません(実口座とは差が出ます)。</div>';
+  h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
+    '<div class="muted" style="font-size:12px;letter-spacing:.12em">いまの所持金</div>'+
+    '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">¥'+bal.toLocaleString("ja-JP")+'</div>'+
+    '<div class="muted" style="font-size:10px;margin-top:4px">月末見込み <span class="mono '+(fc.end<0?"red":"")+'">¥'+fc.end.toLocaleString("ja-JP")+'</span></div></div>';
+  if(fc.short>0){
+    h+='<div class="card" style="margin-bottom:12px;border-color:var(--red)">'+
+      '<div class="red" style="font-size:13px;font-weight:700;margin-bottom:4px">⚠ 予定の支出を払えません</div>'+
+      '<div class="muted" style="font-size:11px;line-height:1.7">不足 ¥'+fc.short.toLocaleString("ja-JP")+'。<br>'+
+      '貯金から引き出すか、予定の支出を見直してください。</div></div>';
+  }
+  const row=(lbl,v,sign)=>'<div class="row between" style="font-size:12px;padding:5px 0">'+
+    '<span class="muted">'+lbl+'</span><span class="mono '+(sign>0?"teal":"")+'">'+(v===0?'—':(sign>0?'+':'−')+'¥'+v.toLocaleString("ja-JP"))+'</span></div>';
+  h+=band("内訳(これまでの累計)");
+  h+='<div class="card">'+
+    '<div class="row between" style="font-size:12px;padding:5px 0;cursor:pointer" data-wa="seed">'+
+    '<span class="muted">起点残高</span><span class="mono">¥'+num(w.seed).toLocaleString("ja-JP")+' <span class="muted">›</span></span></div>'+
+    '<div style="height:1px;background:var(--line);margin:6px 0"></div>'+
+    row("収入", f.income, 1)+row("支出", f.expense, -1)+
+    '<div style="height:1px;background:var(--line);margin:6px 0"></div>'+
+    row("貯金へ", f.svIn, -1)+row("貯金から", f.svOut, 1)+
+    row("軍資金へ", f.bkIn, -1)+row("軍資金から", f.bkOut, 1)+
+    row("投資へ", f.ivOut, -1)+row("投資から", f.ivIn, 1)+
+    '<div style="height:1px;background:var(--line);margin:6px 0"></div>'+
+    '<div class="row between" style="font-size:13px;font-weight:700;padding:4px 0"><span>いまの所持金</span>'+
+    '<span class="mono '+(bal<0?"red":"teal")+'">¥'+bal.toLocaleString("ja-JP")+'</span></div></div>';
+  h+='<div class="muted" style="font-size:10px;margin:10px 2px">'+
+    'お金の移動は各画面から行います。<br>貯金への先取り/引き出しは貯金画面、軍資金の補充/戻しは軍資金画面、投資の買付は投資画面。</div>';
+  h+=saveIndicatorHtml();
+  return h;
+}
+function bindWallet(){
+  document.querySelectorAll("[data-wa]").forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset.wa;
+      if(a==="back"){ UI.screen="main"; render(); }
+      else if(a==="seed"){
+        const w=S.wallet||{};
+        const p=prompt("起点残高(円)\nこのアプリで記録を始めた時点の口座残高。\nここに以後の収支と移動を積み上げて所持金を出します。", w.seed||"");
+        if(p===null)return;
+        S.wallet=Object.assign({}, w, {seed:String(num(p))});
+        save(); render();
+      }
+    };
+  });
 }
 function viewBank(){
   const b=S.bank, bal=bankBalance(), ceil=num(b.ceiling)||300000;
@@ -3015,7 +3120,10 @@ function viewBank(){
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="seed">シード設定</button>'+
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="topup">補充</button>'+
     '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="sweep">スイープ</button>'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="adjust">調整</button></div>';
+    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="adjust">調整</button></div>'+
+    /* v3.81: 軍資金→所持金の戻し。スイープ(→貯金)とは別経路 */
+    '<div class="row" style="gap:8px;margin-bottom:8px">'+
+    '<button class="btn full" style="flex:1;font-size:12px;padding:9px 0" data-ba="wreturn">所持金へ戻す</button></div>';
   h+='<div class="card" style="margin:10px 0"><div class="row" style="gap:10px;align-items:flex-end">'+
     '<div><div class="muted" style="font-size:9px;margin-bottom:3px">切替日(給料日推奨)</div><input class="input mono" type="date" value="'+esc(b.switch||"")+'" data-ba-in="switch" style="width:auto;min-width:150px;text-align:left;-webkit-appearance:none;height:44px;box-sizing:border-box"></div>'+
     '<div style="flex:1"><div class="muted" style="font-size:9px;margin-bottom:3px">天井(円)</div><input class="input r mono" type="number" inputmode="numeric" value="'+esc(b.ceiling||"")+'" data-ba-in="ceiling" style="height:44px;box-sizing:border-box"></div></div></div>';
@@ -3040,6 +3148,7 @@ function bindBank(){
       if(a==="back"){ UI.screen="main"; render(); return; }
       if(a==="seed"){ const p=prompt("シード(今の遊技資金・円):", b.seed||""); if(p===null)return; b.seed=String(num(p)); save(); render(); return; }
       if(a==="topup"){ const p=prompt("補充額(円):",""); if(p===null)return; const amt=num(p); if(amt<=0)return; if(!confirm("補充 ¥"+amt.toLocaleString("ja-JP")+"\n\nこれは負けを外の金(生活費/貯金)で埋める行為です。あなたの20年来の漏れそのもの。本当に補充しますか?")) return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"topup",amount:String(amt)}); save(); render(); return; }
+      if(a==="wreturn"){ const p=prompt("所持金へ戻す額(円):",""); if(p===null)return; const amt=num(p); if(amt<=0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"return",amount:String(amt)}); save(); render(); return; }
       if(a==="sweep"||a==="sweepover"){ const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000)); const p=prompt("貯金へスイープする額(円):", String(over)); if(p===null)return; const amt=num(p); if(amt<=0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"sweep",amount:String(amt)}); save(); render(); return; }
       if(a==="adjust"){ const p=prompt("調整額(円・マイナス可):",""); if(p===null)return; const amt=num(p); if(amt===0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt)}); save(); render(); return; }
       if(a==="txndel"){ if(confirm("この記録を削除?")){ b.txns=(b.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
@@ -3724,6 +3833,7 @@ function bindMain(){
         S.waterfall=Object.assign({}, wf, {[key]: String(parseFloat(String(p))||0)});
         save(); render();
       }
+      else if(a==="wallet"){ UI.screen="wallet"; render(); }
       else if(a==="savings"){ UI.screen="savings"; render(); }
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
       else if(a==="catdrill"){ UI.drillCat=v; UI.drillOpenStore=null; UI.drillMode="chain"; UI.drillAssign=null; UI.drillVarOnly=(v==="消費"); UI.screen="catdrill"; render(); }
