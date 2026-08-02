@@ -137,6 +137,15 @@
   #updatebar button{border:none; border-radius:8px; font-weight:700; cursor:pointer;}
   #updatebar-btn{background:#04201d; color:#eafff9; padding:8px 12px; font-size:13px;}
   #updatebar-x{background:transparent; color:#04201d; padding:6px 4px; font-size:17px; line-height:1;}
+  /* v3.96: 戻るバーは.tabsを流用しない。タブ様式(20px角丸・縦積みアイコン)だと
+     「タブが1個しかない」ように見えて浮く。横並び1行・角丸14px・低い背にして
+     ナビゲーションの帯として読ませる */
+  .subnav{max-width:560px; margin:0 auto; background:var(--surface);
+    border:1px solid var(--line); border-radius:14px; box-shadow:0 6px 22px rgba(0,0,0,.38); overflow:hidden;}
+  .subnav button{width:100%; padding:10px 0; background:none; border:none; cursor:pointer;
+    font-size:13px; color:var(--muted); font-family:inherit;
+    display:flex; align-items:center; justify-content:center; gap:5px;}
+  .subnav button svg{width:17px; height:17px;}
   .hdr{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
   .navbtn{background:none; border:none; color:var(--muted); font-size:14px; cursor:pointer; padding:4px; font-family:inherit;}
   h1{font-size:15px; font-weight:700; letter-spacing:.06em; margin:0 0 4px;}
@@ -198,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.95 (localStorage保存・完全オフライン)
+   Tally 3.96 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -703,7 +712,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.95";
+const APP_VERSION = "3.96";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -740,17 +749,27 @@ function navHtml(){
    非表示にしていた枠にバーを入れるだけで済む(新しい浮遊物は作らない=v3.04の方針を維持)。
    保存インジケーターもここへ同居させ、v3.94の「本文末尾へ追記」という間に合わせを廃止した。 */
 function subNavHtml(){
-  return '<div class="tabs"><button data-a="subback" aria-label="前の画面へ戻る">'+TAB_ICONS.back+'<span>戻る</span></button></div>'+
+  /* v3.96【バグ修正】ここに data-a を付けてはいけない。bind関数10本が
+     `document.querySelectorAll("[data-a]")`(=#app内に限定していない)で全走査してonclickを上書きするため、
+     data-a="subback"は各画面のハンドラに奪われ「どの分岐にも当たらない=無反応」になっていた。
+     **#navbarは#appの外なので、bind関数と衝突しない属性名(data-nav)を使う** */
+  return '<div class="subnav"><button data-nav="back" aria-label="前の画面へ戻る">'+TAB_ICONS.back+'<span>戻る</span></button></div>'+
     '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 }
 /* 戻る先の判定は各画面の既存ハンドラに任せ、**ヘッダーの戻るボタンをclick()するだけ**にする。
    属性名は画面ごとにdata-a/wa/sa/mt/lk/iv/fa/bu/baとバラバラだが、全て.navbtnで先頭が「‹」。
-   ここで遷移先を書くと同じ挙動が2箇所に増える(v3.63の教訓)ので絶対に書かないこと */
-function goBackViaHeader(){
-  const btns = document.querySelectorAll("#app .navbtn");
+   ここで遷移先を書くと同じ挙動が2箇所に増える(v3.63の教訓)ので絶対に書かないこと。
+   v3.96: 実体は_hdrBack(描画時に特定して視覚的に隠したもの)。click()はvisibility:hiddenでも発火する */
+let _hdrBack = null;
+function findHdrBack(app){
+  const btns = app ? app.querySelectorAll(".navbtn") : [];
   for(let i=0;i<btns.length;i++){
-    if(((btns[i].textContent||"").trim()).indexOf("‹")===0){ btns[i].click(); return; }
+    if(((btns[i].textContent||"").trim()).indexOf("‹")===0) return btns[i];
   }
+  return null;
+}
+function goBackViaHeader(){
+  if(_hdrBack){ _hdrBack.click(); return; }
   UI.screen="main"; render();   /* ヘッダーに戻るが無い画面の保険 */
 }
 /* 下バーを出さない画面: mjsheet=共有される紙面 / mjplay=既にstickyヘッダーに「‹」があり
@@ -764,7 +783,7 @@ function _renderBody(){
     else if(SUBNAV_SKIP.indexOf(UI.screen)>=0){ navbar.innerHTML = ""; navbar.style.display = "none"; }
     else {
       navbar.innerHTML = subNavHtml(); navbar.style.display="";
-      const bb = navbar.querySelector('[data-a="subback"]');
+      const bb = navbar.querySelector('[data-nav="back"]');
       if(bb) bb.onclick = goBackViaHeader;
     }
     /* ナビバー実高を--navhへ(インジケーター行追加等で背が変わっても自動追随) */
@@ -774,6 +793,12 @@ function _renderBody(){
      エラーは隠さず表示し、ナビバーを強制表示して健全なタブへ逃がす。データはlocalStorageに無傷で残る */
   try{
     _renderScreen(app);
+    /* v3.96: 下バーがある画面ではヘッダーの戻るを**visibility:hiddenで隠す**(ユーザー指摘・二重表示の解消)。
+       displayでなくvisibilityなのは、右端の44pxスペーサーと釣り合った現行レイアウトを崩さないため。
+       要素は残るのでバインドも生き、goBackViaHeaderのclick()も発火する
+       ——**遷移先を別途書かずに済ませるにはボタン自体が必要**なので削除はしない */
+    _hdrBack = (app && SUBNAV_SKIP.indexOf(UI.screen)<0) ? findHdrBack(app) : null;
+    if(_hdrBack) _hdrBack.style.visibility="hidden";
     /* v3.95: 保存インジケーターは下バー(subNavHtml)へ移した。
        下バーを出さない画面のうちmjplayだけは本文末尾に残す(mjsheetは共有紙面なので出さない) */
     if(app && UI.screen==="mjplay"){
@@ -782,6 +807,7 @@ function _renderBody(){
   }
   catch(err){
     console.error(err);
+    _hdrBack = null;   /* v3.96: エラー画面には戻るが無いので参照を残さない(古いDOMを掴み続けるのを防ぐ) */
     app.innerHTML = '<div class="hdr"><div style="width:44px"></div><div style="font-size:14px;font-weight:700">表示エラー</div><div style="width:44px"></div></div>'+
       '<div class="card"><div class="red" style="font-size:13px;font-weight:700;margin-bottom:6px">この画面の描画に失敗しました</div>'+
       '<div class="muted" style="font-size:11px;line-height:1.7">記録は無事です(保存済み)。<br>下のタブから他の画面へ移動できます。</div>'+
