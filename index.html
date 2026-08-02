@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.05 (localStorage保存・完全オフライン)
+   Tally 4.06 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -737,7 +737,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.05";
+const APP_VERSION = "4.06";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2767,13 +2767,14 @@ function viewAssets(){
     '<div style="width:1px;background:var(--line)"></div>'+
     '<div style="flex:1;text-align:center"><div class="muted" style="font-size:10px">貯金</div><div class="mono" style="font-size:15px;font-weight:700">¥'+sBal.toLocaleString("ja-JP")+'</div></div></div></div>';
   /* v3.81: 所持金カード。予定を払えない場合はここで警告する(アプリが今まで答えられなかった唯一の問い) */
+  /* v4.06: サブラベル(生活口座)と説明文を撤去(ユーザー指摘)。**同じ説明を毎日見せる必要はない**——
+     意味は各ポットの詳細画面が持てばよく、一覧カードは残高だけで足りる。
+     警告(予定が払えない)は状態の通知なので残す */
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer'+(wFc.short>0?';border-color:var(--red)':'')+'" data-a="wallet">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:13px;font-weight:700">所持金 <span class="muted" style="font-size:10px;font-weight:400">生活口座</span></span>'+
-    '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
-    /* v3.82: 計算式は出さない。所持金の意味は「次の給料日まで、変動消費と娯楽に使える上限」 */
-    '<div class="muted" style="font-size:10px">次の給料日まで、変動消費と娯楽に使える上限です。</div></div>';
+    '<div class="row between" style="align-items:baseline"><span style="font-size:13px;font-weight:700">所持金</span>'+
+    '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div></div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金 <span class="muted" style="font-size:10px;font-weight:400">緩衝プール</span></span><span><span class="mono '+(bBal<ceil*0.15?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
+    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<ceil*0.15?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+bPct+'%;background:'+(bBal<ceil*0.15?"var(--red)":bBal>ceil?"var(--amber)":"var(--teal)")+'"></div></div>'+
     '<div class="row between" style="font-size:10px;margin-top:4px"><span class="muted">天井 ¥'+ceil.toLocaleString("ja-JP")+'</span><span class="mono muted">'+Math.floor(bPct)+'%</span></div></div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="savings">'+
@@ -3282,7 +3283,7 @@ function viewWallet(){
   let h='<div class="hdr"><button class="navbtn" data-wa="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">所持金</div><div style="width:44px"></div></div>';
   h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:12px">'+
-    '生活口座の帳簿上の残高。<br>収入で増え、支出と各ポットへの移動で減ります。<br>'+
+    '帳簿上の残高。<br>収入で増え、支出と各ポットへの移動で減ります。<br>'+
     'カード払いの決済ズレは反映されません(実口座とは差が出ます)。</div>';
   h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">いまの所持金</div>'+
@@ -3334,7 +3335,7 @@ function viewBank(){
   const pct=Math.max(0,Math.min(100, ceil>0? bal/ceil*100 : 0));
   const over=bal-ceil, low=bal<ceil*0.15;
   let h='<div class="hdr"><button class="navbtn" data-ba="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">軍資金</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">遊技専用の緩衝プール。<br>勝ち負けはこの中だけで増減。生活費・貯金に触れない。<br>上限を超えた分は貯金へ回収。<br>負けを外の金で埋める(入金)が漏れの正体。</div>';
+  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">遊技専用の資金。<br>勝ち負けはこの中だけで増減し、生活費・貯金に触れない。<br>上限を超えた分は貯金へ回収。<br>負けを外の金で埋める(入金)が漏れの正体。</div>';
   h+='<div class="card" style="margin-bottom:12px">'+
     '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">残高</span>'+
     /* v3.83: 残高が少ないだけでマイナスではないので数字は赤くしない。警告はバーと下の枠が担う */
