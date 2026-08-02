@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.81 (localStorage保存・完全オフライン)
+   Tally 3.82 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.81";
+const APP_VERSION = "3.82";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1275,6 +1275,20 @@ function viewLedger(){
   });
   h += '</div>';
 
+  /* v3.82: 所持金の不足アラートは家計簿に出す(支出を見直すのはこの画面だから)。
+     資産タブは残高を見る場所であって、行動を促す場所ではない */
+  {
+    const _fc=walletForecast();
+    if(_fc.short>0){
+      h += '<div class="card" style="margin-bottom:12px;border-color:var(--red);cursor:pointer" data-a="wallet">'+
+        '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
+        '<span class="red" style="font-size:13px;font-weight:700">⚠ 所持金で予定を払えません</span>'+
+        '<span class="mono red" style="font-size:15px;font-weight:700">不足 ¥'+_fc.short.toLocaleString("ja-JP")+'</span></div>'+
+        '<div class="muted" style="font-size:11px;line-height:1.7">所持金 ¥'+_fc.now.toLocaleString("ja-JP")+
+        ' に対し、今後の予定は 収入 ¥'+_fc.futIncome.toLocaleString("ja-JP")+' / 支出 ¥'+_fc.futExpense.toLocaleString("ja-JP")+'。<br>'+
+        '変動消費と娯楽を見直すか、貯金から引き出してください。</div></div>';
+    }
+  }
   h += band("明細");
   const detEntries = me.filter(e=>!isNetEntry(e));
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
@@ -2565,12 +2579,8 @@ function viewAssets(){
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer'+(wFc.short>0?';border-color:var(--red)':'')+'" data-a="wallet">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:13px;font-weight:700">所持金 <span class="muted" style="font-size:10px;font-weight:400">生活口座</span></span>'+
     '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
-    (wFc.short>0
-      ? '<div style="height:16px;background:var(--red);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:5px"><span style="font-size:9px;font-weight:700;color:var(--bg);letter-spacing:.12em">予定を払えません</span></div>'+
-        '<div class="red" style="font-size:10px;font-weight:700">不足 ¥'+wFc.short.toLocaleString("ja-JP")+'</div>'
-      : '')+
-    '<div class="muted" style="font-size:10px">今後の予定 収入 ¥'+wFc.futIncome.toLocaleString("ja-JP")+' / 支出 ¥'+wFc.futExpense.toLocaleString("ja-JP")+
-    ' → 月末見込み <span class="mono '+(wFc.end<0?"red":"")+'">¥'+wFc.end.toLocaleString("ja-JP")+'</span></div></div>';
+    /* v3.82: 計算式は出さない。所持金の意味は「次の給料日まで、変動消費と娯楽に使える上限」 */
+    '<div class="muted" style="font-size:10px">次の給料日まで、変動消費と娯楽に使える上限です。</div></div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金 <span class="muted" style="font-size:10px;font-weight:400">緩衝プール</span></span><span><span class="mono '+(bBal<ceil*0.15?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+bPct+'%;background:'+(bBal<ceil*0.15?"var(--red)":bBal>ceil?"var(--amber)":"var(--teal)")+'"></div></div>'+
@@ -3103,34 +3113,34 @@ function viewBank(){
   const pct=Math.max(0,Math.min(100, ceil>0? bal/ceil*100 : 0));
   const over=bal-ceil, low=bal<ceil*0.15;
   let h='<div class="hdr"><button class="navbtn" data-ba="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">軍資金</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">遊技専用の緩衝プール。<br>勝ち負けはこの中だけで増減。生活費・貯金に触れない。<br>天井超えは貯金へ回収。<br>負けを外の金で埋める(補充)が漏れの正体。</div>';
+  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">遊技専用の緩衝プール。<br>勝ち負けはこの中だけで増減。生活費・貯金に触れない。<br>上限を超えた分は貯金へ回収。<br>負けを外の金で埋める(入金)が漏れの正体。</div>';
   h+='<div class="card" style="margin-bottom:12px">'+
     '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">残高</span>'+
     '<span class="mono '+(low?"red":"teal")+'" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>'+
     '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:9px 0 4px"><div style="height:100%;width:'+pct+'%;background:'+(low?"var(--red)":over>0?"var(--amber)":"var(--teal)")+'"></div></div>'+
-    '<div class="row between" style="font-size:10px"><span class="muted">¥0</span><span class="muted">天井 ¥'+ceil.toLocaleString("ja-JP")+'</span></div></div>';
+    '<div class="row between" style="font-size:10px"><span class="muted">¥0</span><span class="muted">上限 ¥'+ceil.toLocaleString("ja-JP")+'</span></div></div>';
   if(low) h+='<div class="card" style="margin-bottom:12px;border-color:var(--red)"><div class="red" style="font-size:12px;font-weight:700">⚠ 軍資金が残りわずか</div><div class="muted" style="font-size:11px;margin-top:4px">尽きたら来月まで補充しない約束です。<br>ここで貯金から補充するのが20年来の漏れ。</div></div>';
-  if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">天井超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ回せます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="sweepover">¥'+over.toLocaleString("ja-JP")+' を貯金へスイープ</button></div>';
+  if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ回せます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="sweepover">¥'+over.toLocaleString("ja-JP")+' を貯金へ移す</button></div>';
   h+='<div class="card2" style="margin-bottom:14px;font-size:12px;padding:12px">'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">切替日('+esc(b.switch||"未設定")+')以降の遊技</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">シード(初期遊技資金)</span><span class="mono">¥'+num(b.seed).toLocaleString("ja-JP")+'</span></div>'+
+    '<div class="row between" style="margin-bottom:5px"><span class="muted">リセット日('+esc(b.switch||"未設定")+')以降の勝ち負け</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
+    '<div class="row between" style="margin-bottom:5px"><span class="muted">開始時の残高</span><span class="mono">¥'+num(b.seed).toLocaleString("ja-JP")+'</span></div>'+
     '<div class="row between"><span class="muted">貯金に回した累計</span><span class="mono teal">¥'+saved.toLocaleString("ja-JP")+'</span></div></div>';
   h+=band("操作");
   h+='<div class="row" style="gap:8px;margin-bottom:8px">'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="seed">シード設定</button>'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="topup">補充</button>'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="sweep">スイープ</button>'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="adjust">調整</button></div>'+
-    /* v3.81: 軍資金→所持金の戻し。スイープ(→貯金)とは別経路 */
+    /* v3.82: 用語を日本語に統一し、移動は「どこから/どこへ」を明示する。
+       シード設定=開始時の残高、調整=残高のズレ補正、と役割を名前で言う */
+    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="topup">入金</button>'+
+    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="sweep">出金</button></div>'+
     '<div class="row" style="gap:8px;margin-bottom:8px">'+
-    '<button class="btn full" style="flex:1;font-size:12px;padding:9px 0" data-ba="wreturn">所持金へ戻す</button></div>';
+    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="seed">開始時の残高</button>'+
+    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="adjust">残高のズレを補正</button></div>';
   h+='<div class="card" style="margin:10px 0"><div class="row" style="gap:10px;align-items:flex-end">'+
-    '<div><div class="muted" style="font-size:9px;margin-bottom:3px">切替日(給料日推奨)</div><input class="input mono" type="date" value="'+esc(b.switch||"")+'" data-ba-in="switch" style="width:auto;min-width:150px;text-align:left;-webkit-appearance:none;height:44px;box-sizing:border-box"></div>'+
-    '<div style="flex:1"><div class="muted" style="font-size:9px;margin-bottom:3px">天井(円)</div><input class="input r mono" type="number" inputmode="numeric" value="'+esc(b.ceiling||"")+'" data-ba-in="ceiling" style="height:44px;box-sizing:border-box"></div></div></div>';
+    '<div><div class="muted" style="font-size:9px;margin-bottom:3px">リセット日(給料日推奨)</div><input class="input mono" type="date" value="'+esc(b.switch||"")+'" data-ba-in="switch" style="width:auto;min-width:150px;text-align:left;-webkit-appearance:none;height:44px;box-sizing:border-box"></div>'+
+    '<div style="flex:1"><div class="muted" style="font-size:9px;margin-bottom:3px">上限(円)</div><input class="input r mono" type="number" inputmode="numeric" value="'+esc(b.ceiling||"")+'" data-ba-in="ceiling" style="height:44px;box-sizing:border-box"></div></div></div>';
   const txns=(b.txns||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
   if(txns.length){
     h+=band("記録");
-    const LBL={topup:"補充",sweep:"貯金へスイープ",adjust:"調整"};
+    const LBL={topup:"入金",sweep:"貯金へ",return:"所持金へ",adjust:"補正"};
     txns.forEach(t=>{
       const amt = t.type==="topup"? num(t.amount) : t.type==="sweep"? -num(t.amount) : num(t.amount);
       h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+'</div><div class="muted mono" style="font-size:10px">'+esc(t.date)+'</div></div>'+
@@ -3146,11 +3156,31 @@ function bindBank(){
     const a=el.dataset.ba, v=el.dataset.v, b=S.bank;
     el.onclick=()=>{
       if(a==="back"){ UI.screen="main"; render(); return; }
-      if(a==="seed"){ const p=prompt("シード(今の遊技資金・円):", b.seed||""); if(p===null)return; b.seed=String(num(p)); save(); render(); return; }
-      if(a==="topup"){ const p=prompt("補充額(円):",""); if(p===null)return; const amt=num(p); if(amt<=0)return; if(!confirm("補充 ¥"+amt.toLocaleString("ja-JP")+"\n\nこれは負けを外の金(生活費/貯金)で埋める行為です。あなたの20年来の漏れそのもの。本当に補充しますか?")) return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"topup",amount:String(amt)}); save(); render(); return; }
-      if(a==="wreturn"){ const p=prompt("所持金へ戻す額(円):",""); if(p===null)return; const amt=num(p); if(amt<=0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"return",amount:String(amt)}); save(); render(); return; }
-      if(a==="sweep"||a==="sweepover"){ const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000)); const p=prompt("貯金へスイープする額(円):", String(over)); if(p===null)return; const amt=num(p); if(amt<=0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"sweep",amount:String(amt)}); save(); render(); return; }
-      if(a==="adjust"){ const p=prompt("調整額(円・マイナス可):",""); if(p===null)return; const amt=num(p); if(amt===0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt)}); save(); render(); return; }
+      if(a==="seed"){ const p=prompt("開始時の残高(円)\n記録を始めた時点の遊技資金。\nここに以後の勝ち負けと入出金を積み上げます。", b.seed||""); if(p===null)return; b.seed=String(num(p)); save(); render(); return; }
+      /* v3.82: 移動は「どこから/どこへ」を先に聞く。所持金からは通常運用、貯金からは漏れなので警告を残す */
+      if(a==="topup"){
+        const src=prompt("軍資金へ入金します。\nどこから移しますか?\n\n1 = 所持金から\n2 = 貯金から", "1");
+        if(src===null)return;
+        const fromSavings=(String(src).trim()==="2");
+        const p=prompt("入金額(円)\n"+(fromSavings?"貯金 → 軍資金":"所持金 → 軍資金"),""); if(p===null)return;
+        const amt=num(p); if(amt<=0)return;
+        if(fromSavings && !confirm("貯金から ¥"+amt.toLocaleString("ja-JP")+"\n\nこれは負けを外の金で埋める行為です。あなたの20年来の漏れそのもの。本当に移しますか?")) return;
+        (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"topup",amount:String(amt),from:(fromSavings?"savings":"wallet")});
+        if(fromSavings){ S.savings=S.savings||{txns:[]}; (S.savings.txns=S.savings.txns||[]).push({id:uid(),date:todayStr(),type:"withdraw",amount:String(amt)}); }
+        save(); render(); return; }
+      if(a==="sweepover"){ const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000));
+        const p=prompt("貯金へ移す額(円)\n軍資金 → 貯金", String(over)); if(p===null)return; const amt=num(p); if(amt<=0)return;
+        (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"sweep",amount:String(amt)}); save(); render(); return; }
+      if(a==="sweep"){
+        const dst=prompt("軍資金から出金します。\nどこへ移しますか?\n\n1 = 貯金へ(上限超えの回収)\n2 = 所持金へ", "1");
+        if(dst===null)return;
+        const toWallet=(String(dst).trim()==="2");
+        const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000));
+        const p=prompt("出金額(円)\n"+(toWallet?"軍資金 → 所持金":"軍資金 → 貯金"), toWallet?"":String(over));
+        if(p===null)return; const amt=num(p); if(amt<=0)return;
+        (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:(toWallet?"return":"sweep"),amount:String(amt)});
+        save(); render(); return; }
+      if(a==="adjust"){ const p=prompt("残高のズレを補正(円・マイナス可)\n実際の残高と合わない分を入れてください。",""); if(p===null)return; const amt=num(p); if(amt===0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt)}); save(); render(); return; }
       if(a==="txndel"){ if(confirm("この記録を削除?")){ b.txns=(b.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
     };
   });
