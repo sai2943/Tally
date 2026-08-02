@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.92 (localStorage保存・完全オフライン)
+   Tally 3.93 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.92";
+const APP_VERSION = "3.93";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -719,7 +719,10 @@ function render(){
   }
 }
 function navHtml(){
-  return tabBar() + '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ 通信不要</div>';
+  /* v3.93: navbarの「通信不要」をバージョン表記に置換(ユーザー要望)。
+     オフライン保証の文言は saveIndicatorHtml(バックアップ画面等)に残っているので断言は失われない。
+     常時見えるのはバージョンの方が実用的——更新が反映されたかを画面を移らずに確認できる */
+  return tabBar() + '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 }
 function _renderBody(){
   const app = document.getElementById("app");
