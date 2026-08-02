@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.89 (localStorage保存・完全オフライン)
+   Tally 3.90 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.89";
+const APP_VERSION = "3.90";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1265,18 +1265,25 @@ function viewLedger(){
     }
     h += '</div>';
   });
-  /* v3.61: 予算カードの3行目=先取り(ユーザー提案)。滝の定数が見えないと「¥89,508残る」が実態と乖離する
-     (先取り分は口座に残らない)。secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
-     消費/娯楽は「超えるな」の計器だが先取りは「届かせろ」の計器なので色はteal、残りは「あと」表記 */
-  /* v3.62: 先取りを貯金/投資の2枠に分割(ユーザー提案)。上限は滝の定数がそのまま入る。
-     消費娯楽=「超えるな」に対しこちらは「届かせろ」の計器——色teal・残りは「あと」・到達で「達成」 */
-  /* v3.67: 枠が0でも行を出す(v3.62は非表示にしたため設定する場所自体が見えなかった)。
-     未設定時は変動消費・娯楽と同じ「＋ 上限を設定」文法で、その場から直接設定できる */
+  h += '</div>';   /* 予算カード(使う)を閉じる */
+
+  /* v3.90: **「使う」と「移す」を別の箱に分ける**(ユーザー指摘)。
+     消費・娯楽=使ってよい額 / 貯金・投資=移すべき額——行為の種類が違うものを同じカードに積むと、
+     同じ位置・同じ書式のせいで同じものに見え、色だけで区別しようとして破綻していた。
+     カードと見出しで分ければ語(残り/あと)の違いも自然に読める。
+     ※「先取り」はv3.61以来の内部語彙だが「先取り貯蓄」として一般に通じるため画面語彙に昇格
+        (v3.67で却下した「滝」は開発上の内輪呼びなので別件) */
+  h += band("先取り");
+  h += '<div class="card" style="margin-bottom:14px">';
+  /* v3.61: 滝の定数が見えないと「¥89,508残る」が実態と乖離する(先取り分は口座に残らない)。
+     secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
+     v3.62: 貯金/投資の2枠に分割。v3.67: 枠が0でも行を出す(隠すと設定する場所自体が消える) */
   const _ps74=preSplit(mk);
   [["貯金", _sp62.sv, _ps74.sv, "savings", "sink", _wf62.sink],
-   ["投資", _sp62.iv, _ps74.iv, "invest", "invest", _wf62.invest]].forEach(([nm,done,target,act,key,rawv])=>{
+   ["投資", _sp62.iv, _ps74.iv, "invest", "invest", _wf62.invest]].forEach(([nm,done,target,act,key,rawv],pi)=>{
+    const _sep = pi ? ';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)' : '';
     if(target<=0){
-      h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="setpre" data-v="'+key+'">'+
+      h += '<div style="cursor:pointer'+_sep+'" data-a="setpre" data-v="'+key+'">'+
         '<div class="row between" style="align-items:center"><span style="font-size:12px"><span style="font-weight:700">'+nm+'</span> '+
         '<span class="mono muted">¥'+done.toLocaleString("ja-JP")+'</span></span>'+
         '<span class="amber" style="font-size:11px">＋ 上限を設定</span></div></div>';
@@ -1284,7 +1291,7 @@ function viewLedger(){
     }
     const pct2=target>0?Math.min(100,done/target*100):100;
     const left2=Math.max(0,target-done);
-    h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="'+act+'">'+
+    h += '<div style="cursor:pointer'+_sep+'" data-a="'+act+'">'+
       '<div class="row between" style="align-items:baseline">'+
       '<span><span style="font-size:12px;font-weight:700">'+nm+'</span>'+
       '<span class="mono muted" style="font-size:10px"> ¥'+done.toLocaleString("ja-JP")+(target>0?' / ¥'+target.toLocaleString("ja-JP"):'')+'</span></span>'+
