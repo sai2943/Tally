@@ -198,7 +198,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 3.88 (localStorage保存・完全オフライン)
+   Tally 3.89 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -698,7 +698,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "3.88";
+const APP_VERSION = "3.89";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1260,7 +1260,7 @@ function viewLedger(){
           '<span><span class="mono muted" style="font-size:9px">'+(gover>0?'超過':'残り')+'</span> '+
           '<span class="mono '+(gover>0?"red":"muted")+'" style="font-size:13px;font-weight:700">'+
           '¥'+(gover>0?gover:(gcap-gspent)).toLocaleString("ja-JP")+'</span></span></div>'+
-          '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:'+(gover>0?"var(--red)":"var(--muted)")+'"></div></div></div>';
+          '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:var(--red)'+(gover>0?'':';opacity:.45')+'"></div></div></div>';
       });
     }
     h += '</div>';
