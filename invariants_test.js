@@ -120,4 +120,68 @@ const missing=[...assigned].filter(k=>!ignore.has(k) && body.indexOf(k)<0).sort(
 chk("S直下の全キーがapplyDataに載っている", missing.length===0,
     missing.length? "未掲載: "+missing.join(" ") : "検査 "+assigned.size+"キー");
 
+/* ---------- 5. 振替は総資産を変えない(v4.01) ---------- */
+console.log("\n【5】振替の資産保存則");
+ctx.__S2={schemaV:3, wallet:{seed:200000}, bank:{seed:"100000",txns:[]},
+  savings:{goals:[],pots:[{id:"main",name:"貯金"},{id:"p2",name:"箱2"}],txns:[]},
+  entries:[], invest:{holdings:[],bufferTxns:[]}};
+run("applyData(__S2)");
+const tot=()=>run("walletBalance()+bankBalance()+savingsBalance()");
+const before5=tot();
+[["__wallet__","__bank__",30000],["__bank__","__wallet__",10000],
+ ["__wallet__","main",50000],["__wallet__","p2",52000],
+ ["__bank__","p2",5000],["main","p2",1000],
+ ["p2","__bank__",2000],["p2","__wallet__",3000]].forEach(([f2,t2,a2])=>{
+  const b=tot();
+  ctx.__f=f2; ctx.__t=t2; ctx.__a=a2;
+  const ok=run("doTransfer(__f,__t,__a)");
+  chk("振替 "+f2+" → "+t2, ok && tot()===b, "総額 "+b+" → "+tot());
+});
+chk("8回の振替後も総額不変", tot()===before5, before5+" → "+tot());
+
+/* ---------- 6. 箱の削除は総額を変えない / 最後の1つは残る(v4.04) ---------- */
+console.log("\n【6】箱の削除");
+ctx.__S3={schemaV:3, wallet:{seed:0}, bank:{seed:"0",txns:[{id:9,type:"sweep",date:"2026-06-01",amount:"5000"}]},
+  savings:{goals:[],pots:[{id:"main",name:"A"},{id:"p2",name:"B"},{id:"p3",name:"C"}],
+    txns:[{id:1,type:"deposit",date:"2026-07-01",amount:"40000"},
+          {id:2,type:"deposit",date:"2026-07-02",amount:"12000",potId:"p2"}]},
+  entries:[], invest:{holdings:[],bufferTxns:[]}};
+run("applyData(__S3)");
+chk("potId無しのtxnが先頭の箱へ移行", run("S.savings.txns.every(t=>!!t.potId)"), run("JSON.stringify(S.savings.txns.map(t=>t.potId))"));
+chk("sweepも移行", run("S.bank.txns.every(t=>t.type!=='sweep'||!!t.potId)"));
+const tot6=()=>run("savingsBalance()");
+const b6=tot6();
+run(`(function(){ const sv=S.savings,v="main",dest="p3";
+  (sv.txns||[]).forEach(t=>{ if(txPot(t)===v) t.potId=dest; });
+  (S.bank.txns||[]).forEach(t=>{ if(t.type==="sweep"&&txPot(t)===v) t.potId=dest; });
+  sv.pots=sv.pots.filter(x=>String(x.id)!==v); })()`);
+chk("先頭の箱を削除しても総額は不変", tot6()===b6, b6+" → "+tot6());
+chk("削除後も箱が残っている", run("savingsPots().length")===2, run("JSON.stringify(savingsPots().map(p=>p.name))"));
+
+/* ---------- 7. 軍資金の月次補充枠(v4.11) ---------- */
+console.log("\n【7】軍資金の補充枠");
+ctx.__S4={schemaV:3, wallet:{seed:500000}, entries:[],
+  bank:{seed:"0",ceiling:"300000",refillCap:"30000",txns:[{id:1,type:"topup",date:"2026-07-28",amount:"50000"}]},
+  savings:{goals:[],pots:[{id:"main",name:"貯金"}],txns:[{id:9,type:"deposit",date:"2026-07-01",amount:"100000",potId:"main"}]},
+  invest:{holdings:[],bufferTxns:[]}};
+run("applyData(__S4)");
+chk("先月のtopupは当月枠に数えない", run('bankRefillUsed("2026-08")')===0, "7月分=¥"+run('bankRefillUsed("2026-07")'));
+run('doTransfer("__wallet__","__bank__",10000,"2026-08-05")');
+chk("所持金からの補充が枠に乗る", run('bankRefillUsed("2026-08")')===10000);
+/* 迂回: 貯金→所持金→軍資金 でも同じ枠を消費する(経路で抜けられない) */
+run('doTransfer("main","__wallet__",20000,"2026-08-06")');
+chk("貯金→所持金は枠を消費しない", run('bankRefillUsed("2026-08")')===10000);
+run('doTransfer("__wallet__","__bank__",20000,"2026-08-06")');
+chk("迂回しても最後のtopupで枠を消費", run('bankRefillUsed("2026-08")')===30000, "¥"+run('bankRefillUsed("2026-08")'));
+/* 箱→軍資金の直行も同じ */
+run('doTransfer("main","__bank__",5000,"2026-08-07")');
+chk("箱→軍資金の直行も枠を消費", run('bankRefillUsed("2026-08")')===35000, "¥"+run('bankRefillUsed("2026-08")'));
+/* 逆流(回収)は枠に影響しない */
+const u7=run('bankRefillUsed("2026-08")');
+run('doTransfer("__bank__","main",5000,"2026-08-08")');
+chk("軍資金→貯金(回収)は枠に無関係", run('bankRefillUsed("2026-08")')===u7);
+chk("補正(adjust)は補充に数えない", (function(){
+  run('(S.bank.txns=S.bank.txns||[]).push({id:99,date:"2026-08-09",type:"adjust",amount:"9000"})');
+  return run('bankRefillUsed("2026-08")')===u7; })());
+
 console.log("\n=== 不変量チェック: "+pass+" 通過 / "+fail+" 失敗 ===");
