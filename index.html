@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.16 (localStorage保存・完全オフライン)
+   Tally 4.17 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.16";
+const APP_VERSION = "4.17";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1411,7 +1411,7 @@ function viewLedger(){
   {
     const _fs98=furusatoDue(mk);
     const _isCur = (mk === todayStr().slice(0,7));
-    const _incomeLanded = me.some(e=>e.type==="income" && !isNetEntry(e) && e.date<=todayStr());
+    const _incomeLanded = mainIncomeLanded(mk);   /* v4.17: 臨時収入では発火させない */
     const _left = Math.max(0,_ps74.sv-_sp62.sv) + Math.max(0,_ps74.iv-_sp62.iv);
     const _anyDone = (_sp62.sv+_sp62.iv) > 0;
     if(_isCur && ((_incomeLanded || _anyDone) && _left > 0 || _fs98.active)){
@@ -2901,6 +2901,19 @@ function preSplit(mk){
      箱の移し替えという操作自体が発生しない
    記帳規約はv3.38のまま(店名「ふるさと納税」固定・分類=承認なのでバー対象外)。
    出す条件は先取り(v3.91)と同じ: 12月 かつ その年の枠 かつ (収入着弾済み or 一部寄付済み) かつ 残枠あり */
+/* v4.17【バグ修正】**「収入が着弾したか」を1件でも入ったか、で見ていたのが誤り**(ユーザー指摘)。
+   実データで、8/3の割戻金¥7,516が「給料が来た」と判定され、給料日(8/14)の10日前に
+   「今月の振替がまだです あと¥36,808」が出ていた——所持金¥33,016では**物理的に不可能**な催促。
+   **その月の収入の過半が着弾したか**で見る。給与は当月収入の大半を占めるので、
+   臨時収入では発火せず、給料が入った瞬間に発火する。カテゴリ名に依存しないのも利点 */
+function mainIncomeLanded(mk){
+  const NET=["slot","mahjong"];
+  const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="income"&&!NET.includes(e.src));
+  const all=me.reduce((a,e)=>a+e.amount,0);
+  if(all<=0) return false;
+  const got=me.filter(e=>e.date<=todayStr()).reduce((a,e)=>a+e.amount,0);
+  return got >= all*0.5;
+}
 function furusatoDue(mk){
   const fs=S.furusato||{}, y=String(mk).slice(0,4), mo=String(mk).slice(5,7);
   const target=num(fs.limit)||0;
@@ -2908,10 +2921,7 @@ function furusatoDue(mk){
     .reduce((a,e)=>a+e.amount,0);
   const left=Math.max(0, target-done);
   const inMonth = (mo==="12" && String(fs.year)===y && target>0);
-  const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
-  /* isNetEntryはviewMain/viewCatDrillのローカル定数なのでここからは見えない。同じ判定を自前で持つ */
-  const _NET=["slot","mahjong"];
-  const landed=me.some(e=>e.type==="income"&&!_NET.includes(e.src)&&e.date<=todayStr());
+  const landed=mainIncomeLanded(mk);   /* v4.17: 主要な収入(=給料)の着弾で判定 */
   /* v4.01: 箱の紐づけは撤去(ユーザー指摘)。**どの箱から出すかは支出の記帳時に選ぶ**方が自然なので、
      ここでは「貯金全体で払えるか」だけを見る。払えるなら12月の予算は絞らない */
   const covered=Math.max(0, savingsBalance());
