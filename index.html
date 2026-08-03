@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.08 (localStorage保存・完全オフライン)
+   Tally 4.11 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -457,7 +457,7 @@ function applyData(d){
   S.mjSessions = Array.isArray(d.mjSessions)?d.mjSessions:[];
   S.fixed = Array.isArray(d.fixed)?d.fixed:[];
   S.wishlist = Array.isArray(d.wishlist)?d.wishlist:[];
-  S.bank = Object.assign({switch:"",ceiling:"300000",seed:"",txns:[]}, d.bank||{});
+  S.bank = Object.assign({switch:"",ceiling:"300000",seed:"",refillCap:"30000",txns:[]}, d.bank||{});   /* v4.11: refillCap=月あたりの補充許容枠 */
   S.savings = Object.assign({goals:[],txns:[],pots:[]}, d.savings||{});
   /* v4.00: 箱。既定箱"main"は必ず先頭に居る(既存txnはpotId無し=main扱いなので非破壊) */
   if(!Array.isArray(S.savings.pots)) S.savings.pots=[];
@@ -737,7 +737,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.08";
+const APP_VERSION = "4.11";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3225,6 +3225,16 @@ function bindInvest(){
 }
 
 /* ---------- 軍資金(バンクロール口座) ---------- */
+/* v4.11: **その暦月に軍資金へ入れた合計**(=補充実績)。
+   出所は問わない——`貯金→所持金→軍資金`と迂回しても最後は必ずtopupになるので、
+   ここを数えれば経路によらず同じ数字になる(ユーザー指摘の要点)。
+   補正(adjust)は実残高とのズレ直しなので補充には数えない */
+function bankRefillUsed(mk){
+  const m = mk || todayStr().slice(0,7);
+  return ((S.bank&&S.bank.txns)||[]).filter(t=>t.type==="topup" && String(t.date||"").startsWith(m))
+    .reduce((a,t)=>a+num(t.amount),0);
+}
+function bankRefillCap(){ const v=num((S.bank||{}).refillCap); return v>0?v:30000; }
 function bankGameNet(){
   const sw=(S.bank&&S.bank.switch)||"9999-99-99";
   return (S.entries||[]).filter(e=>(e.src==="slot"||e.src==="mahjong") && e.date>=sw)
@@ -3332,34 +3342,34 @@ function bindWallet(){
 function viewBank(){
   const b=S.bank, bal=bankBalance(), ceil=num(b.ceiling)||300000;
   const gnet=bankGameNet(), saved=bankSaved();
+  const rUsed=bankRefillUsed(), rCap=bankRefillCap();
   const pct=Math.max(0,Math.min(100, ceil>0? bal/ceil*100 : 0));
   const over=bal-ceil, low=bal<ceil*0.15;
   let h='<div class="hdr"><button class="navbtn" data-ba="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">軍資金</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">遊技専用の資金。<br>勝ち負けはこの中だけで増減し、生活費・貯金に触れない。<br>上限を超えた分は貯金へ回収。<br>負けを外の金で埋める(入金)が漏れの正体。</div>';
+  /* v4.09: 説明文4行を撤去(ユーザー指摘)。毎回読むものではない。
+     「残りわずか」は独立カードをやめ**バーの直下の行に出す**——状態はグラフのそばで語る。
+     設定(集計開始日/上限/開始時の残高)は貯金の箱と同じく[編集]に畳んだ */
   h+='<div class="card" style="margin-bottom:12px">'+
     '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">残高</span>'+
-    /* v3.83: 残高が少ないだけでマイナスではないので数字は赤くしない。警告はバーと下の枠が担う */
+    /* v3.83: 残高が少ないだけでマイナスではないので数字は赤くしない。警告はバーと下の行が担う */
     '<span class="mono '+(bal<0?"red":"teal")+'" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>'+
-    '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:9px 0 4px"><div style="height:100%;width:'+pct+'%;background:'+(low?"var(--red)":over>0?"var(--amber)":"var(--teal)")+'"></div></div>'+
-    '<div class="row between" style="font-size:10px"><span class="muted">¥0</span><span class="muted">上限 ¥'+ceil.toLocaleString("ja-JP")+'</span></div></div>';
-  if(low) h+='<div class="card" style="margin-bottom:12px;border-color:var(--red)"><div class="red" style="font-size:12px;font-weight:700">⚠ 軍資金が残りわずか</div><div class="muted" style="font-size:11px;margin-top:4px">尽きたら来月まで補充しない約束です。<br>ここで貯金から補充するのが20年来の漏れ。</div></div>';
+    '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:9px 0 5px"><div style="height:100%;width:'+pct+'%;background:'+(low?"var(--red)":over>0?"var(--amber)":"var(--teal)")+'"></div></div>'+
+    '<div class="row between" style="font-size:10px">'+
+      (low ? '<span class="red" style="font-weight:700">⚠ 残りわずか</span>'
+           : over>0 ? '<span class="amber" style="font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</span>'
+           : '<span class="muted">¥0</span>')+
+      '<span class="muted">上限 ¥'+ceil.toLocaleString("ja-JP")+'</span></div>'+
+    '<div class="row" style="gap:6px;justify-content:flex-end;margin-top:10px">'+
+      '<button class="btn" style="font-size:10px;padding:3px 12px" data-ba="edit">編集</button>'+
+      '<button class="btn" style="font-size:10px;padding:3px 12px" data-ba="adjust">調整</button></div></div>';
   if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
   h+='<div class="card2" style="margin-bottom:14px;font-size:12px;padding:12px">'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">集計開始日('+esc(b.switch||"未設定")+')以降の勝ち負け</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">開始時の残高</span><span class="mono">¥'+num(b.seed).toLocaleString("ja-JP")+'</span></div>'+
-    '<div class="row between"><span class="muted">貯金に回した累計</span><span class="mono teal">¥'+saved.toLocaleString("ja-JP")+'</span></div></div>';
-  h+=band("操作");
-  h+='<div class="row" style="gap:8px;margin-bottom:8px">'+
-    /* v3.82: 用語を日本語に統一し、移動は「どこから/どこへ」を明示する。
-       シード設定=開始時の残高、調整=残高のズレ補正、と役割を名前で言う */
-    /* v4.05: 入金/出金は記帳画面の振替へ集約。ここは導線だけ */
-    '<button class="btn tealb" style="flex:1;font-size:13px;padding:11px 0;font-weight:700" data-ba="gotr">振替する</button></div>'+
-    '<div class="row" style="gap:8px;margin-bottom:8px">'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="seed">開始時の残高</button>'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-ba="adjust">残高のズレを補正</button></div>';
-  h+='<div class="card" style="margin:10px 0"><div class="row" style="gap:10px;align-items:flex-end">'+
-    '<div><div class="muted" style="font-size:9px;margin-bottom:3px">集計開始日(給料日推奨)</div><input class="input mono" type="date" value="'+esc(b.switch||"")+'" data-ba-in="switch" style="width:auto;min-width:150px;text-align:left;-webkit-appearance:none;height:44px;box-sizing:border-box"></div>'+
-    '<div style="flex:1"><div class="muted" style="font-size:9px;margin-bottom:3px">上限(円)</div><input class="input r mono" type="number" inputmode="numeric" value="'+esc(b.ceiling||"")+'" data-ba-in="ceiling" style="height:44px;box-sizing:border-box"></div></div></div>';
+    '<div class="row between" style="margin-bottom:5px"><span class="muted">貯金に回した累計</span><span class="mono teal">¥'+saved.toLocaleString("ja-JP")+'</span></div>'+
+    /* v4.11: 補充枠は**使い切る前に見えていないと意味がない**ので常設で出す */
+    '<div class="row between"><span class="muted">今月の補充</span><span class="mono '+(rUsed>=rCap?"red":rUsed>0?"amber":"muted")+'">¥'+rUsed.toLocaleString("ja-JP")+' / ¥'+rCap.toLocaleString("ja-JP")+'</span></div></div>';
+  h+='<button class="btn tealb full" style="padding:11px 0;font-weight:700;font-size:13px;margin-bottom:14px" data-ba="gotr">振替する</button>';
   const txns=(b.txns||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
   if(txns.length){
     h+=band("記録");
@@ -3374,7 +3384,6 @@ function viewBank(){
   return h;
 }
 function bindBank(){
-  document.querySelectorAll("[data-ba-in]").forEach(el=>{ el.onchange=e=>{ S.bank[el.dataset.baIn]=e.target.value; save(); render(); }; });
   document.querySelectorAll("[data-ba]").forEach(el=>{
     const a=el.dataset.ba, v=el.dataset.v, b=S.bank;
     el.onclick=()=>{
@@ -3383,7 +3392,19 @@ function bindBank(){
       if(a==="gotr"){ openTransfer("", "", "bank"); return; }
       if(a==="gotrover"){ const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000));
         openTransfer(ACC_BANK, "", "bank", over); return; }
-      if(a==="seed"){ const p=prompt("開始時の残高(円)\n記録を始めた時点の遊技資金。\nここに以後の勝ち負けと入出金を積み上げます。", b.seed||""); if(p===null)return; b.seed=String(num(p)); save(); render(); return; }
+      /* v4.09: 設定3つを[編集]に畳む(貯金の箱と同じ様式)。どれも滅多に触らない項目なので
+         常設のカード2枚を占有させる価値がない。キャンセルした時点で以降は聞かない */
+      if(a==="edit"){
+        const c=prompt("上限(円)\n超えた分は貯金へ回収します。", b.ceiling||"300000"); if(c===null)return;
+        if(num(c)>0) b.ceiling=String(num(c));
+        const rc=prompt("月あたりの補充枠(円)\nこの額までは警告なしで軍資金へ入れられます。\n超えると警告が出ます。", b.refillCap||"30000"); if(rc===null){ save(); render(); return; }
+        if(num(rc)>0) b.refillCap=String(num(rc));
+        const d=prompt("集計開始日(YYYY-MM-DD・給料日推奨)\nこの日以降の勝ち負けを集計します。", b.switch||todayStr()); if(d===null){ save(); render(); return; }
+        if(/^\d{4}-\d{2}-\d{2}$/.test(String(d).trim())) b.switch=String(d).trim();
+        const p=prompt("開始時の残高(円)\n記録を始めた時点の遊技資金。\nここに以後の勝ち負けと入出金を積み上げます。", b.seed||""); if(p===null){ save(); render(); return; }
+        b.seed=String(num(p));
+        save(); render(); return;
+      }
       if(a==="adjust"){ const p=prompt("残高のズレを補正(円・マイナス可)\n実際の残高と合わない分を入れてください。",""); if(p===null)return; const amt=num(p); if(amt===0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt)}); save(); render(); return; }
       if(a==="txndel"){ if(confirm("この記録を削除?")){ b.txns=(b.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
     };
@@ -4573,10 +4594,30 @@ function bindEntry(){
           const fa=accs.find(x=>x.id===String(UI.trFrom)), ta=accs.find(x=>x.id===String(UI.trTo));
           if(!fa||!ta) return;
           if(amt>fa.bal && !confirm(fa.name+"の残高 ¥"+fa.bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
-          /* v4.05: 旧軍資金画面(v3.82)にあった警告をここへ移植。**貯金から軍資金への補充=負けを外の金で埋める行為**で、
-             これがアプリの存在理由そのもの(20年来の漏れ)。入口を集約しても警告は絶対に落とさない */
-          if(fa.id!==ACC_WALLET && fa.id!==ACC_BANK && ta.id===ACC_BANK){
-            if(!confirm("貯金から ¥"+amt.toLocaleString("ja-JP")+"\n\nこれは負けを外の金で埋める行為です。あなたの20年来の漏れそのもの。本当に移しますか?")) return;
+          /* v4.10: **軍資金への振替は出所を問わず全て警告する**(ユーザー指摘)。
+             v4.05は貯金からの補充だけを見ていたが、**実際に起きるのは所持金からの補充**——
+             負けた分をその場の手元金で埋めるのが現実の経路。出所で漏れかどうかは決まらない。
+             軍資金へ金が入る = 遊技の負けを外から埋める、という一点だけが本質。
+             文面だけは出所に合わせて何を削っているのかを名指しする */
+          /* v4.11: **月あたりの補充枠を超えたときだけ警告する**(ユーザー設計)。
+             毎回出す警告は必ず読み飛ばされる。枠内(既定¥30,000/月)は計画的な資金投入として黙って通し、
+             超えた瞬間だけ止める。**出所は問わない**——貯金→所持金→軍資金と迂回しても
+             最後は必ずtopupになるので、月次合計で見れば同じ数字になる */
+          if(ta.id===ACC_BANK){
+            const cap=bankRefillCap(), used=bankRefillUsed(String(f.date).slice(0,7));
+            if(used+amt > cap){
+              const over=used+amt-cap;
+              const why = (fa.id===ACC_WALLET)
+                ? "生活費を削って遊技に回す行為です。"
+                : "目的を決めて取り分けた金を崩す行為です。";
+              const msg = "今月の補充枠 ¥"+cap.toLocaleString("ja-JP")+" を超えます。"+
+                "\n\n今月すでに ¥"+used.toLocaleString("ja-JP")+" 補充済み"+
+                "\n今回 ¥"+amt.toLocaleString("ja-JP")+" → 枠を ¥"+over.toLocaleString("ja-JP")+" 超過"+
+                "\n現在の軍資金 ¥"+bankBalance().toLocaleString("ja-JP")+
+                "\n\n"+why+"\n負けを外の金で埋めるのが、あなたの20年来の漏れです。"+
+                "\n\n本当に移しますか?";
+              if(!confirm(msg)) return;
+            }
           }
           if(!doTransfer(fa.id, ta.id, amt, f.date)) return;
           save(); toast(fa.name+" → "+ta.name+" ¥"+amt.toLocaleString("ja-JP"));
