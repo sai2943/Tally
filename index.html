@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.21 (localStorage保存・完全オフライン)
+   Tally 4.22 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.21";
+const APP_VERSION = "4.22";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3395,11 +3395,9 @@ function viewWallet(){
   const w=S.wallet||{}, f=walletFlows(), bal=walletBalance(), fc=walletForecast();
   let h='<div class="hdr"><button class="navbtn" data-wa="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">所持金</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:12px">'+
-    '帳簿上の残高。<br>収入で増え、支出と各ポットへの移動で減ります。<br>'+
-    'カード払いの決済ズレは反映されません(実口座とは差が出ます)。</div>';
+  /* v4.22: 冒頭の説明文を撤去(ユーザー指摘)。毎日見る画面に毎回同じ説明は要らない */
   h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
-    '<div class="muted" style="font-size:12px;letter-spacing:.12em">いまの所持金</div>'+
+    '<div class="muted" style="font-size:12px;letter-spacing:.12em">残高</div>'+
     '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">¥'+bal.toLocaleString("ja-JP")+'</div>'+
     '<div class="muted" style="font-size:10px;margin-top:4px">月末見込み <span class="mono '+(fc.end<0?"red":"")+'">¥'+fc.end.toLocaleString("ja-JP")+'</span></div></div>';
   if(fc.short>0){
@@ -3434,7 +3432,9 @@ function viewWallet(){
       '<div class="row between" style="align-items:baseline">'+
       '<span style="font-size:13px;font-weight:700">'+esc(w.name)+'</span>'+
       '<span class="mono '+(v<0?"red":"teal")+'" style="font-size:17px;font-weight:700">¥'+v.toLocaleString("ja-JP")+'</span></div>'+
-      '<div class="muted mono" style="font-size:10px;margin-top:4px">起点 ¥'+num(w.seed).toLocaleString("ja-JP")+'</div>'+
+      /* v4.22: 起点残高の常設表示を撤去(ユーザー指摘)。**一度決めたら以後は調整で上書きされる**ので
+         残り続ける意味がない。値は編集から確認・変更できる */
+
       '<div class="row" style="gap:6px;justify-content:flex-end;margin-top:9px">'+
       '<button class="btn" style="font-size:10px;padding:3px 12px" data-wa="wedit" data-v="'+w.id+'">編集</button>'+
       '<button class="btn" style="font-size:10px;padding:3px 12px" data-wa="wadj" data-v="'+w.id+'">調整</button>'+
