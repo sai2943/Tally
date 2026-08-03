@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.14 (localStorage保存・完全オフライン)
+   Tally 4.15 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -457,7 +457,7 @@ function applyData(d){
   S.mjSessions = Array.isArray(d.mjSessions)?d.mjSessions:[];
   S.fixed = Array.isArray(d.fixed)?d.fixed:[];
   S.wishlist = Array.isArray(d.wishlist)?d.wishlist:[];
-  S.bank = Object.assign({switch:"",ceiling:"300000",seed:"",refillCap:"30000",txns:[]}, d.bank||{});   /* v4.11: refillCap=月あたりの補充許容枠 */
+  S.bank = Object.assign({ceiling:"300000",seed:"",refillCap:"30000",txns:[]}, d.bank||{});   /* v4.11: refillCap=月あたりの補充許容枠。v4.15: switchは撤去 */
   S.savings = Object.assign({goals:[],txns:[],pots:[]}, d.savings||{});
   /* v4.00: 箱。既定箱"main"は必ず先頭に居る(既存txnはpotId無し=main扱いなので非破壊) */
   if(!Array.isArray(S.savings.pots)) S.savings.pots=[];
@@ -751,7 +751,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.14";
+const APP_VERSION = "4.15";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2785,12 +2785,9 @@ function viewAssets(){
   h+='<div class="card" style="margin-bottom:14px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">総資産</div>'+
     '<div class="mono teal" style="font-size:34px;font-weight:700;line-height:1.25">¥'+total.toLocaleString("ja-JP")+'</div>'+
-    '<div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px">'+
-    '<div style="flex:1;text-align:center"><div class="muted" style="font-size:10px">所持金</div><div class="mono" style="font-size:15px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</div></div>'+
-    '<div style="width:1px;background:var(--line)"></div>'+
-    '<div style="flex:1;text-align:center"><div class="muted" style="font-size:10px">軍資金</div><div class="mono" style="font-size:15px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</div></div>'+
-    '<div style="width:1px;background:var(--line)"></div>'+
-    '<div style="flex:1;text-align:center"><div class="muted" style="font-size:10px">貯金</div><div class="mono" style="font-size:15px;font-weight:700">¥'+sBal.toLocaleString("ja-JP")+'</div></div></div></div>';
+    /* v4.15: 3分割の内訳を撤去(ユーザー指摘)。すぐ下に所持金/軍資金/貯金/投資のカードが
+       全て並んでいるので二重表記だった */
+    '</div>';
   /* v3.81: 所持金カード。予定を払えない場合はここで警告する(アプリが今まで答えられなかった唯一の問い) */
   /* v4.06: サブラベル(生活口座)と説明文を撤去(ユーザー指摘)。**同じ説明を毎日見せる必要はない**——
      意味は各ポットの詳細画面が持てばよく、一覧カードは残高だけで足りる。
@@ -2799,9 +2796,12 @@ function viewAssets(){
     '<div class="row between" style="align-items:baseline"><span style="font-size:13px;font-weight:700">所持金</span>'+
     '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div></div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<ceil*0.15?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
+    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+bPct+'%;background:'+(bBal<ceil*0.15?"var(--red)":bBal>ceil?"var(--amber)":"var(--teal)")+'"></div></div>'+
-    '<div class="row between" style="font-size:10px;margin-top:4px"><span class="muted">天井 ¥'+ceil.toLocaleString("ja-JP")+'</span><span class="mono muted">'+Math.floor(bPct)+'%</span></div></div>';
+    /* v4.15: 残高が少ないのは「借金」ではないので数字は赤くしない。警告はバーの色とこの行が担う */
+    '<div class="row between" style="font-size:10px;margin-top:4px">'+
+    (bBal<ceil*0.15?'<span class="red" style="font-weight:700">⚠ 残りわずか</span>':bBal>ceil?'<span class="amber" style="font-weight:700">上限超え +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</span>':'<span class="muted">天井 ¥'+ceil.toLocaleString("ja-JP")+'</span>')+
+    '<span class="mono muted">'+Math.floor(bPct)+'%</span></div></div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="savings">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">貯金</span><span><span class="mono teal" style="font-size:18px;font-weight:700">¥'+sBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>';
   /* v4.02: 箱ごとの目標をそのまま並べる(順次の梯子をやめたので「現在の目標」という概念が無い) */
@@ -3281,9 +3281,11 @@ function bankRefillUsed(mk){
     .reduce((a,t)=>a+num(t.amount),0);
 }
 function bankRefillCap(){ const v=num((S.bank||{}).refillCap); return v>0?v:30000; }
+/* v4.15: **集計開始日を撤去**(ユーザー指摘)。月別で見る方針にしたのに、残高だけが
+   開始日以降しか数えておらず、**月別の合計と残高が一致しない状態**だった(実データで確認)。
+   遊技は全期間を数え、開始時の残高は「記録開始前の残高」と定義し直す */
 function bankGameNet(){
-  const sw=(S.bank&&S.bank.switch)||"9999-99-99";
-  return (S.entries||[]).filter(e=>(e.src==="slot"||e.src==="mahjong") && e.date>=sw)
+  return (S.entries||[]).filter(e=>(e.src==="slot"||e.src==="mahjong"))
     .reduce((a,e)=> a + (e.type==="income"?e.amount:-e.amount), 0);
 }
 /* v3.81: 所持金(論理残高)。実際の銀行残高ではなく帳簿上の位置——カード払いの決済ズレは吸収しない。
@@ -3474,7 +3476,7 @@ function viewBank(){
       '<button class="btn" style="font-size:10px;padding:3px 12px" data-ba="adjust">調整</button></div></div>';
   if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
   h+='<div class="card2" style="margin-bottom:14px;font-size:12px;padding:12px">'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">集計開始日('+esc(b.switch||"未設定")+')以降の勝ち負け</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
+    '<div class="row between" style="margin-bottom:5px"><span class="muted">遊技の勝ち負け</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">開始時の残高</span><span class="mono">¥'+num(b.seed).toLocaleString("ja-JP")+'</span></div>'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">貯金に回した累計</span><span class="mono teal">¥'+saved.toLocaleString("ja-JP")+'</span></div>'+
     /* v4.11: 補充枠は**使い切る前に見えていないと意味がない**ので常設で出す */
@@ -3529,9 +3531,7 @@ function bindBank(){
         if(num(c)>0) b.ceiling=String(num(c));
         const rc=prompt("月あたりの補充枠(円)\nこの額までは警告なしで軍資金へ入れられます。\n超えると警告が出ます。", b.refillCap||"30000"); if(rc===null){ save(); render(); return; }
         if(num(rc)>0) b.refillCap=String(num(rc));
-        const d=prompt("集計開始日(YYYY-MM-DD・給料日推奨)\nこの日以降の勝ち負けを集計します。", b.switch||todayStr()); if(d===null){ save(); render(); return; }
-        if(/^\d{4}-\d{2}-\d{2}$/.test(String(d).trim())) b.switch=String(d).trim();
-        const p=prompt("開始時の残高(円)\n記録を始めた時点の遊技資金。\nここに以後の勝ち負けと入出金を積み上げます。", b.seed||""); if(p===null){ save(); render(); return; }
+        const p=prompt("開始時の残高(円)\n**記録を始める前**の遊技資金。\nここに記録した全ての勝ち負けと入出金を積み上げます。", b.seed||""); if(p===null){ save(); render(); return; }
         b.seed=String(num(p));
         save(); render(); return;
       }
