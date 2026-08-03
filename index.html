@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.15 (localStorage保存・完全オフライン)
+   Tally 4.16 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -342,7 +342,11 @@ function genFixedEntries(tpl){
         id: uid()+"-f"+date, date, fixedDate: date,
         type: tpl.type, category: tpl.category,
         amount: num(tpl.amount), memo: tpl.name, store: tpl.store||"", item: tpl.item||"",
-        src: "fixed", fixedId: tpl.id
+        src: "fixed", fixedId: tpl.id,
+        /* v4.16: **固定費ごとにどの財布から出るか**(ユーザー指摘)。
+           家賃や光熱費は口座、駐輪はSuica——実態がバラバラなので、
+           テンプレに持たせて生成エントリへ引き継ぐ。未設定は先頭の財布 */
+        wal: String(tpl.wal || walletPots()[0].id)
       });
     }
   });
@@ -413,6 +417,10 @@ function updateFixed(tpl){
     if(String(e.fixedId)!==String(tpl.id)) return;
     if(occs.includes(e.date) && fixedOccKey(e)!==e.date){ e.fixedDate = e.date; }
   });
+  /* v4.16: 財布を変えたら、この固定費が生んだ**過去の分も含めて**付け替える。
+     光熱費の引き落とし口座を変えたら過去分も同じ口座だった、というのが実態に近い */
+  const wal = String(tpl.wal || walletPots()[0].id);
+  S.entries.forEach(e=>{ if(String(e.fixedId)===String(tpl.id)) e.wal = wal; });
   genFixedEntries(tpl);
   save();
 }
@@ -751,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.15";
+const APP_VERSION = "4.16";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1407,10 +1415,10 @@ function viewLedger(){
     const _left = Math.max(0,_ps74.sv-_sp62.sv) + Math.max(0,_ps74.iv-_sp62.iv);
     const _anyDone = (_sp62.sv+_sp62.iv) > 0;
     if(_isCur && ((_incomeLanded || _anyDone) && _left > 0 || _fs98.active)){
-      h += band("先取り");
+      h += band("振替");
       h += '<div class="card" style="margin-bottom:14px">';
       h += '<div class="amber" style="font-size:11px;font-weight:700;margin-bottom:10px">'+
-        (_fs98.active ? '今年のふるさと納税枠が未消化です' : '今月の先取りがまだです')+'</div>';
+        (_fs98.active ? '今年のふるさと納税枠が未消化です' : '今月の振替がまだです')+'</div>';
       /* v3.98: ふるさと納税を最上段に置く=可処分から最初に引かれる順番と表示順を一致させる。
          色はバー連動(v3.92)でamber——消費でも貯蓄でもない「期限付きの権利行使」なので固有色を当てる */
       if(_fs98.active){
@@ -2994,7 +3002,7 @@ function viewLeak(){
     '<div class="row between" style="margin-bottom:5px"><span class="muted">貯金へ振替 累計</span><span class="mono teal">¥'+sweep.toLocaleString("ja-JP")+'</span></div>'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">回収率</span><span class="mono" style="font-weight:700">'+(posSum>0?Math.round(sweep/posSum*100)+"%":"—")+'</span></div>'+
     '<div class="row between"><span class="muted">外部から補充(生活→遊技の逆流)</span><span class="mono '+(topup>0?"red":"muted")+'">¥'+topup.toLocaleString("ja-JP")+'</span></div></div>';
-  h+='<div class="muted" style="font-size:10px;margin-top:10px;line-height:1.6">読み方: 増収+10万・支出+4万なら漏れ40%=実効6割。<br>体感ほぼ100%だった時代から、壁と先取りの配管で<br>どこまで下げたかの実測です。</div>';
+  h+='<div class="muted" style="font-size:10px;margin-top:10px;line-height:1.6">読み方: 増収+10万・支出+4万なら漏れ40%=実効6割。<br>体感ほぼ100%だった時代から、壁と振替の配管で<br>どこまで下げたかの実測です。</div>';
   return h;
 }
 function bindLeak(){
@@ -3080,7 +3088,7 @@ function viewInvest(){
   const inv=S.invest||{policy:"",holdings:[],bufferTxns:[]};
   const bufBal=(inv.bufferTxns||[]).reduce((a,t)=>a+num(t.amount),0);
   let h='<div class="hdr"><button class="navbtn" data-iv="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">投資</div><button class="navbtn" data-iv="audit" style="font-size:12px;color:var(--teal)">AI監査</button></div>';
-  /* 先取りロードマップ: 貯金目標の梯子→投資スタート。欲の視線をカウントダウンへ */
+  /* 振替ロードマップ: 貯金目標の梯子→投資スタート。欲の視線をカウントダウンへ */
   /* v4.02: ロードマップも箱ごとの目標に。順次の梯子をやめたので「次の目標」ではなく
      **目標を持つ全ての箱の不足合計**が投資スタートまでの距離になる */
   const pots4i=potProgress().filter(p=>p.hasTarget);
@@ -3290,7 +3298,7 @@ function bankGameNet(){
 }
 /* v3.81: 所持金(論理残高)。実際の銀行残高ではなく帳簿上の位置——カード払いの決済ズレは吸収しない。
    入: 収入 / 貯金の引き出し / 軍資金からの戻し
-   出: 支出 / 貯金の先取り入金 / 軍資金の補充 / 投資の買付・バッファ拠出
+   出: 支出 / 貯金の貯金への振替 / 軍資金への振替 / 投資の買付・バッファ拠出
    無関係: 遊技の勝ち負け(軍資金内で完結・isNetEntryで家計簿からも除外済み) / スイープ(軍資金→貯金)
    asOf を渡すとその日までの実績で計算する(省略時は今日) */
 /* v4.14: 財布(所持金の内訳)。walId省略=全財布合計なので、既存の呼び出しは総額のまま動く */
@@ -3949,6 +3957,16 @@ function viewFixed(){
       '<input class="input mono" type="date" id="fx-end" value="'+esc(f.end||"")+'"></div>';
     const fxAmt = '<div><div class="fxl">金額</div>'+
       '<input class="input mono r" type="number" inputmode="numeric" id="fx-amount" placeholder="円" value="'+esc(f.amount)+'"></div>';
+    /* v4.16: **どの財布から引き落とされるか**(ユーザー指摘)。家賃・光熱費は口座、駐輪はSuica のように実態が分かれる。
+       財布が1つのうちは出さない */
+    let fxWal="";
+    if(walletPots().length>1){
+      const cw=String(f.wal||walletPots()[0].id);
+      fxWal='<div class="fxl" style="margin-top:2px">'+(f.type==="income"?"どの財布に入る":"どの財布から出る")+'</div>'+
+        '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">'+
+        walletPots().map(w=>'<button class="btn '+(cw===String(w.id)?"sel":"")+'" data-fa="fwal" data-v="'+w.id+'" style="font-size:11px;padding:6px 11px">'+esc(w.name)+'</button>').join("")+'</div>';
+    }
+    h += fxWal;
     h += ((isWeekly||isDays)
       ? '<div class="fxg"><div><div class="fxl">'+(isDays?"開始日":"起点日("+(freq==="weekly"?"毎週":"2週ごと")+")")+'</div>'+
         '<input class="input mono" type="date" id="fx-start" value="'+esc(f.start||todayStr())+'"></div>'+fxEnd+'</div>'+
@@ -4031,9 +4049,10 @@ function bindFixed(){
           navigator.clipboard.writeText(full).then(done, ()=>alert(full));
         } else alert(full);
       }
-      else if(a==="new"){ UI.fixForm={type:"expense",name:"",store:"",item:"",category:"消費",freq:"monthly",day:"",start:todayStr(),amount:""}; render(); }
+      else if(a==="new"){ UI.fixForm={type:"expense",name:"",store:"",item:"",category:"消費",freq:"monthly",day:"",start:todayStr(),amount:"",wal:""}; render(); }
       else if(a==="fcancel"){ UI.fixForm=null; render(); }
       else if(a==="ftype"){ f.type=v; f.category=v==="expense"?"消費":"給与"; render(); }
+      else if(a==="fwal"){ f.wal=String(v); render(); }
       else if(a==="fcat"){ f.category=v; render(); }
       else if(a==="ffreq"){ f.freq=v; if((v==="weekly"||v==="biweekly")&&!f.start) f.start=todayStr(); render(); }
       else if(a==="fshift"){ f.holidayShift=v; render(); }
@@ -4047,7 +4066,7 @@ function bindFixed(){
             const _n=new Date(); const _d=Math.min(num(t.day), new Date(_n.getFullYear(),_n.getMonth()+1,0).getDate());
             st0=_n.getFullYear()+"-"+String(_n.getMonth()+1).padStart(2,"0")+"-"+String(_d).padStart(2,"0");
           }
-          UI.fixForm={editId:t.id, type:t.type, name:t.name, store:t.store||"", item:(t.item!=null?t.item:(t.name||"")), category:t.category, freq:lf, day:t.day?String(t.day):"", start:st0||todayStr(), amount:String(t.amount), holidayShift:t.holidayShift||"none", days:(t.days||[]).slice(), end:t.end||"", every:lev}; render(); }
+          UI.fixForm={editId:t.id, type:t.type, name:t.name, store:t.store||"", item:(t.item!=null?t.item:(t.name||"")), category:t.category, freq:lf, day:t.day?String(t.day):"", start:st0||todayStr(), amount:String(t.amount), holidayShift:t.holidayShift||"none", days:(t.days||[]).slice(), end:t.end||"", every:lev, wal:t.wal||""}; render(); }
       }
       else if(a==="stop"){
         const t=(S.fixed||[]).find(x=>String(x.id)===String(v));
@@ -4086,7 +4105,8 @@ function bindFixed(){
           day:(isW||isD)?"":String(day), start:f.start||"", amount:String(num(f.amount)),
           holidayShift: (isW||isD) ? "none" : (f.holidayShift||"none"),
           days: isD ? f.days.slice().sort() : undefined, end: endV||"",
-          every: (freq==="monthly" && every>1) ? every : undefined};
+          every: (freq==="monthly" && every>1) ? every : undefined,
+          wal: String(f.wal || walletPots()[0].id)};   /* v4.16: どの財布から出るか */
         if(f.editId){
           updateFixed(Object.assign({id:f.editId}, base));
         }else{
