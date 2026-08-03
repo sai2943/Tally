@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.11 (localStorage保存・完全オフライン)
+   Tally 4.12 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -737,7 +737,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.11";
+const APP_VERSION = "4.12";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3225,6 +3225,27 @@ function bindInvest(){
 }
 
 /* ---------- 軍資金(バンクロール口座) ---------- */
+/* v4.12: **月別の増減内訳**。軍資金の残高を動かすのは5つ(遊技の勝ち負け/補充/回収/所持金へ戻し/補正)だが、
+   記録セクションに出ていたのは下4つだけで、**一番大きく動かす遊技の勝ち負けが明細に存在しなかった**。
+   残高が減っていても理由が読めない状態だったので、月ごとに何で動いたかを分解する。
+   「負けた月にいくら補充したか」が読める=漏れ係数の材料そのもの */
+function bankMonthly(){
+  const M={};
+  const put=(mk,k,v)=>{ if(!mk) return; (M[mk]=M[mk]||{mk:mk,game:0,topup:0,sweep:0,ret:0,adj:0})[k]+=v; };
+  (S.entries||[]).forEach(e=>{
+    if(e.src!=="slot" && e.src!=="mahjong") return;
+    put(String(e.date||"").slice(0,7), "game", e.type==="income"? e.amount : -e.amount);
+  });
+  ((S.bank&&S.bank.txns)||[]).forEach(t=>{
+    const mk=String(t.date||"").slice(0,7), v=num(t.amount);
+    if(t.type==="topup") put(mk,"topup",v);
+    else if(t.type==="sweep") put(mk,"sweep",v);
+    else if(t.type==="return") put(mk,"ret",v);
+    else if(t.type==="adjust") put(mk,"adj",v);
+  });
+  return Object.values(M).map(x=>Object.assign(x,{net:x.game+x.topup-x.sweep-x.ret+x.adj}))
+    .sort((a,b)=>a.mk<b.mk?1:-1);
+}
 /* v4.11: **その暦月に軍資金へ入れた合計**(=補充実績)。
    出所は問わない——`貯金→所持金→軍資金`と迂回しても最後は必ずtopupになるので、
    ここを数えれば経路によらず同じ数字になる(ユーザー指摘の要点)。
@@ -3370,6 +3391,27 @@ function viewBank(){
     /* v4.11: 補充枠は**使い切る前に見えていないと意味がない**ので常設で出す */
     '<div class="row between"><span class="muted">今月の補充</span><span class="mono '+(rUsed>=rCap?"red":rUsed>0?"amber":"muted")+'">¥'+rUsed.toLocaleString("ja-JP")+' / ¥'+rCap.toLocaleString("ja-JP")+'</span></div></div>';
   h+='<button class="btn tealb full" style="padding:11px 0;font-weight:700;font-size:13px;margin-bottom:14px" data-ba="gotr">振替する</button>';
+  /* v4.12: 月別の増減内訳。1行目=その月の残高変化、2行目=その内訳 */
+  const mon=bankMonthly();
+  if(mon.length){
+    h+=band("月別");
+    mon.forEach(m=>{
+      const parts=[];
+      if(m.game!==0)  parts.push('<span class="'+clsPM(m.game)+'">遊技 '+signYen(m.game)+'</span>');
+      if(m.topup>0)   parts.push('<span class="amber">補充 +¥'+m.topup.toLocaleString("ja-JP")+'</span>');
+      if(m.sweep>0)   parts.push('<span class="teal">回収 −¥'+m.sweep.toLocaleString("ja-JP")+'</span>');
+      if(m.ret>0)     parts.push('<span class="muted">所持金へ −¥'+m.ret.toLocaleString("ja-JP")+'</span>');
+      if(m.adj!==0)   parts.push('<span class="muted">補正 '+signYen(m.adj)+'</span>');
+      const cap=bankRefillCap(), overCap=m.topup>cap;
+      h+='<div class="card" style="margin-bottom:8px;padding:11px 12px">'+
+        '<div class="row between" style="align-items:baseline">'+
+        '<span style="font-size:13px;font-weight:700">'+m.mk.slice(0,4)+'年 '+num(m.mk.slice(5))+'月</span>'+
+        '<span class="mono '+clsPM(m.net)+'" style="font-size:16px;font-weight:700">'+signYen(m.net)+'</span></div>'+
+        (parts.length?'<div class="mono" style="font-size:10px;margin-top:5px;line-height:1.8">'+parts.join('　')+'</div>':'')+
+        (overCap?'<div class="red" style="font-size:10px;margin-top:3px">補充枠 ¥'+cap.toLocaleString("ja-JP")+' を ¥'+(m.topup-cap).toLocaleString("ja-JP")+' 超過</div>':'')+
+        '</div>';
+    });
+  }
   const txns=(b.txns||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
   if(txns.length){
     h+=band("記録");
