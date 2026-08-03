@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.13 (localStorage保存・完全オフライン)
+   Tally 4.14 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -480,7 +480,21 @@ function applyData(d){
       if(g && num(g.target)>0) mainPot.target=String(num(g.target));
     }
   }
-  S.wallet = Object.assign({seed:"", seedDate:""}, d.wallet||{});   /* v3.81: 所持金(論理残高)。seed=起点残高 */
+  S.wallet = Object.assign({seed:"", seedDate:"", pots:[], txns:[]}, d.wallet||{});   /* v3.81: 所持金(論理残高)。v4.14: pots=財布 */
+  /* v4.14: **所持金を財布に分割**(現金/口座/PayPay/Suica など)。貯金の箱と同じ構造。
+     既存データは非破壊: 財布が無ければ既定の1つを作り、旧S.wallet.seedをその起点残高に引き継ぐ。
+     entryのwalとtxnのwalIdは、無ければ先頭の財布に属するものとして扱い、applyDataで明示的に書き込む。
+     **総額は分割前と変わらない**ので、nowCaps(所持金基準の実効枠)など上位の機能は無変更で動く */
+  if(!Array.isArray(S.wallet.pots)) S.wallet.pots=[];
+  if(!S.wallet.pots.length) S.wallet.pots=[{id:"w_main", name:"所持金", seed:String(num(S.wallet.seed)||0)}];
+  {
+    const fw=String(S.wallet.pots[0].id);
+    (S.entries||[]).forEach(e=>{ if(e.wal==null||e.wal==="") e.wal=fw; });
+    ((S.savings&&S.savings.txns)||[]).forEach(t=>{ if((t.type==="deposit"||t.type==="withdraw") && (t.walId==null||t.walId==="")) t.walId=fw; });
+    ((S.bank&&S.bank.txns)||[]).forEach(t=>{ if((t.type==="topup"||t.type==="return") && (t.walId==null||t.walId==="")) t.walId=fw; });
+    if(!Array.isArray(S.wallet.txns)) S.wallet.txns=[];
+    S.wallet.txns.forEach(t=>{ if(t.walId==null||t.walId==="") t.walId=fw; });
+  }
   S.budgets = (d.budgets && typeof d.budgets==="object") ? d.budgets : {};
   S.openAddOnLaunch = !!d.openAddOnLaunch;   /* v3.13: ホワイトリスト漏れでトグルが毎起動リセットされていた */
   S.genres = (d.genres && typeof d.genres==="object") ? d.genres : {};   /* v3.16: 店→ジャンル辞書 */
@@ -737,7 +751,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.13";
+const APP_VERSION = "4.14";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1168,7 +1182,7 @@ function bindCatDrill(){
       else if(a==="drilledit"){
         const e=S.entries.find(x=>String(x.id)===String(v)); if(!e) return;
         UI.editEntryId=e.id;
-        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||""};
+        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||""};
         UI.entryReturn="catdrill";
         UI.screen="entry"; render();
       }
@@ -3277,26 +3291,43 @@ function bankGameNet(){
    出: 支出 / 貯金の先取り入金 / 軍資金の補充 / 投資の買付・バッファ拠出
    無関係: 遊技の勝ち負け(軍資金内で完結・isNetEntryで家計簿からも除外済み) / スイープ(軍資金→貯金)
    asOf を渡すとその日までの実績で計算する(省略時は今日) */
-function walletFlows(asOf){
+/* v4.14: 財布(所持金の内訳)。walId省略=全財布合計なので、既存の呼び出しは総額のまま動く */
+function walletPots(){
+  const p=((S.wallet||{}).pots)||[];
+  return p.length ? p : [{id:"w_main", name:"所持金", seed:String(num((S.wallet||{}).seed)||0)}];
+}
+function walName(id){ const p=walletPots().find(x=>String(x.id)===String(id)); return p?p.name:"所持金"; }
+function eWal(e){ return String(e.wal || walletPots()[0].id); }
+function tWal(t){ return String(t.walId || walletPots()[0].id); }
+function walletSeed(walId){
+  return walletPots().filter(p=>walId==null||String(p.id)===String(walId))
+    .reduce((a,p)=>a+num(p.seed),0);
+}
+function walletFlows(asOf, walId){
   const lim = asOf || todayStr();
   const NET=["slot","mahjong"];
-  const ent=(S.entries||[]).filter(e=>e.date && e.date<=lim && !NET.includes(e.src));
+  const hitE = e => walId==null || eWal(e)===String(walId);
+  const hitT = t => walId==null || tWal(t)===String(walId);
+  const ent=(S.entries||[]).filter(e=>e.date && e.date<=lim && !NET.includes(e.src) && hitE(e));
   const income=ent.filter(e=>e.type==="income").reduce((a,e)=>a+e.amount,0);
   const expense=ent.filter(e=>e.type==="expense").reduce((a,e)=>a+e.amount,0);
   const sv=((S.savings||{}).txns)||[];
-  const svIn =sv.filter(t=>t.type==="deposit" &&(t.date||"")<=lim).reduce((a,t)=>a+num(t.amount),0);
-  const svOut=sv.filter(t=>t.type==="withdraw"&&(t.date||"")<=lim).reduce((a,t)=>a+num(t.amount),0);
+  const svIn =sv.filter(t=>t.type==="deposit" &&(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
+  const svOut=sv.filter(t=>t.type==="withdraw"&&(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
   const bk=((S.bank||{}).txns)||[];
-  const bkIn =bk.filter(t=>t.type==="topup" &&(t.date||"")<=lim).reduce((a,t)=>a+num(t.amount),0);
-  const bkOut=bk.filter(t=>t.type==="return"&&(t.date||"")<=lim).reduce((a,t)=>a+num(t.amount),0);
+  const bkIn =bk.filter(t=>t.type==="topup" &&(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
+  const bkOut=bk.filter(t=>t.type==="return"&&(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
   let ivOut=0, ivIn=0;
-  (((S.invest||{}).holdings)||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"")<=lim) ivOut+=num(b.amount); }));
-  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"")<=lim){ const v=num(t.amount); if(v>0) ivOut+=v; else ivIn+=-v; } });
-  return {income:income, expense:expense, svIn:svIn, svOut:svOut, bkIn:bkIn, bkOut:bkOut, ivOut:ivOut, ivIn:ivIn};
+  (((S.invest||{}).holdings)||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"")<=lim && hitT(b)) ivOut+=num(b.amount); }));
+  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"")<=lim && hitT(t)){ const v=num(t.amount); if(v>0) ivOut+=v; else ivIn+=-v; } });
+  /* 財布同士の移動と実残高のズレ補正。両側で符号が逆なので**合計では必ず相殺される** */
+  const wt=((S.wallet||{}).txns)||[];
+  const adj=wt.filter(t=>(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
+  return {income:income, expense:expense, svIn:svIn, svOut:svOut, bkIn:bkIn, bkOut:bkOut, ivOut:ivOut, ivIn:ivIn, adj:adj};
 }
-function walletBalance(asOf){
-  const f=walletFlows(asOf), w=S.wallet||{};
-  return num(w.seed) + f.income - f.expense - f.svIn + f.svOut - f.bkIn + f.bkOut - f.ivOut + f.ivIn;
+function walletBalance(asOf, walId){
+  const f=walletFlows(asOf, walId);
+  return walletSeed(walId) + f.income - f.expense - f.svIn + f.svOut - f.bkIn + f.bkOut - f.ivOut + f.ivIn + f.adj;
 }
 /* 予定の着地: 今日以降(当月末まで)の予定収支を今の残高に足した見込み。
    予定の支出を払えるかの判定に使う */
@@ -3339,35 +3370,82 @@ function viewWallet(){
   }
   /* v4.13: 出ていく方向は赤(ユーザー指摘)。金額に色を付ける体系(v3.92)と揃える。
      ゼロは「—」なので無彩色のまま */
-  const row=(lbl,v,sign)=>'<div class="row between" style="font-size:12px;padding:5px 0">'+
-    '<span class="muted">'+lbl+'</span><span class="mono '+(v===0?"":sign>0?"teal":"red")+'">'+(v===0?'—':(sign>0?'+':'−')+'¥'+v.toLocaleString("ja-JP"))+'</span></div>';
-  h+=band("内訳(これまでの累計)");
-  h+='<div class="card">'+
-    '<div class="row between" style="font-size:12px;padding:5px 0;cursor:pointer" data-wa="seed">'+
-    '<span class="muted">起点残高</span><span class="mono">¥'+num(w.seed).toLocaleString("ja-JP")+' <span class="muted">›</span></span></div>'+
-    '<div style="height:1px;background:var(--line);margin:6px 0"></div>'+
-    row("収入", f.income, 1)+row("支出", f.expense, -1)+
-    '<div style="height:1px;background:var(--line);margin:6px 0"></div>'+
-    row("貯金へ", f.svIn, -1)+row("貯金から", f.svOut, 1)+
-    row("軍資金へ", f.bkIn, -1)+row("軍資金から", f.bkOut, 1)+
-    row("投資へ", f.ivOut, -1)+row("投資から", f.ivIn, 1)+
-    '<div style="height:1px;background:var(--line);margin:6px 0"></div>'+
-    '<div class="row between" style="font-size:13px;font-weight:700;padding:4px 0"><span>いまの所持金</span>'+
-    '<span class="mono '+(bal<0?"red":"teal")+'">¥'+bal.toLocaleString("ja-JP")+'</span></div></div>';
+  /* v4.14: **累計の内訳カードを撤去し、財布ごとの残高に置き換える**(ユーザー指摘)。
+     「これまでの貯金へ/軍資金へ」の全期間累計はどの判断も変えない。
+     見たいのは**いまどの財布にいくらあるか**——現金/口座/PayPay/Suica は使い分けが違う */
+  const wpots=walletPots();
+  h+=band("財布");
+  if(wpots.length>1 && bal>0){
+    const COLS=["var(--teal)","var(--amber)","var(--red)","#7FB3D5","#B39DDB","#80CBC4"];
+    h+='<div class="card" style="margin-bottom:10px">'+
+      '<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface2)">'+
+      wpots.map((w,i)=>{ const v=walletBalance(null,w.id); const pc=Math.max(0,v/bal*100);
+        return pc>0?'<div style="width:'+pc+'%;background:'+COLS[i%COLS.length]+'"></div>':''; }).join("")+
+      '</div><div style="margin-top:8px">'+
+      wpots.map((w,i)=>{ const v=walletBalance(null,w.id);
+        return '<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
+          '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+COLS[i%COLS.length]+';margin-right:6px"></span>'+esc(w.name)+'</span>'+
+          '<span class="mono muted">¥'+v.toLocaleString("ja-JP")+'　'+(bal>0?Math.round(v/bal*100):0)+'%</span></div>'; }).join("")+
+      '</div></div>';
+  }
+  wpots.forEach(w=>{
+    const v=walletBalance(null,w.id);
+    h+='<div class="card" style="margin-bottom:8px;padding:12px">'+
+      '<div class="row between" style="align-items:baseline">'+
+      '<span style="font-size:13px;font-weight:700">'+esc(w.name)+'</span>'+
+      '<span class="mono '+(v<0?"red":"teal")+'" style="font-size:17px;font-weight:700">¥'+v.toLocaleString("ja-JP")+'</span></div>'+
+      '<div class="muted mono" style="font-size:10px;margin-top:4px">起点 ¥'+num(w.seed).toLocaleString("ja-JP")+'</div>'+
+      '<div class="row" style="gap:6px;justify-content:flex-end;margin-top:9px">'+
+      '<button class="btn" style="font-size:10px;padding:3px 12px" data-wa="wedit" data-v="'+w.id+'">編集</button>'+
+      '<button class="btn" style="font-size:10px;padding:3px 12px" data-wa="wadj" data-v="'+w.id+'">調整</button>'+
+      (wpots.length>1?'<button class="btn" style="font-size:10px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-wa="wdel" data-v="'+w.id+'">削除</button>':'')+
+      '</div></div>';
+  });
+  h+='<button class="btn full" style="padding:9px 0;font-size:12px;border-style:dashed;color:var(--muted);margin-top:2px" data-wa="wadd">＋ 財布を追加</button>';
   return h;
 }
 function bindWallet(){
   document.querySelectorAll("[data-wa]").forEach(el=>{
     el.onclick=()=>{
-      const a=el.dataset.wa;
-      if(a==="back"){ UI.screen="main"; render(); }
-      else if(a==="seed"){
-        const w=S.wallet||{};
-        const p=prompt("起点残高(円)\nこのアプリで記録を始めた時点の口座残高。\nここに以後の収支と移動を積み上げて所持金を出します。", w.seed||"");
-        if(p===null)return;
-        S.wallet=Object.assign({}, w, {seed:String(num(p))});
-        save(); render();
-      }
+      const a=el.dataset.wa, v=el.dataset.v, W=S.wallet;
+      if(a==="back"){ UI.screen="main"; render(); return; }
+      /* v4.14: 財布の管理。貯金の箱と同じ様式(編集/調整/削除 + 追加) */
+      if(a==="wadd"){ const nm=prompt("財布の名前(例: 現金 / PayPay / Suica):",""); if(nm===null||!nm.trim())return;
+        const sd=prompt("いまの残高(円)\nこの財布の現在の残高を入れてください。",""); if(sd===null)return;
+        (W.pots=W.pots||[]).push({id:uid(), name:nm.trim(), seed:String(num(sd))}); save(); render(); return; }
+      if(a==="wedit"){ const w=(W.pots||[]).find(x=>String(x.id)===String(v)); if(!w)return;
+        const nm=prompt("財布の名前:", w.name||""); if(nm===null)return;
+        const sd=prompt("起点残高(円)\n記録を始めた時点の残高。以後の収支と移動をここに積み上げます。", w.seed||""); if(sd===null){ if(nm.trim()) w.name=nm.trim(); save(); render(); return; }
+        if(nm.trim()) w.name=nm.trim();
+        w.seed=String(num(sd)); save(); render(); return; }
+      /* 調整=実際の残高とのズレを埋める。財布同士の移動と同じくwallet.txnsに積む */
+      if(a==="wadj"){ const cur=walletBalance(null,v);
+        const p=prompt("いまの実際の残高(円)  →  "+walName(v)+"\n帳簿上は ¥"+cur.toLocaleString("ja-JP")+" です。\n実残高を入れると差額を補正します。", String(cur));
+        if(p===null)return; const real=num(p), diff=real-cur; if(diff===0) return;
+        (W.txns=W.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(diff),walId:String(v)});
+        save(); render(); toast("差額 "+signYen(diff)+" を補正しました"); return; }
+      if(a==="wdel"){ const all=walletPots();
+        if(all.length<=1){ toast("最後の財布は削除できません"); return; }
+        const others=all.filter(x=>String(x.id)!==String(v));
+        let dest=others[0].id;
+        if(others.length>1){
+          const menu=others.map((x,i)=>(i+1)+". "+x.name+"(¥"+walletBalance(null,x.id).toLocaleString("ja-JP")+")").join("\n");
+          const rr=prompt("「"+walName(v)+"」の残高と履歴をどの財布へ移しますか:\n"+menu,"1"); if(rr===null)return;
+          const i=num(rr)-1; if(i<0||i>=others.length) return; dest=others[i].id;
+        }
+        if(!confirm("財布「"+walName(v)+"」を削除します。\n残高 ¥"+walletBalance(null,v).toLocaleString("ja-JP")+" と履歴は「"+walName(dest)+"」へ移ります。\nよろしいですか?")) return;
+        /* 記録は失わない: 起点残高も移し先へ足し込む */
+        const src=(W.pots||[]).find(x=>String(x.id)===String(v));
+        const dst=(W.pots||[]).find(x=>String(x.id)===String(dest));
+        if(src&&dst) dst.seed=String(num(dst.seed)+num(src.seed));
+        (S.entries||[]).forEach(e=>{ if(eWal(e)===String(v)) e.wal=String(dest); });
+        ((S.savings||{}).txns||[]).forEach(t=>{ if(t.walId!=null && tWal(t)===String(v)) t.walId=String(dest); });
+        ((S.bank||{}).txns||[]).forEach(t=>{ if(t.walId!=null && tWal(t)===String(v)) t.walId=String(dest); });
+        (W.txns||[]).forEach(t=>{ if(tWal(t)===String(v)) t.walId=String(dest); });
+        W.pots=(W.pots||[]).filter(x=>String(x.id)!==String(v));
+        if(String(UI.trFrom||"")===String(v)) UI.trFrom="";
+        if(String(UI.trTo||"")===String(v)) UI.trTo="";
+        save(); render(); return; }
     };
   });
 }
@@ -3502,11 +3580,14 @@ function savingsBalance(potId){
    **データ構造は変えない**——既存のtxn種別へ機械的にマップするだけなので、過去の記録は無変換で生き続ける。
    所持金を経由しない移動(軍資金→箱)はsweep、箱→軍資金はwithdraw+topupの組で表す
    (この組は所持金への影響がプラスマイナスゼロになるため、所持金は動かない) */
-const ACC_WALLET="__wallet__", ACC_BANK="__bank__";
+const ACC_BANK="__bank__";
+/* v4.14: 所持金は財布ごとに1件ずつ並ぶ。財布が1つのときは従来と同じ見た目になる */
+function isWalAcc(id){ return walletPots().some(p=>String(p.id)===String(id)); }
 function transferAccounts(){
-  const out=[{id:ACC_WALLET, name:"所持金", bal:walletBalance()},
-             {id:ACC_BANK,   name:"軍資金", bal:bankBalance()}];
-  savingsPots().forEach(p=>out.push({id:String(p.id), name:p.name, bal:savingsBalance(p.id)}));
+  const out=[];
+  walletPots().forEach(p=>out.push({id:String(p.id), name:p.name, bal:walletBalance(null,p.id), kind:"wal"}));
+  out.push({id:ACC_BANK, name:"軍資金", bal:bankBalance(), kind:"bank"});
+  savingsPots().forEach(p=>out.push({id:String(p.id), name:p.name, bal:savingsBalance(p.id), kind:"pot"}));
   return out;
 }
 /* v4.05: 各台帳から記帳画面(振替モード)へ飛ばす。**入口は複数・実装は1つ**——
@@ -3519,23 +3600,31 @@ function openTransfer(fromId, toId, backScreen, amount){
   UI.screen="entry"; render();
 }
 function doTransfer(from, to, amt, date){
-  const d=date||todayStr(), sv=S.savings, bk=S.bank;
-  const isPot=id=>id!==ACC_WALLET && id!==ACC_BANK;
-  sv.txns=sv.txns||[]; bk.txns=bk.txns||[];
-  if(from===ACC_WALLET && to===ACC_BANK){ bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt)}); }
-  else if(from===ACC_BANK && to===ACC_WALLET){ bk.txns.push({id:uid(),date:d,type:"return",amount:String(amt)}); }
-  else if(from===ACC_WALLET && isPot(to)){ sv.txns.push({id:uid(),date:d,type:"deposit",amount:String(amt),potId:to}); }
-  else if(isPot(from) && to===ACC_WALLET){ sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from}); }
-  else if(from===ACC_BANK && isPot(to)){ bk.txns.push({id:uid(),date:d,type:"sweep",amount:String(amt),potId:to}); }
-  else if(isPot(from) && to===ACC_BANK){
-    /* 所持金を経由させず、出入りを相殺して軍資金へ */
-    sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from});
-    bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt)});
+  const d=date||todayStr(), sv=S.savings, bk=S.bank, wl=S.wallet;
+  const isW=id=>isWalAcc(id), isB=id=>id===ACC_BANK;
+  const isPot=id=>!isW(id) && !isB(id);
+  sv.txns=sv.txns||[]; bk.txns=bk.txns||[]; wl.txns=wl.txns||[];
+  /* v4.14: 所持金側は**どの財布か**をwalIdで必ず記録する。これが無いと財布別残高が出せない */
+  if(isW(from) && isB(to)){ bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt),walId:from}); }
+  else if(isB(from) && isW(to)){ bk.txns.push({id:uid(),date:d,type:"return",amount:String(amt),walId:to}); }
+  else if(isW(from) && isPot(to)){ sv.txns.push({id:uid(),date:d,type:"deposit",amount:String(amt),potId:to,walId:from}); }
+  else if(isPot(from) && isW(to)){ sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from,walId:to}); }
+  else if(isB(from) && isPot(to)){ bk.txns.push({id:uid(),date:d,type:"sweep",amount:String(amt),potId:to}); }
+  else if(isPot(from) && isB(to)){
+    /* 所持金を経由させず、出入りを相殺して軍資金へ(walIdは同一なので合計influenceはゼロ) */
+    const w0=walletPots()[0].id;
+    sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from,walId:w0});
+    bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt),walId:w0});
   }
   else if(isPot(from) && isPot(to)){
     /* 箱同士は外部と出入りしないので両側adjust(depositとwithdrawだと所持金が二重に動く) */
     sv.txns.push({id:uid(),date:d,type:"adjust",amount:String(-amt),potId:from});
     sv.txns.push({id:uid(),date:d,type:"adjust",amount:String(amt),potId:to});
+  }
+  else if(isW(from) && isW(to)){
+    /* v4.14: 財布同士(現金→PayPayのチャージなど)。所持金の総額は動かないので両側adjust */
+    wl.txns.push({id:uid(),date:d,type:"adjust",amount:String(-amt),walId:from});
+    wl.txns.push({id:uid(),date:d,type:"adjust",amount:String(amt),walId:to});
   }
   else return false;
   return true;
@@ -4332,7 +4421,7 @@ function bindMain(){
           if(s){ UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.tab="games"; UI.gameSub="mahjong"; UI.screen="mahjong-edit"; render(); return; }
         }
         UI.editEntryId=e.id;
-        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||""};
+        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||""};
         UI.screen="entry"; render();
       }
       else if(a==="sedit"){
@@ -4542,6 +4631,16 @@ function viewEntry(){
     else trHtml+='<div class="muted" style="font-size:10px;margin-bottom:12px;text-align:center">振替元と振替先を選んでください</div>';
     trHtml+='<div class="muted" style="font-size:10px;margin:0 2px 12px;line-height:1.7">振替は収支に含まれません。<br>財布の間で金が動いただけだからです。</div>';
   }
+  /* v4.14: **どの財布から出したか/入ったか**を記帳時に選ぶ(ユーザー設計)。
+     財布が1つしかないときは出さない(摩擦を増やさない)。既定は先頭の財布 */
+  let walHtml="";
+  if(!isTr && walletPots().length>1){
+    const cur=String(f.wal||walletPots()[0].id);
+    walHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+(f.type==="income"?"どの財布に入る":"どの財布から出す")+'</div>'+
+      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
+      walletPots().map(w=>'<button class="btn '+(cur===String(w.id)?"sel":"")+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:6px 11px">'+esc(w.name)+
+        '<span class="mono muted" style="font-size:9px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+  }
   const TYPES = UI.editEntryId!==null ? [["expense","支出"],["income","収入"]]
                                       : [["expense","支出"],["income","収入"],["transfer","振替"]];
   return '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
@@ -4563,7 +4662,7 @@ function viewEntry(){
         /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
            日付はフォームの値を引き継ぐ */
         (UI.editEntryId===null?'<button class="btn full" style="margin-bottom:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''))+
-    (isTr ? '' : transHtml + (composerHtml || fieldsHtml)) +
+    (isTr ? '' : walHtml + transHtml + (composerHtml || fieldsHtml)) +
     (UI.editEntryId!==null?'<button class="btn full" style="margin-bottom:8px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="tofixed">この内容で固定費に登録</button>':'')+
     '<div class="row" style="gap:8px">'+
     (UI.editEntryId!==null?'<button class="btn danger" data-a="edel">削除</button>':'')+
@@ -4585,6 +4684,7 @@ function bindEntry(){
       const a=el.dataset.a, v=el.dataset.v;
       if(a==="back"){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }
       else if(a==="etype"){ f.type=v; if(v!=="transfer") f.category = v==="expense"?"消費":"給与"; render(); }
+      else if(a==="ewal"){ f.wal=String(v); render(); }
       else if(a==="trfrom"){ UI.trFrom=(String(UI.trFrom||"")===String(v))?"":String(v);
         if(String(UI.trTo||"")===String(UI.trFrom)) UI.trTo=""; render(); }
       else if(a==="trto"){ UI.trTo=(String(UI.trTo||"")===String(v))?"":String(v); render(); }
@@ -4657,7 +4757,7 @@ function bindEntry(){
             const cap=bankRefillCap(), used=bankRefillUsed(String(f.date).slice(0,7));
             if(used+amt > cap){
               const over=used+amt-cap;
-              const why = (fa.id===ACC_WALLET)
+              const why = isWalAcc(fa.id)
                 ? "生活費を削って遊技に回す行為です。"
                 : "目的を決めて取り分けた金を崩す行為です。";
               const msg = "今月の補充枠 ¥"+cap.toLocaleString("ja-JP")+" を超えます。"+
@@ -4681,11 +4781,12 @@ function bindEntry(){
         }
         const store=(f.store||"").trim(), item=(f.item||"").trim();
         const memo=[store,item].filter(Boolean).join(" ");
+        const wal = String(f.wal || walletPots()[0].id);   /* v4.14: どの財布から出たか */
         if(UI.editEntryId!==null){
           S.entries = S.entries.map(x=>x.id===UI.editEntryId ?
-            Object.assign({},x,{date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo}) : x);
+            Object.assign({},x,{date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal}) : x);
         } else {
-          S.entries.push({id:uid(),date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo});
+          S.entries.push({id:uid(),date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal});
         }
         save(); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
       }
