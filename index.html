@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.22 (localStorage保存・完全オフライン)
+   Tally 4.23 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.22";
+const APP_VERSION = "4.23";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3399,12 +3399,15 @@ function viewWallet(){
   h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">残高</div>'+
     '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">¥'+bal.toLocaleString("ja-JP")+'</div>'+
-    '<div class="muted" style="font-size:10px;margin-top:4px">月末見込み <span class="mono '+(fc.end<0?"red":"")+'">¥'+fc.end.toLocaleString("ja-JP")+'</span></div></div>';
+    /* v4.23: 月末見込みの常設表示を撤去(ユーザー指摘)。**振替をすれば動く数字**なので、
+       常に見せても判断が変わらない。見るべきなのは「このままだと払えない」という一点だけで、
+       それは下の警告(fc.short>0)が担っている */
+    '</div>';
   if(fc.short>0){
     h+='<div class="card" style="margin-bottom:12px;border-color:var(--red)">'+
       '<div class="red" style="font-size:13px;font-weight:700;margin-bottom:4px">⚠ 予定の支出を払えません</div>'+
       '<div class="muted" style="font-size:11px;line-height:1.7">不足 ¥'+fc.short.toLocaleString("ja-JP")+'。<br>'+
-      '貯金から引き出すか、予定の支出を見直してください。</div></div>';
+      '貯金から振り替えるか、予定の支出を見直してください。</div></div>';
   }
   /* v4.13: 出ていく方向は赤(ユーザー指摘)。金額に色を付ける体系(v3.92)と揃える。
      ゼロは「—」なので無彩色のまま */
