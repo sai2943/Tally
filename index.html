@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.19 (localStorage保存・完全オフライン)
+   Tally 4.21 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.19";
+const APP_VERSION = "4.21";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -929,7 +929,19 @@ const TAB_ICONS = {
      高さ20.3→21.5・幅16.4→18.6。**目の位置は面の辺との距離を計算して自動配置**しており、
      どの目も 半径+線幅/2+0.15 以上のクリアランスを確保している(潰れ・にじみが出ない)。
      線幅は1.6→1.55——大きくすると同じ太さでも重く見えるため、視覚的な重さを揃える */
-  games: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><path d="M12.0 1.25 21.31 6.62v10.75L12.0 22.75 2.69 17.38V6.62z"/><path d="M2.69 6.62 12.0 12.0 21.31 6.62M12.0 12.0v10.75"/><g fill="currentColor" stroke="none"><circle cx="12.0" cy="6.62" r="1.34"/><circle cx="8.88" cy="13.8" r="1.22"/><circle cx="5.81" cy="15.57" r="1.22"/><circle cx="18.9" cy="10.79" r="1.17"/><circle cx="16.65" cy="14.69" r="1.17"/><circle cx="14.4" cy="18.58" r="1.17"/></g></svg>',
+  /* v4.20: **正六角形をやめ、実際の3D投影から起こす**(ユーザー指摘)。
+     正六角形は6回対称が強すぎて、凝視すると立方体でなく平面の六角形として読めてしまう
+     (実物の写真はそうならない=正対していないから)。ヨー58°・ピッチ27°で投影し、
+     **左面が右面より38%広い非対称な輪郭**にすることで六角形の読みを壊す。
+     さらに**角を半径1.3で丸める**——実物のサイコロは角が落ちており、これが「図形」でなく
+     「物体」として読ませる。目は各面のUV座標を3D経由で投影しているので面の傾きに乗る */
+  /* v4.21: 目の配置を実物の比率へ(ユーザー指摘: 間隔が広すぎる)。実物は**中心間≒直径×1.26**。
+     v4.20は1.59で、目が小さく面の余白が目立っていた。**目を大きくして間隔を詰め**1.33まで寄せた
+     (22px表示では隙間1.15単位≒1.05pxが下限——これ以下だと2つの点が繋がって見えるため、
+      実物の1.26には到達できない)。ヨーは58°→53°——58°だと右面が潰れすぎて
+     2と3の目の大きさが47%も食い違うため。53°なら左右の幅比1.28で非対称は保ったまま差は15%。
+     半径と間隔は制約(隙間下限・辺とのクリアランス)を満たす範囲での探索結果 */
+  games: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><path d="M3.21 5.66 L9.49 1.87 Q10.61 1.2 11.84 1.62 L20.68 4.64 Q21.91 5.07 21.91 6.37 L21.91 16.37 Q21.91 17.67 20.79 18.34 L14.51 22.13 Q13.39 22.8 12.16 22.38 L3.32 19.36 Q2.09 18.93 2.09 17.63 L2.09 7.63 Q2.09 6.33 3.21 5.66 Z"/><path d="M13.39 10.19 21.07 5.57M13.39 10.19 3.02 6.65M13.39 10.19 13.39 21.82"/><g fill="currentColor" stroke="none"><circle cx="12.0" cy="5.7" r="1.84"/><circle cx="9.64" cy="13.1" r="1.81"/><circle cx="5.85" cy="16.03" r="1.81"/><circle cx="19.48" cy="10.12" r="1.53"/><circle cx="17.65" cy="13.93" r="1.53"/><circle cx="15.82" cy="17.75" r="1.53"/></g></svg>',
   assets: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 19.5v-6.2M8.1 19.5v-9.8M12 19.5v-4.6M15.9 19.5v-13.8M19.8 19.5v-8.6"/></svg>',
   tool: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><rect x="8" y="6" width="8" height="3" rx="0.6"/><circle cx="9" cy="13" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="0.9" fill="currentColor" stroke="none"/><circle cx="9" cy="16.6" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="16.6" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="16.6" r="0.9" fill="currentColor" stroke="none"/></svg>',
   add: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17.1 3.7a2.05 2.05 0 0 1 2.9 2.9L8.6 18 4.2 19.4 5.6 15z"/><path d="M14.9 5.9l2.9 2.9"/></svg>'
