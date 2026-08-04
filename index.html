@@ -206,7 +206,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.31 (localStorage保存・完全オフライン)
+   Tally 4.32 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -758,7 +758,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.31";
+const APP_VERSION = "4.32";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -904,6 +904,8 @@ function _renderScreen(app){
   if(UI.screen==="budget"){ app.innerHTML = viewBudget(); bindBudget(); return; }
   if(UI.screen==="wallet"){ app.innerHTML = viewWallet(); bindWallet(); return; }
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
+  /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う */
+  if(UI.screen==="mjstats"){ app.innerHTML = viewMjStatsPage(); bindMain(); return; }
   if(UI.screen==="mdb"){ app.innerHTML = viewMdb(); bindMdb(); return; }
   if(UI.screen==="stores"){ app.innerHTML = viewStores(); bindStores(); return; }
   if(UI.screen==="bordertool"){ app.innerHTML = viewBorderTool(); bindBorderTool(); return; }
@@ -1589,9 +1591,10 @@ function viewMahjong(foot){
   const ms = (S.mjSessions||[]).filter(s=>s.date.startsWith(mk)).sort((a,b)=>a.date<b.date?1:-1);
   const total = ms.reduce((a,s)=>a+mjFinal(s),0);
   const hanchans = ms.reduce((a,s)=>a+mjHanchan(s),0);
-  let h = band("ルール名別 成績(全期間)");
-  h += viewMjStats();
-
+  /* v4.32: **「ルール名別 成績(全期間)」をツールタブへ移設**(ユーザー指摘)。
+     遊技タブは月セレクタの下に月の記録を並べる画面なのに、**全期間の集計が同居していた**のが構造の矛盾。
+     しかもパチスロ側には無く左右が非対称だった。遊技タブは「記録」、ツールタブは「分析」で分ける */
+  let h = '';
   /* 当月セッション一覧 */
   h += band("セッション");
   h += '<button class="btn dash full" style="padding:14px 0;margin-bottom:12px" data-a="mjnew">＋ 新しい卓</button>';
@@ -1703,6 +1706,13 @@ function mjStatRow(label, val, isYen, raw, unit){
 
 /* ========================= ツール ========================= */
 /* カテゴリ別ツールの受け皿。投資はツールでなく資産タブの投資台帳(v3.18)が担当——プレースホルダーはv3.29で廃止済み。 */
+/* v4.32: ルール名別 成績の専用画面(ツールタブから開く)。集計本体はviewMjStatsを再利用 */
+function viewMjStatsPage(){
+  return '<div class="hdr"><button class="navbtn" data-a="mjstback">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">ルール名別 成績</div><div style="width:44px"></div></div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:12px">全期間の集計です(月の切り替えは効きません)。</div>'+
+    viewMjStats();
+}
 /* ---------- 麻雀スコア表 一覧(専用画面) ---------- */
 function viewMjtList(){
   /* v3.95: 削除はここが唯一の入口(スコア表画面からは撤去)。
@@ -1819,6 +1829,10 @@ function viewTool(){
   h += '<div class="card" data-a="mjtlist" style="cursor:pointer"><div class="row between" style="align-items:center"><div>'+
     '<div style="font-size:13px;font-weight:600">スコア表</div>'+
     '<div class="muted" style="font-size:11px;margin-top:2px">半荘ごとのスコアを記録・集計'+((S.mjTables||[]).length?'（'+(S.mjTables||[]).length+'件）':'')+'</div></div>'+
+    '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  h += '<div class="card" data-a="mjstats" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div>'+
+    '<div style="font-size:13px;font-weight:600">ルール名別 成績</div>'+
+    '<div class="muted" style="font-size:11px;margin-top:2px">全期間の平均着順・収支をルールごとに</div></div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   /* パチスロ */
   h += band("パチスロ");
@@ -4487,6 +4501,8 @@ function bindMain(){
       else if(a==="mjtnew"){ UI.mjt=newMjTable(); UI.mjtCell=null; saveMjt(false); UI.screen="mjtable"; render(); }
       else if(a==="opentool"){ if(el.dataset.v==="bordertool"){ UI.screen="bordertool"; render(); } }
       else if(a==="mjtopen"){ const t=(S.mjTables||[]).find(x=>String(x.id)===String(v)); if(t){ UI.mjt=t; UI.mjtCell=null; UI.screen="mjtable"; render(); } }
+      else if(a==="mjstats"){ UI.screen="mjstats"; render(); }
+      else if(a==="mjstback"){ UI.screen="main"; UI.tab="tool"; render(); }
       else if(a==="mdb"){ UI.screen="mdb"; UI.mdbForm=null; render(); }
       else if(a==="stores"){ UI.screen="stores"; UI.storeForm=null; render(); }
       else if(a==="mjtlist"){ UI.screen="mjtlist"; render(); }
