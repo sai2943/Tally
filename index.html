@@ -206,7 +206,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.33 (localStorage保存・完全オフライン)
+   Tally 4.34 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -433,7 +433,7 @@ function deleteFixed(id){
 /* ---------- state ---------- */
 let S = { entries:[], sessions:[], rates:{medal:"20", ball:"4", push:"245", exchange:"50", pExchange:"250", pushPayout:"230", pushDraw:"245", mjScore:"", mjChip:"", mjBase:"", mjTop:"", mjDrink:""}, mdb:[], stores:[], mjSessions:[], fixed:[], mjTables:[], mjPresets:[], wishlist:[], bank:{switch:"",ceiling:"300000",seed:"",txns:[]}, savings:{goals:[],txns:[]}, budgets:{}, borderTool:{id:"bt",kind:"pachi",name:"",segments:[],border:"",ty:"",pushPayout:"",pushDraw:"",kezuri:"5",kachi:"250",genkin:"250",rph:"750",startedAt:0,breakMin:""}, schemaV:3, updatedAt:0 };
 let UI = {
-  tab:"ledger", gameSub:"slot", screen:"main",           // main | session | mdb | backup | entry
+  tab:"ledger", screen:"main",           // main | session | mdb | backup | entry
   y:new Date().getFullYear(), m:new Date().getMonth()+1,
   draft:null, isNewSess:false,         // セッションドラフト
   entryForm:null, editEntryId:null,    // 家計簿ドラフト
@@ -758,7 +758,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.33";
+const APP_VERSION = "4.34";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -774,7 +774,7 @@ function render(){
   RENDER_PREV_SCREEN = UI.screen;
   _renderBody();
   /* タブ・画面・遊技サブタブが変わった時だけ先頭へ。同一画面の再描画は位置を保持 */
-  const loc = UI.tab + "/" + UI.screen + "/" + (UI.gameSub||"");
+  const loc = UI.tab + "/" + UI.screen;
   if(loc !== _renderLoc){
     const app = document.getElementById("app");
     if(app) app.scrollTop = 0;
@@ -1260,7 +1260,6 @@ function viewMain(){
   h += monthNav();
   if(UI.tab==="ledger") h += viewLedger();
   if(UI.tab==="games"){
-    const gsub = UI.gameSub || "slot";
     const gmk = monthKey();
     const gme = S.entries.filter(e=>e.date.startsWith(gmk));
     const slotNet = gme.filter(e=>e.src==="slot").reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
@@ -1284,11 +1283,7 @@ function viewMain(){
         '<span><span class="mono '+clsPM(daidaNet)+'" style="font-size:14px;font-weight:700">'+signYen(daidaNet)+'</span>'+
         '<span class="muted" style="font-size:10px"> → 家計簿の副業へ</span></span></div>' : '')+
       '</div>';
-    h += '<div class="row" style="gap:8px;margin-bottom:12px">'+
-      [["slot","パチスロ"],["mahjong","麻雀"]].map(([v,l])=>
-        '<button class="btn '+(gsub===v?"sel":"")+'" style="flex:1;padding:8px 0;font-weight:700" data-a="gamesub" data-v="'+v+'">'+l+'</button>').join("")+
-      '</div>';
-    h += (gsub==="mahjong") ? viewMahjong() : viewSlot();
+    h += viewGameSessions();
   }
 
   return h;
@@ -1547,81 +1542,63 @@ function viewLedger(){
   return h;
 }
 
-function viewSlot(foot){
-  const mk = monthKey();
-  const ms = S.sessions.filter(s=>s.date.startsWith(mk)).sort((a,b)=>a.date<b.date?1:-1);
-  const gamble = ms.filter(s=>s.mode!=="dai");
-  const daiSess = ms.filter(s=>s.mode==="dai");
-  const total = gamble.reduce((a,s)=>a+finalOwn(s),0);
-  const daiTotal = daiSess.reduce((a,s)=>a+finalOwn(s),0);
-  const exps = ms.reduce((a,s)=>a+expTotal(s),0);
-  let h = band("セッション");
-  h += '<button class="btn dash full" style="padding:14px 0;margin-bottom:12px" data-a="slotnew">＋ 新しいセッション</button>';
-  if(!ms.length) h += '<div style="text-align:center;padding:20px 0;font-size:13px" class="muted">この月の稼働記録はありません。</div>';
-  const byDate = {};
-  ms.forEach(s=>{ (byDate[s.date]=byDate[s.date]||[]).push(s); });
-  Object.entries(byDate).sort((a,b)=>a[0]<b[0]?1:-1).forEach(([d,list])=>{
-    h += '<div style="margin-bottom:12px"><div class="mono muted" style="font-size:11px;margin:0 4px 4px">'+
-      d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')</div>'+
-      '<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden">'+
-      list.map((s,i)=>{
-        const fin = finalOwn(s);
-        const bc = s.mode==="nori"?"var(--amber)":s.mode==="dai"?"var(--teal)":"var(--red)";
-        const mnames = [...new Set((s.machines||[]).map(m=>(m.name||"").trim()).filter(Boolean))];
-        const machLine = mnames.length ? mnames.join("・") : ((s.machines||[]).length ? (s.machines||[]).length+"台" : "");
-        return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(i?'border-top:1px solid var(--line);':'')+'" data-a="sedit" data-v="'+s.id+'">'+
-          '<div style="flex:1;min-width:0">'+
-          '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
-          '<span class="tag" style="border:1px solid '+bc+';color:'+bc+'">'+modeShort(s.mode)+'</span>'+
-          (s.lotteryOnly?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:9px">抽選</span>':'')+
-          ((s.partnerName||"").trim()?personTag(s.partnerName.trim()):'')+'</div>'+
-          '<div class="muted ellip" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
-          (machLine?'<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+esc(machLine)+'</div>':'')+
-          '</div>'+
-          '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
-      }).join("")+'</div></div>';
-  });
-  return h;
-}
-
 function personTag(name){
   return '<span class="tag" style="border:1px solid var(--muted);color:var(--muted);display:inline-flex;align-items:center;gap:2px;min-width:0;max-width:130px;padding:1px 6px 1px 4px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="7.5" r="3.5"/><path d="M5 19.5c0-3.9 3.1-6 7-6s7 2.1 7 6"/></svg><span class="ellip" style="min-width:0">'+esc(name)+'</span></span>';
 }
-function viewMahjong(foot){
-  const mk = monthKey();
-  const ms = (S.mjSessions||[]).filter(s=>s.date.startsWith(mk)).sort((a,b)=>a.date<b.date?1:-1);
-  const total = ms.reduce((a,s)=>a+mjFinal(s),0);
-  const hanchans = ms.reduce((a,s)=>a+mjHanchan(s),0);
-  /* v4.32: **「ルール名別 成績(全期間)」をツールタブへ移設**(ユーザー指摘)。
-     遊技タブは月セレクタの下に月の記録を並べる画面なのに、**全期間の集計が同居していた**のが構造の矛盾。
-     しかもパチスロ側には無く左右が非対称だった。遊技タブは「記録」、ツールタブは「分析」で分ける */
-  let h = '';
-  /* 当月セッション一覧 */
-  h += band("セッション");
-  h += '<button class="btn dash full" style="padding:14px 0;margin-bottom:12px" data-a="mjnew">＋ 新しい卓</button>';
-  if(!ms.length) h += '<div style="text-align:center;padding:20px 0;font-size:13px" class="muted">この月の記録はありません。</div>';
-  const byDate = {};
-  ms.forEach(s=>{ (byDate[s.date]=byDate[s.date]||[]).push(s); });
-  Object.entries(byDate).sort((a,b)=>a[0]<b[0]?1:-1).forEach(([d,list])=>{
-    h += '<div style="margin-bottom:12px"><div class="mono muted" style="font-size:11px;margin:0 4px 4px">'+
+/* v4.34: **パチスロと麻雀のセッションを1つの一覧に統合**(ユーザー設計)。
+   v4.32で麻雀の全期間集計をツールへ移した結果、両サブタブに残ったのは
+   **構造が完全に同型のセッション一覧だけ**になり、分ける理由が消えた。
+   時系列で混ぜて並べる方が「その月に何をしたか」を素直に読める(ヘッダーは元々両方出していた)。
+   **新規作成の種別だけはボタンを2つ並べて解決**——ダイアログを挟むより速く、説明も要らない */
+function gameRowSlot(s, first){
+  const fin=finalOwn(s);
+  const bc=s.mode==="nori"?"var(--amber)":s.mode==="dai"?"var(--teal)":"var(--red)";
+  const mnames=[...new Set((s.machines||[]).map(m=>(m.name||"").trim()).filter(Boolean))];
+  const machLine=mnames.length?mnames.join("・"):((s.machines||[]).length?(s.machines||[]).length+"台":"");
+  return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="sedit" data-v="'+s.id+'">'+
+    '<div style="flex:1;min-width:0">'+
+    '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
+    '<span class="tag" style="border:1px solid '+bc+';color:'+bc+'">'+modeShort(s.mode)+'</span>'+
+    (s.lotteryOnly?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:9px">抽選</span>':'')+
+    ((s.partnerName||"").trim()?personTag(s.partnerName.trim()):'')+'</div>'+
+    '<div class="muted ellip" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
+    (machLine?'<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+esc(machLine)+'</div>':'')+
+    '</div>'+
+    '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
+}
+function gameRowMj(s, first){
+  const fin=mjFinal(s), av=mjAvgRank(s);
+  const catC=s.category==="free"?"var(--red)":"var(--amber)";
+  const topPct=mjHanchan(s)>0?Math.round((mjRanks(s)[0]||0)/mjHanchan(s)*100):0;
+  return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="mjedit" data-v="'+s.id+'">'+
+    '<div style="flex:1;min-width:0">'+
+    '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
+    '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(s.category==="free"?"フリー":"セット")+'</span>'+
+    '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>'+
+    (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>'+
+    '<div class="muted ellip" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
+    '<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+mjHanchan(s)+'半荘 ・ 平均'+(av!==null?av.toFixed(2):"—")+'着 ・ トップ'+topPct+'%</div>'+
+    '</div>'+
+    '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
+}
+function viewGameSessions(){
+  const mk=monthKey();
+  const rows=[]
+    .concat((S.sessions||[]).filter(s=>String(s.date||"").startsWith(mk)).map(s=>({date:s.date,kind:"slot",s:s})))
+    .concat((S.mjSessions||[]).filter(s=>String(s.date||"").startsWith(mk)).map(s=>({date:s.date,kind:"mj",s:s})));
+  let h=band("セッション");
+  h+='<div class="row" style="gap:8px;margin-bottom:12px">'+
+    '<button class="btn dash" style="flex:1;padding:13px 0;font-weight:700;font-size:13px" data-a="slotnew">＋ パチスロ</button>'+
+    '<button class="btn dash" style="flex:1;padding:13px 0;font-weight:700;font-size:13px" data-a="mjnew">＋ 麻雀</button></div>';
+  if(!rows.length) return h+'<div style="text-align:center;padding:20px 0;font-size:13px" class="muted">この月の記録はありません。</div>';
+  const byDate={};
+  rows.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r); });
+  Object.keys(byDate).sort((a,b)=>a<b?1:-1).forEach(d=>{
+    h+='<div style="margin-bottom:12px"><div class="mono muted" style="font-size:11px;margin:0 4px 4px">'+
       d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')</div>'+
       '<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden">'+
-      list.map((s,i)=>{
-        const fin = mjFinal(s);
-        const av = mjAvgRank(s);
-        const catC = s.category==="free"?"var(--red)":"var(--amber)";
-        const topPct = mjHanchan(s)>0 ? Math.round((mjRanks(s)[0]||0)/mjHanchan(s)*100) : 0;
-        return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(i?'border-top:1px solid var(--line);':'')+'" data-a="mjedit" data-v="'+s.id+'">'+
-          '<div style="flex:1;min-width:0">'+
-          '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
-          '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(s.category==="free"?"フリー":"セット")+'</span>'+
-          '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>'+
-          (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>'+
-          '<div class="muted ellip" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
-          '<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+mjHanchan(s)+'半荘 ・ 平均'+(av!==null?av.toFixed(2):"—")+'着 ・ トップ'+topPct+'%</div>'+
-          '</div>'+
-          '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
-      }).join("")+'</div></div>';
+      byDate[d].map((r,i)=> r.kind==="slot" ? gameRowSlot(r.s, i===0) : gameRowMj(r.s, i===0)).join("")+
+      '</div></div>';
   });
   return h;
 }
@@ -4505,7 +4482,6 @@ function bindMain(){
     el.onclick = () => {
       const a = el.dataset.a, v = el.dataset.v;
       if(a==="tab"){ UI.tab=v; UI.screen="main"; render(); }  /* v3.58: 通常は無害(タブバーはmainのみ)、エラー画面からの脱出路として機能する */
-      else if(a==="gamesub"){ UI.gameSub=v; render(); }
       else if(a==="mprev") moveMonth(-1);
       else if(a==="mnext") moveMonth(1);
       else if(a==="csv") exportCsv();
@@ -4561,7 +4537,7 @@ function bindMain(){
         UI.entryForm={date:todayStr(),type:"expense",category:"消費",amount:"",store:"",item:"",memo:"",tmode:"",tfrom:"",tto:"",tplace:""};
         UI.screen="entry"; render();
       }
-      else if(a==="mjnew"){ UI.tab="games"; UI.gameSub="mahjong";
+      else if(a==="mjnew"){ UI.tab="games"; 
           UI.mjDraft={id:uid(),date:todayStr(),store:"",category:"free",rule:"4",startAt:"",endAt:"",
             score:S.rates.mjScore!==undefined?"":"", chips:"",
             scoreRate:S.rates.mjScore||"", chipRate:S.rates.mjChip||"",
@@ -4569,7 +4545,7 @@ function bindMain(){
             setFee:"", memo:"", expenses:[]};
           UI.mjIsNew=true; UI.screen="mahjong-edit"; render();
       }
-      else if(a==="slotnew"){ UI.tab="games"; UI.gameSub="slot";
+      else if(a==="slotnew"){ UI.tab="games"; 
           UI.draft={id:uid(),date:todayStr(),store:"",mode:"nori",partnerName:"",fee:"",startAt:"",endAt:"",
             exchange:S.rates.exchange||"",pExchange:S.rates.pExchange||"",pushPayout:S.rates.pushPayout||"",pushDraw:S.rates.pushDraw||"",machines:[],expenses:[],memo:""};
           UI.whoTab="me";
@@ -4590,11 +4566,11 @@ function bindMain(){
            これによりユーザー提案の「家計簿の収入→代打へ飛ぶ動線」も同時に成立する */
         if(e.src==="slot"||e.src==="daida"){
           const s = S.sessions.find(x=>"slot-"+x.id===e.id);
-          if(s){ UI.draft=JSON.parse(JSON.stringify(s)); UI.isNewSess=false; UI.tab="games"; UI.gameSub="slot"; UI.screen="session"; render(); return; }
+          if(s){ UI.draft=JSON.parse(JSON.stringify(s)); UI.isNewSess=false; UI.tab="games"; UI.screen="session"; render(); return; }
         }
         if(e.src==="mahjong"){
           const s = (S.mjSessions||[]).find(x=>"mj-"+x.id===e.id);
-          if(s){ UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.tab="games"; UI.gameSub="mahjong"; UI.screen="mahjong-edit"; render(); return; }
+          if(s){ UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.tab="games"; UI.screen="mahjong-edit"; render(); return; }
         }
         UI.editEntryId=e.id;
         UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||""};
@@ -4864,7 +4840,7 @@ function bindEntry(){
       else if(a==="trfrom"){ UI.trFrom=(String(UI.trFrom||"")===String(v))?"":String(v);
         if(String(UI.trTo||"")===String(UI.trFrom)) UI.trTo=""; render(); }
       else if(a==="trto"){ UI.trTo=(String(UI.trTo||"")===String(v))?"":String(v); render(); }
-      else if(a==="todai"){ UI.tab="games"; UI.gameSub="slot";
+      else if(a==="todai"){ UI.tab="games"; 
           UI.draft={id:uid(),date:(f.date||todayStr()),store:"",mode:"dai",partnerName:"",fee:"",startAt:"",endAt:"",
             exchange:S.rates.exchange||"",pExchange:S.rates.pExchange||"",pushPayout:S.rates.pushPayout||"",pushDraw:S.rates.pushDraw||"",machines:[],expenses:[],memo:""};
           UI.whoTab="me"; UI.isNewSess=true; UI.screen="session"; render(); }
