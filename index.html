@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.44 (localStorage保存・完全オフライン)
+   Tally 4.45 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -763,7 +763,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.44";
+const APP_VERSION = "4.45";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -932,6 +932,7 @@ function _renderScreen(app){
   if(UI.screen==="wallet"){ app.innerHTML = viewWallet(); bindWallet(); return; }
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
   /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う */
+  if(UI.screen==="summary"){ app.innerHTML = viewSummary(); bindMain(); return; }
   if(UI.screen==="mjstats"){ app.innerHTML = viewMjStatsPage(); bindMain(); return; }
   if(UI.screen==="mjstatd"){ app.innerHTML = viewMjStatDetail(); bindMain(); return; }
   if(UI.screen==="mdb"){ app.innerHTML = viewMdb(); bindMdb(); return; }
@@ -1893,9 +1894,105 @@ function viewTool(){
   h += '<div class="card" style="cursor:pointer" data-a="backup"><div class="row between" style="align-items:center">'+
     '<div><div style="font-size:13px;font-weight:700">バックアップ・同期</div><div class="muted" style="font-size:11px;margin-top:2px">データの書き出し・復元・同期設定</div></div>'+
     '<span class="muted">›</span></div></div>';
+  h += '<div class="card" style="cursor:pointer;margin-top:8px" data-a="summary"><div class="row between" style="align-items:center">'+
+    '<div><div style="font-size:13px;font-weight:700">収支サマリを書き出す</div><div class="muted" style="font-size:11px;margin-top:2px">人に見せる・AIに読ませるための要約テキスト</div></div>'+
+    '<span class="muted">›</span></div></div>';
   return h;
 }
 
+/* ========================= 収支サマリの書き出し =========================
+   v4.45: バックアップJSONを他所(別チャットのAI・税理士・自分の後日)に渡しても
+   **正しく読めない**ため作った(ユーザー指摘)。生データが誤読される理由は3つ:
+   ①未来日の固定費が数百件混ざっており、素直に合計すると将来分まで足してしまう
+   ②遊技(src=slot/mahjong)は当月収支には入るが**所持金ではなく軍資金**を増減させる
+   ③分類(消費/娯楽/承認)や振替の意味が書かれていない
+   → **定義を明記した上で、確定と予定を分けた集計**を出す。数字だけ出しても誤読される。 */
+function sumEnt(list, type){ return list.filter(e=>e.type===type).reduce((a,e)=>a+e.amount,0); }
+function summaryText(){
+  const today=todayStr(), mk=today.slice(0,7), NET=["slot","mahjong"];
+  const yen=n=>"¥"+Math.round(n).toLocaleString("ja-JP");
+  const sgn=n=>(n>=0?"+":"−")+"¥"+Math.abs(Math.round(n)).toLocaleString("ja-JP");
+  const L=[];
+  L.push("# Tally 収支サマリ ("+today+" 時点)");
+  L.push("");
+  L.push("## この数字の読み方");
+  L.push("- 所持金 = 帳簿上の残高。カード払いの決済ズレは反映しないので実口座とは差が出る");
+  L.push("- 軍資金 = 遊技専用の資金。生活費・貯金とは分離しており、勝ち負けはこの中だけで増減する");
+  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外)");
+  L.push("- 遊技の収支は当月収支に含まれるが、**所持金ではなく軍資金**を増減させる");
+  L.push("- 振替(財布間・貯金へ・軍資金へ)は収支ではない。総資産は動かない");
+  L.push("- 「確定」= 今日までに発生した分。「予定込」= 未来日の固定費・定期収入を含む見込み");
+  L.push("");
+  const wp=walletPots();
+  L.push("## 資産");
+  /* 総資産の定義は資産タブと同じ(所持金+軍資金+貯金)。**投資の簿価は含めない**——
+     時価を持たない方針(v3.18)なので、資産額として足すと誤解を生む */
+  const ivBook=((S.invest&&S.invest.holdings)||[]).reduce((a,x)=>a+num(x.cost),0);
+  L.push("総資産 "+yen(walletBalance()+bankBalance()+savingsBalance())+"  ※投資の簿価は含めない");
+  L.push("- 所持金 "+yen(walletBalance())+"  ("+wp.map(w=>w.name+" "+yen(walletBalance(null,w.id))).join(" / ")+")");
+  L.push("- 軍資金 "+yen(bankBalance())+"  (振替目安 "+yen(num(S.bank.ceiling)||300000)+" / 今月の振替(入) "+yen(bankRefillUsed())+" of "+yen(bankRefillCap())+")");
+  L.push("- 貯金 "+yen(savingsBalance()));
+  potProgress().forEach(pt=>L.push("    - "+pt.name+" "+yen(pt.bal)+(pt.hasTarget?("  目標 "+yen(pt.target)+" / 残り "+yen(pt.short)):"  目標なし")));
+  L.push("- 投資(累計簿価・時価なし) "+yen(ivBook));
+  L.push("");
+  const me=(S.entries||[]).filter(e=>String(e.date||"").startsWith(mk));
+  const done=me.filter(e=>e.date<=today), plan=me;
+  const byCat=(list,type)=>EXPENSE_CATS.map(c=>[c,list.filter(e=>e.type===type&&e.category===c).reduce((a,e)=>a+e.amount,0)]);
+  L.push("## 当月 ("+mk+")");
+  L.push("| | 確定 | 予定込 |");
+  L.push("|---|---|---|");
+  L.push("| 収入 | "+yen(sumEnt(done,"income"))+" | "+yen(sumEnt(plan,"income"))+" |");
+  L.push("| 支出 | "+yen(sumEnt(done,"expense"))+" | "+yen(sumEnt(plan,"expense"))+" |");
+  L.push("| 収支 | "+sgn(sumEnt(done,"income")-sumEnt(done,"expense"))+" | "+sgn(sumEnt(plan,"income")-sumEnt(plan,"expense"))+" |");
+  L.push("");
+  L.push("支出の内訳(確定 / 予定込)");
+  byCat(done,"expense").forEach((r,i)=>L.push("- "+r[0]+" "+yen(r[1])+" / "+yen(byCat(plan,"expense")[i][1])));
+  const gm=done.filter(e=>NET.includes(e.src));
+  L.push("- うち遊技(所持金には出入りしない) "+sgn(sumEnt(gm,"income")-sumEnt(gm,"expense")));
+  L.push("");
+  const base=disposableBase(mk), ps=preSplit(mk), caps=nowCaps(mk);
+  L.push("## 予算 ("+mk+")");
+  L.push("- 可処分(収入−固定費) "+yen(base));
+  L.push("- 先に取り分ける: 貯金 "+yen(ps.sv)+" / 投資 "+yen(ps.iv));
+  /* nowCapsは {varc, amuse}。capは所持金で制約した実効枠、monthCapは月の枠 */
+  const capLine=(k,lb)=> "- "+lb+": "+(caps[k].has ? ("実効 "+yen(caps[k].cap)+" / 月の枠 "+yen(caps[k].monthCap)) : "未設定");
+  L.push(capLine("varc","変動消費の上限"));
+  L.push(capLine("amuse","娯楽の上限"));
+  L.push("");
+  L.push("## 月次の推移");
+  const mks=[...new Set((S.entries||[]).map(e=>String(e.date||"").slice(0,7)))].filter(Boolean).sort().filter(x=>x<=mk).slice(-6);
+  L.push("| 月 | 収入 | 支出 | 収支 |");
+  L.push("|---|---|---|---|");
+  mks.forEach(m=>{
+    const li=(S.entries||[]).filter(e=>String(e.date||"").startsWith(m) && e.date<=today);
+    L.push("| "+m+" | "+yen(sumEnt(li,"income"))+" | "+yen(sumEnt(li,"expense"))+" | "+sgn(sumEnt(li,"income")-sumEnt(li,"expense"))+" |");
+  });
+  L.push("");
+  L.push("## 固定費(登録中)");
+  const fx=(S.fixed||[]).filter(t=>!t.stopped);
+  if(!fx.length) L.push("(なし)");
+  fx.forEach(t=>L.push("- "+(t.type==="income"?"[収入] ":"")+t.name+" "+yen(num(t.amount))+
+    "  "+fixedFreqLabel(t)+(t.wal?("  ← "+walName(t.wal)):"")));
+  return L.join("\n");
+}
+function fixedFreqLabel(t){
+  const f=t.freq||"monthly";
+  if(f==="weekly") return "毎週";
+  if(f==="biweekly") return "2週ごと";
+  if(f==="days") return "指定日";
+  const ev=num(t.every)||1;
+  return (ev>1?(ev+"ヶ月ごと "):"毎月 ")+(t.day||"?")+"日";
+}
+function viewSummary(){
+  const t=summaryText();
+  return '<div class="hdr"><button class="navbtn" data-a="sumback">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">収支サマリ</div><div style="width:44px"></div></div>'+
+    '<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:10px">'+
+    'バックアップのJSONは**未来日の固定費が数百件混ざる**ため、そのまま渡すと集計を誤られます。<br>'+
+    'こちらは定義つき・確定と予定を分けた要約なので、貼るだけで正しく読まれます。</div>'+
+    '<textarea id="sum-t" class="input" rows="14" readonly style="width:100%;font-size:11px;font-family:ui-monospace,monospace;line-height:1.6;margin-bottom:10px">'+esc(t)+'</textarea>'+
+    '<button class="btn tealb full" style="padding:11px 0;font-weight:700" data-a="sumcopy">コピーする</button>';
+}
 /* ===== 麻雀スコア表 ===== */
 function mjtSeats(t){ return num(t.rule)||3; }
 function mjtAbsent(t,ri,pi){ return t.rows[ri][pi]==="x"; }
@@ -4546,6 +4643,16 @@ function bindMain(){
       else if(a==="mjtnew"){ UI.mjt=newMjTable(); UI.mjtCell=null; saveMjt(false); UI.screen="mjtable"; render(); }
       else if(a==="opentool"){ if(el.dataset.v==="bordertool"){ UI.screen="bordertool"; render(); } }
       else if(a==="mjtopen"){ const t=(S.mjTables||[]).find(x=>String(x.id)===String(v)); if(t){ UI.mjt=t; UI.mjtCell=null; UI.screen="mjtable"; render(); } }
+      else if(a==="summary"){ UI.screen="summary"; render(); }
+      else if(a==="sumback"){ UI.screen="main"; UI.tab="tool"; render(); }
+      else if(a==="sumcopy"){
+        const t=summaryText();
+        const done=()=>toast("コピーしました");
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(t).then(done).catch(()=>{
+            const el=document.getElementById("sum-t"); if(el){ el.focus(); el.select(); } toast("全選択しました。長押しでコピーしてください"); });
+        } else { const el=document.getElementById("sum-t"); if(el){ el.focus(); el.select(); } toast("全選択しました。長押しでコピーしてください"); }
+      }
       else if(a==="mjstats"){ UI.screen="mjstats"; render(); }
       else if(a==="mjstopen"){ UI.mjStatKey=v; UI.mjStatMonth=null; UI.screen="mjstatd"; render(); }
       else if(a==="mjstlist"){ UI.screen="mjstats"; render(); }
