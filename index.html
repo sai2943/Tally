@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.29 (localStorage保存・完全オフライン)
+   Tally 4.30 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.29";
+const APP_VERSION = "4.30";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2855,10 +2855,6 @@ function viewAssets(){
     }
   }
   h+='</div>';
-  h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
-    /* v4.27: バーと「残りわずか」を撤去。目安を超えた時だけ回収を促す一行を出す */
-    (bBal>ceil?'<div class="amber" style="font-size:10px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'')+'</div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="savings">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">貯金</span><span><span class="mono teal" style="font-size:18px;font-weight:700">¥'+sBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>';
   /* v4.02: 箱ごとの目標をそのまま並べる(順次の梯子をやめたので「現在の目標」という概念が無い) */
@@ -2877,6 +2873,13 @@ function viewAssets(){
   const bufBal=((inv.bufferTxns)||[]).reduce((a,t)=>a+num(t.amount),0);
   const mkNow=monthKey();
   const boughtThis=(inv.holdings||[]).filter(x=>(x.buys||[]).some(b=>(b.date||"").startsWith(mkNow))).length;
+  /* v4.30: 並びを **所持金→貯金→軍資金→投資** に(ユーザー設計)。
+     **情報量の多い順であり、使う頻度の順でもある**——軍資金は構造上どうしても薄く、
+     投資は2027年開始まで使わない。上から順に見て、下ほど「今は見なくていい」になる */
+  h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
+    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
+    /* v4.27: バーと「残りわずか」を撤去。目安を超えた時だけ回収を促す一行を出す */
+    (bBal>ceil?'<div class="amber" style="font-size:10px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'')+'</div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="invest">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:13px;font-weight:700">投資 <span class="muted" style="font-size:10px;font-weight:400">簿価・時価なし</span></span>'+
     '<span><span class="mono teal" style="font-size:18px;font-weight:700">¥'+invCost.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
