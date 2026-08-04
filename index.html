@@ -206,7 +206,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.38 (localStorage保存・完全オフライン)
+   Tally 4.39 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -758,7 +758,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.38";
+const APP_VERSION = "4.39";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -805,7 +805,10 @@ function subnavExtra(sc){
   if(sc==="entry"){
     const f=UI.entryForm||{};
     const lb = f.type==="transfer" ? "振り替える" : (UI.editEntryId!==null ? "更新する" : "記録する");
-    return [['[data-a="esave"]', lb, 'color:var(--amber);font-weight:700']];
+    const out=[];
+    if(UI.editEntryId!==null) out.push(['[data-a="tofixed"]','固定費へ','color:var(--teal)']);
+    out.push(['[data-a="esave"]', lb, 'color:var(--amber);font-weight:700']);
+    return out;
   }
   return [];
 }
@@ -4257,7 +4260,8 @@ function viewMj(){
   const isFree = m.category==="free";
   const rc = mjRankCount(m);
   let h = '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">'+(UI.mjIsNew?"麻雀を記録":"麻雀を編集")+'</div><div style="width:44px"></div></div>';
+    '<div style="font-size:14px;font-weight:700">'+(UI.mjIsNew?"麻雀を記録":"麻雀を編集")+'</div>'+
+    (!UI.mjIsNew?'<button class="navbtn" style="color:var(--red);font-weight:700" data-a="mjdel">削除</button>':'<div style="width:44px"></div>')+'</div>';
   h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
     '<input class="input" type="date" id="mj-date" value="'+esc(m.date)+'" style="flex:1">'+
     '<input class="input" id="mj-store" placeholder="ルール名(例:4麻赤有)" value="'+esc(m.store)+'" style="flex:1.4"></div>';
@@ -4334,7 +4338,6 @@ function viewMj(){
   h += '<div class="card" id="mj-summary">'+mjSummary(m)+'</div>';
   h += '<input class="input" placeholder="メモ(任意)" value="'+esc(m.memo||"")+'" style="margin:14px 0" data-in="mjf" data-v="memo">';
   h += '<div class="row" style="gap:8px">'+
-    (!UI.mjIsNew?'<button class="btn danger" data-a="mjdel">削除</button>':'')+
     '<button class="btn primary" style="flex:1;padding:12px 0" data-a="mjsave">保存する</button></div>';
   return h;
 }
@@ -4877,8 +4880,12 @@ function viewEntry(){
   const TYPES = UI.editEntryId!==null ? [["expense","支出"],["income","収入"]]
                                       : [["expense","支出"],["income","収入"],["transfer","振替"]];
   return '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">'+(UI.editEntryId!==null?"記録を編集":isTr?"振替":"記録を追加")+'</div><div style="width:44px"></div></div>'+
-    /* v4.38: **日付を最上段へ**(ユーザー指摘)。いつの記録かが先に決まる方が読み順として自然。
+    '<div style="font-size:14px;font-weight:700">'+(UI.editEntryId!==null?"記録を編集":isTr?"振替":"記録を追加")+'</div>'+
+    (UI.editEntryId!==null?'<button class="navbtn" style="color:var(--red);font-weight:700" data-a="edel">削除</button>':'<div style="width:44px"></div>')+'</div>'+
+    /* v4.39: 削除はヘッダ右端に統一(ユーザー設計)。**滅多に触らない操作のために最下部まで
+   スクロールさせるのは無駄**で、位置が画面ごとに違うのも覚える対象を増やす。
+   .navbtn と同じ見た目にして、色だけ赤にする */
+  /* v4.38: **日付を最上段へ**(ユーザー指摘)。いつの記録かが先に決まる方が読み順として自然。
        金額は品目行にあるので、ここに残すのは品目行を使わない振替/交通コンポーザのときだけ */
     '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="width:100%;margin-bottom:12px">'+
     '<div class="row" style="gap:8px;margin-bottom:12px">'+
@@ -4897,11 +4904,10 @@ function viewEntry(){
            日付はフォームの値を引き継ぐ */
         (UI.editEntryId===null?'<button class="btn full" style="margin-bottom:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''))+
     (isTr ? '' : walHtml + pasteHtml + transHtml + (composerHtml || (fieldsHtml + extraHtml))) +
-    (UI.editEntryId!==null?'<button class="btn full" style="margin-bottom:8px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="tofixed">この内容で固定費に登録</button>':'')+
-    /* v4.37: 保存ボタンを下バーへ移動(ユーザー指摘)。**「追加する」は「品目を追加」と意味が被る**ので
-       「記録する」に改名。本文にはdisplay:noneで置いてハンドラの担い手だけ残す(v4.27と同じ手法) */
-    (UI.editEntryId!==null?'<button class="btn danger full" style="margin-bottom:8px" data-a="edel">削除</button>':'')+
-    '<div style="display:none"><button data-a="esave">保存</button></div>';
+    /* v4.37/v4.39: 保存と固定費登録は下バー、削除はヘッダ右端へ。
+       本文にはdisplay:noneで置いてハンドラの担い手だけ残す(v4.27と同じ手法) */
+    '<div style="display:none"><button data-a="esave">保存</button>'+
+    (UI.editEntryId!==null?'<button data-a="tofixed">固定費</button>':'')+'</div>';
 }
 function bindEntry(){
   const f = UI.entryForm;
@@ -5076,7 +5082,8 @@ function nameHints(){
 function viewSession(){
   const s = UI.draft;
   let h = '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">'+(UI.isNewSess?"稼働を記録":"稼働を編集")+'</div><div style="width:44px"></div></div>';
+    '<div style="font-size:14px;font-weight:700">'+(UI.isNewSess?"稼働を記録":"稼働を編集")+'</div>'+
+    (!UI.isNewSess?'<button class="navbtn" style="color:var(--red);font-weight:700" data-a="sdel">削除</button>':'<div style="width:44px"></div>')+'</div>';
   h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
     '<input class="input" type="date" id="s-date" value="'+esc(s.date)+'" style="flex:1">'+
     '<input class="input" id="s-store" placeholder="店名" value="'+esc(s.store)+'" style="flex:1.4"></div>';
@@ -5171,7 +5178,6 @@ function viewSession(){
   h += '<div class="card" id="ssummary">'+sessionSummary(s)+'</div>';
   h += '<input class="input" placeholder="セッションメモ(任意)" value="'+esc(s.memo||"")+'" style="margin:14px 0" data-in="smemo">';
   h += '<div class="row" style="gap:8px">'+
-    (!UI.isNewSess?'<button class="btn danger" data-a="sdel">削除</button>':'')+
     '<button class="btn primary" style="flex:1;padding:12px 0" data-a="ssave">保存する</button></div>';
   return h;
 }
