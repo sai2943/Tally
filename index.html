@@ -206,7 +206,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.32 (localStorage保存・完全オフライン)
+   Tally 4.33 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -758,7 +758,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.32";
+const APP_VERSION = "4.33";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -906,6 +906,7 @@ function _renderScreen(app){
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
   /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う */
   if(UI.screen==="mjstats"){ app.innerHTML = viewMjStatsPage(); bindMain(); return; }
+  if(UI.screen==="mjstatd"){ app.innerHTML = viewMjStatDetail(); bindMain(); return; }
   if(UI.screen==="mdb"){ app.innerHTML = viewMdb(); bindMdb(); return; }
   if(UI.screen==="stores"){ app.innerHTML = viewStores(); bindStores(); return; }
   if(UI.screen==="bordertool"){ app.innerHTML = viewBorderTool(); bindBorderTool(); return; }
@@ -1625,72 +1626,61 @@ function viewMahjong(foot){
   return h;
 }
 
-function viewMjStats(){
-  /* ルール名 × カテゴリ(フリー/セット)別に集計。同レートで括るのが目的 */
-  const groups = {}; // key: category|store
+/* v4.33: **ルール名別 成績を2階層へ**(ユーザー指摘)。
+   ルールが増えると1画面に全部の詳細を積むのは無理があり、しかも累計しか見られなかった。
+   一覧(ルールを選ぶ) → 詳細(累計 + 月別・月は切り替え可) に分ける。
+   集計本体はmjAgg()に切り出し、期間(全期間 or 特定の月)を渡すだけで使い回す */
+function mjGroups(){
+  const g={};
   (S.mjSessions||[]).forEach(s=>{
-    const store = (s.store||"").trim() || "(ルール名なし)";
-    const key = s.category + "|" + store;
-    (groups[key] = groups[key] || {category:s.category, store, list:[]}).list.push(s);
+    const store=(s.store||"").trim()||"(ルール名なし)";
+    const key=s.category+"|"+store;
+    (g[key]=g[key]||{key:key, category:s.category, store:store, list:[]}).list.push(s);
   });
-  const keys = Object.keys(groups).sort((a,b)=>{
-    // フリー→セットの順、その中は半荘数の多い順
-    const ga=groups[a], gb=groups[b];
-    if(ga.category!==gb.category) return ga.category==="free"?-1:1;
-    const ha=ga.list.reduce((x,s)=>x+mjHanchan(s),0), hb=gb.list.reduce((x,s)=>x+mjHanchan(s),0);
-    return hb-ha;
-  });
-  let h = "", any=false;
-  keys.forEach(key=>{
-    const G = groups[key], list = G.list;
-    const H = list.reduce((a,s)=>a+mjHanchan(s),0);
-    if(!H) return;
-    any = true;
-    /* この括りの最大着順数(3麻と4麻が混じっても広い方に合わせる) */
-    const rc = Math.max(...list.map(s=>mjRankCount(s)));
-    const rankSums = [0,0,0,0];
-    list.forEach(s=>{ const r=mjRanks(s); for(let i=0;i<4;i++) rankSums[i]+=(r[i]||0); });
-    let rankWeighted=0; for(let i=0;i<4;i++) rankWeighted += (i+1)*rankSums[i];
-    const avgRank = rankWeighted/H;
-    const _rankLine = (rc+1)/2;
-    const _rankR2 = Number(avgRank.toFixed(2));
-    const rankCol = _rankR2 < _rankLine ? "teal" : (_rankR2 > _rankLine ? "red" : "amber");
-    const sumFinal = list.reduce((a,s)=>a+mjFinal(s),0);
-    const sumRaw = list.reduce((a,s)=>a+mjRaw(s),0);
-    const sumFee = list.reduce((a,s)=>a+mjGameFee(s),0);
-    const sumScore = list.reduce((a,s)=>a+fnum(s.score),0);
-    const sumChips = list.reduce((a,s)=>a+fnum(s.chips),0);
-    const catC = G.category==="free"?"var(--red)":"var(--amber)";
-    h += '<div class="card" style="margin-bottom:8px">'+
-      '<div class="row between" style="margin-bottom:8px;align-items:center;gap:8px">'+
-      '<div class="row" style="align-items:center;gap:6px;min-width:0">'+
-      '<span class="tag" style="border:1px solid '+catC+';color:'+catC+';flex-shrink:0">'+(G.category==="free"?"フリー":"セット")+'</span>'+
-      '<span class="ellip" style="font-weight:700;font-size:13px">'+esc(G.store)+'</span></div>'+
-      '<span class="muted" style="font-size:11px;flex-shrink:0">'+H+'半荘 / '+list.length+'日</span></div>'+
-      '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span class="muted" style="font-size:12px">平均着順</span>'+
-      '<span class="mono '+rankCol+'" style="font-size:18px;font-weight:700">'+avgRank.toFixed(2)+'</span></div>'+
-      '<div style="margin-bottom:10px">'+
-      Array.from({length:rc}).map((_,i)=>{
-        const cnt = rankSums[i];
-        const pct = H>0 ? Math.round(cnt/H*100) : 0;
-        const cols = rc===3 ? ["var(--teal)","var(--amber)","var(--red)"] : ["var(--teal)","var(--blue)","var(--amber)","var(--red)"];
-        return '<div style="'+(i<rc-1?'margin-bottom:8px':'')+'">'+
-          '<div class="row between" style="font-size:11px;margin-bottom:4px;align-items:baseline">'+
-          '<span class="muted">'+(i+1)+'着</span>'+
-          '<span class="mono"><span style="font-weight:700">'+cnt+'</span><span class="muted" style="font-size:10px">回 ・ '+pct+'%</span></span></div>'+
-          '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">'+
-          '<div style="height:100%;width:'+pct+'%;background:'+cols[i]+';border-radius:4px"></div></div></div>';
-      }).join("")+'</div>'+
-      '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">'+
-      mjStatRow("平均収支(ゲーム代込)", Math.round(sumFinal/H), true)+
-      mjStatRow("平均収支(ゲーム代抜)", Math.round(sumRaw/H), true)+
-      mjStatRow("平均ゲーム代", -Math.round(sumFee/H), true)+
-      mjStatRow("平均スコア", (sumScore/H), false, true, "pt")+
-      mjStatRow("平均チップ", (sumChips/H), false, true, "枚")+
-      '</div></div>';
-  });
-  if(!any) h = '<div style="text-align:center;padding:16px 0;font-size:12px;line-height:1.7" class="muted">まだ記録がありません。<br>貯まるとルール名別の平均着順や収支が出ます。</div>';
-  return h;
+  return Object.values(g).filter(G=>G.list.reduce((a,s)=>a+mjHanchan(s),0)>0)
+    .sort((a,b)=>{
+      if(a.category!==b.category) return a.category==="free"?-1:1;
+      return b.list.reduce((x,s)=>x+mjHanchan(s),0)-a.list.reduce((x,s)=>x+mjHanchan(s),0);
+    });
+}
+/* mk省略=全期間 / 指定=その月だけ */
+function mjAgg(list, mk){
+  const L = mk ? list.filter(s=>String(s.date||"").startsWith(mk)) : list;
+  const H = L.reduce((a,s)=>a+mjHanchan(s),0);
+  if(!H) return null;
+  const rc = Math.max.apply(null, L.map(s=>mjRankCount(s)));
+  const rankSums=[0,0,0,0];
+  L.forEach(s=>{ const r=mjRanks(s); for(let i=0;i<4;i++) rankSums[i]+=(r[i]||0); });
+  let w=0; for(let i=0;i<4;i++) w+=(i+1)*rankSums[i];
+  return {H:H, days:L.length, rc:rc, rankSums:rankSums, avgRank:w/H,
+    final:L.reduce((a,s)=>a+mjFinal(s),0), raw:L.reduce((a,s)=>a+mjRaw(s),0),
+    fee:L.reduce((a,s)=>a+mjGameFee(s),0), score:L.reduce((a,s)=>a+fnum(s.score),0),
+    chips:L.reduce((a,s)=>a+fnum(s.chips),0)};
+}
+function mjAggHtml(A){
+  const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
+  const rankCol = r2<line ? "teal" : (r2>line ? "red" : "amber");
+  const cols = A.rc===3 ? ["var(--teal)","var(--amber)","var(--red)"]
+                        : ["var(--teal)","var(--amber)","#B39DDB","var(--red)"];
+  return '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span class="muted" style="font-size:12px">平均着順</span>'+
+    '<span class="mono '+rankCol+'" style="font-size:18px;font-weight:700">'+A.avgRank.toFixed(2)+'</span></div>'+
+    '<div style="margin-bottom:10px">'+
+    Array.from({length:A.rc}).map((_,i)=>{
+      const cnt=A.rankSums[i], pct=A.H>0?Math.round(cnt/A.H*100):0;
+      return '<div style="'+(i<A.rc-1?'margin-bottom:8px':'')+'">'+
+        '<div class="row between" style="font-size:11px;margin-bottom:4px;align-items:baseline">'+
+        '<span class="muted">'+(i+1)+'着</span>'+
+        '<span class="mono"><span style="font-weight:700">'+cnt+'</span><span class="muted" style="font-size:10px">回 ・ '+pct+'%</span></span></div>'+
+        '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">'+
+        '<div style="height:100%;width:'+pct+'%;background:'+cols[i]+';border-radius:4px"></div></div></div>';
+    }).join("")+'</div>'+
+    '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">'+
+    mjStatRow("平均収支(ゲーム代込)", Math.round(A.final/A.H), true)+
+    mjStatRow("平均収支(ゲーム代抜)", Math.round(A.raw/A.H), true)+
+    mjStatRow("平均ゲーム代", -Math.round(A.fee/A.H), true)+
+    mjStatRow("平均スコア", (A.score/A.H), false, true, "pt")+
+    mjStatRow("平均チップ", (A.chips/A.H), false, true, "枚")+
+    '</div>';
 }
 function mjStatRow(label, val, isYen, raw, unit){
   let disp;
@@ -1706,12 +1696,60 @@ function mjStatRow(label, val, isYen, raw, unit){
 
 /* ========================= ツール ========================= */
 /* カテゴリ別ツールの受け皿。投資はツールでなく資産タブの投資台帳(v3.18)が担当——プレースホルダーはv3.29で廃止済み。 */
-/* v4.32: ルール名別 成績の専用画面(ツールタブから開く)。集計本体はviewMjStatsを再利用 */
+/* v4.33: 一覧——ルールを1行ずつ並べて選ばせる。**ここでは要約だけ**(半荘数/平均着順/平均収支)。
+   説明文は置かない(ユーザー指摘) */
 function viewMjStatsPage(){
-  return '<div class="hdr"><button class="navbtn" data-a="mjstback">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">ルール名別 成績</div><div style="width:44px"></div></div>'+
-    '<div class="muted" style="font-size:11px;margin-bottom:12px">全期間の集計です(月の切り替えは効きません)。</div>'+
-    viewMjStats();
+  const gs=mjGroups();
+  let h='<div class="hdr"><button class="navbtn" data-a="mjstback">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">ルール名別 成績</div><div style="width:44px"></div></div>';
+  if(!gs.length) return h+'<div style="text-align:center;padding:24px 0;font-size:12px;line-height:1.7" class="muted">まだ記録がありません。<br>貯まるとルール名別の平均着順や収支が出ます。</div>';
+  gs.forEach(G=>{
+    const A=mjAgg(G.list), catC=G.category==="free"?"var(--red)":"var(--amber)";
+    const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
+    const rankCol=r2<line?"teal":(r2>line?"red":"amber");
+    const avg=Math.round(A.final/A.H);
+    h+='<div class="card" style="margin-bottom:8px;cursor:pointer" data-a="mjstopen" data-v="'+esc(G.key)+'">'+
+      '<div class="row between" style="align-items:center;gap:8px">'+
+      '<div class="row" style="align-items:center;gap:6px;min-width:0">'+
+      '<span class="tag" style="border:1px solid '+catC+';color:'+catC+';flex-shrink:0">'+(G.category==="free"?"フリー":"セット")+'</span>'+
+      '<span class="ellip" style="font-weight:700;font-size:13px">'+esc(G.store)+'</span></div>'+
+      '<span style="font-size:18px;color:var(--muted);flex-shrink:0">›</span></div>'+
+      '<div class="row between" style="margin-top:8px;font-size:11px">'+
+      '<span class="muted">'+A.H+'半荘 / '+A.days+'日</span>'+
+      '<span><span class="muted">平均着順 </span><span class="mono '+rankCol+'" style="font-weight:700">'+A.avgRank.toFixed(2)+'</span>'+
+      '<span class="muted">　平均収支 </span><span class="mono '+clsPM(avg)+'" style="font-weight:700">'+signYen(avg)+'</span></span></div></div>';
+  });
+  return h;
+}
+/* v4.33: 詳細——**累計と月別の両方**を同じ様式で見せる。月は‹›で切り替えられる */
+function viewMjStatDetail(){
+  const G=mjGroups().find(x=>String(x.key)===String(UI.mjStatKey));
+  let h='<div class="hdr"><button class="navbtn" data-a="mjstlist">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">'+(G?esc(G.store):"成績")+'</div><div style="width:44px"></div></div>';
+  if(!G) return h+'<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">この記録は見つかりません。</div>';
+  const catC=G.category==="free"?"var(--red)":"var(--amber)";
+  h+='<div class="row" style="align-items:center;gap:6px;margin-bottom:12px">'+
+    '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(G.category==="free"?"フリー":"セット")+'</span></div>';
+  const all=mjAgg(G.list);
+  h+=band("累計");
+  h+='<div class="card" style="margin-bottom:14px">'+
+    '<div class="muted" style="font-size:11px;margin-bottom:8px">'+all.H+'半荘 / '+all.days+'日</div>'+
+    mjAggHtml(all)+'</div>';
+  /* 月別。記録のある月だけを行き来する(空月を延々めくらせない) */
+  const months=[...new Set(G.list.map(s=>String(s.date||"").slice(0,7)))].filter(Boolean).sort();
+  const cur=UI.mjStatMonth && months.indexOf(UI.mjStatMonth)>=0 ? UI.mjStatMonth : months[months.length-1];
+  const idx=months.indexOf(cur);
+  h+=band("月別");
+  h+='<div class="row between" style="align-items:center;margin-bottom:10px">'+
+    '<button class="btn" style="padding:6px 14px;font-size:13px'+(idx<=0?';opacity:.3':'')+'" data-a="mjstprev">‹</button>'+
+    '<span style="font-size:14px;font-weight:700">'+cur.slice(0,4)+'年 '+num(cur.slice(5))+'月</span>'+
+    '<button class="btn" style="padding:6px 14px;font-size:13px'+(idx>=months.length-1?';opacity:.3':'')+'" data-a="mjstnext">›</button></div>';
+  const A=mjAgg(G.list, cur);
+  h+= A ? '<div class="card" style="margin-bottom:8px">'+
+        '<div class="muted" style="font-size:11px;margin-bottom:8px">'+A.H+'半荘 / '+A.days+'日</div>'+
+        mjAggHtml(A)+'</div>'
+      : '<div class="muted" style="text-align:center;padding:18px 0;font-size:12px">この月の記録はありません。</div>';
+  return h;
 }
 /* ---------- 麻雀スコア表 一覧(専用画面) ---------- */
 function viewMjtList(){
@@ -4502,6 +4540,15 @@ function bindMain(){
       else if(a==="opentool"){ if(el.dataset.v==="bordertool"){ UI.screen="bordertool"; render(); } }
       else if(a==="mjtopen"){ const t=(S.mjTables||[]).find(x=>String(x.id)===String(v)); if(t){ UI.mjt=t; UI.mjtCell=null; UI.screen="mjtable"; render(); } }
       else if(a==="mjstats"){ UI.screen="mjstats"; render(); }
+      else if(a==="mjstopen"){ UI.mjStatKey=v; UI.mjStatMonth=null; UI.screen="mjstatd"; render(); }
+      else if(a==="mjstlist"){ UI.screen="mjstats"; render(); }
+      else if(a==="mjstprev"||a==="mjstnext"){
+        const G=mjGroups().find(x=>String(x.key)===String(UI.mjStatKey)); if(!G) return;
+        const ms=[...new Set(G.list.map(x=>String(x.date||"").slice(0,7)))].filter(Boolean).sort();
+        const c0=UI.mjStatMonth&&ms.indexOf(UI.mjStatMonth)>=0?UI.mjStatMonth:ms[ms.length-1];
+        const i2=ms.indexOf(c0)+(a==="mjstprev"?-1:1);
+        if(i2>=0&&i2<ms.length){ UI.mjStatMonth=ms[i2]; render(); }
+      }
       else if(a==="mjstback"){ UI.screen="main"; UI.tab="tool"; render(); }
       else if(a==="mdb"){ UI.screen="mdb"; UI.mdbForm=null; render(); }
       else if(a==="stores"){ UI.screen="stores"; UI.storeForm=null; render(); }
