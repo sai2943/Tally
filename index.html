@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.27 (localStorage保存・完全オフライン)
+   Tally 4.28 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.27";
+const APP_VERSION = "4.28";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2831,9 +2831,21 @@ function viewAssets(){
   /* v4.06: サブラベル(生活口座)と説明文を撤去(ユーザー指摘)。**同じ説明を毎日見せる必要はない**——
      意味は各ポットの詳細画面が持てばよく、一覧カードは残高だけで足りる。
      警告(予定が払えない)は状態の通知なので残す */
+  /* v4.28: 貯金は内訳を出しているのに所持金は出していなかった(ユーザー指摘)。
+     どちらも複数の入れ物を束ねたカードなので、様式を揃えて財布ごとの残高を並べる */
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer'+(wFc.short>0?';border-color:var(--red)':'')+'" data-a="wallet">'+
     '<div class="row between" style="align-items:baseline"><span style="font-size:13px;font-weight:700">所持金</span>'+
-    '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div></div>';
+    '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>';
+  {
+    const wp=walletPots();
+    if(wp.length>1){
+      h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">'+
+        wp.map(w=>'<div class="row between" style="font-size:11px;padding:2px 0">'+
+          '<span class="muted">'+esc(w.name)+'</span>'+
+          '<span class="mono muted">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></div>').join("")+'</div>';
+    }
+  }
+  h+='</div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     /* v4.27: バーと「残りわずか」を撤去。目安を超えた時だけ回収を促す一行を出す */
@@ -3541,7 +3553,7 @@ function viewBank(){
      振替は累計を出入りの差分で示し、当月は補充枠の消化として示す(語彙は「振替」に統一) */
   const tAll=bankTransfer(), tMon=bankTransfer(todayStr().slice(0,7));
   h+='<div class="card2" style="margin-bottom:14px;font-size:12px;padding:12px">'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">遊技の勝ち負け 累計</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
+    '<div class="row between" style="margin-bottom:5px"><span class="muted">遊技収支 累計</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
     /* v4.25: 出/入の内訳を撤去(ユーザー指摘)。**振替は金の移動なので差分以外に価値がない**——
        内訳が分かっても行動は変わらない(収支とは違う) */
     '<div class="row between" style="margin-bottom:5px"><span class="muted">振替 累計</span>'+
@@ -3554,7 +3566,7 @@ function viewBank(){
     h+=band("月別");
     mon.forEach(m=>{
       const parts=[];
-      if(m.game!==0)  parts.push('<span class="'+clsPM(m.game)+'">遊技 '+signYen(m.game)+'</span>');
+      if(m.game!==0)  parts.push('<span class="'+clsPM(m.game)+'">遊技収支 '+signYen(m.game)+'</span>');
       /* v4.24: 語彙を振替に統一。**向きと行き先が読めるように**入/貯金へ/所持金へ で書き分ける */
       if(m.topup>0)   parts.push('<span class="amber">振替入 +¥'+m.topup.toLocaleString("ja-JP")+'</span>');
       if(m.sweep>0)   parts.push('<span class="teal">貯金へ −¥'+m.sweep.toLocaleString("ja-JP")+'</span>');
