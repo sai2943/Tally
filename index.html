@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.25 (localStorage保存・完全オフライン)
+   Tally 4.26 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.25";
+const APP_VERSION = "4.26";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3706,13 +3706,16 @@ function potsShortfall(){ return potProgress().reduce((a,p)=>a+p.short,0); }
 function viewSavings(){
   const sv=S.savings, bal=savingsBalance(), pots=potProgress();
   let h='<div class="hdr"><button class="navbtn" data-sa="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">貯金</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">目的の違う金は<b>箱</b>で分ける。<br>目標額は箱ごとに設定します。</div>';
+  /* v4.26: 説明文を撤去(ユーザー指摘)。毎日見る画面に毎回同じ説明は要らない */
 
   /* ---- 合計 + 構成比の帯(v4.02: 箱が複数のとき、どこにいくら入っているかを1本で示す) ---- */
   h+='<div class="card" style="margin-bottom:12px">';
   h+='<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">合計残高</span><span class="mono teal" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>';
   if(pots.length>1 && bal>0){
-    const COLS=["var(--teal)","var(--amber)","var(--red)","#7FB3D5","#B39DDB","#80CBC4"];
+    /* v4.26: **赤は超過・危険に予約された色**なので識別には使わない(ユーザー指摘)。
+       箱は増減するので個別の色を覚えても意味がなく、**tealの濃淡で統一**して割合だけを読ませる。
+       所持金の財布は固定メンバーなので多色のままでよい(あちらは色で見分ける価値がある) */
+    const COLS=["var(--teal)","rgba(47,212,181,.72)","rgba(47,212,181,.50)","rgba(47,212,181,.34)","rgba(47,212,181,.22)","rgba(47,212,181,.14)"];
     h+='<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:12px;background:var(--surface2)">';
     pots.forEach((pt,i)=>{ const w=Math.max(0, pt.bal/bal*100);
       if(w>0) h+='<div style="width:'+w+'%;background:'+COLS[i%COLS.length]+'"></div>'; });
@@ -3732,16 +3735,21 @@ function viewSavings(){
     /* v4.04: 「既定」の特別扱いを撤去。どの箱も対等で、2つ以上あればどれでも消せる。
        v4.07: 操作は**固定費と同じ「編集/調整」の小ボタン方式**に統一(ユーザー指摘)。
        カード全面タップをやめたので、何が押せるのかが見て分かる */
+    /* v4.26: 金額の色をバー連動へ(v3.92の規約)。**残高は白でなく、達成ならteal・未達なら琥珀**。
+       目標未設定の箱だけは比較対象が無いのでmutedに置く */
+    const _col = !pt.hasTarget ? 'muted' : pt.done ? 'teal' : 'amber';
     h+='<div class="card" style="margin-bottom:8px;padding:12px">'+
       '<div class="row between" style="align-items:baseline">'+
-      '<span style="font-size:13px;font-weight:700">'+esc(pt.name)+'</span>'+
-      '<span class="mono'+(pt.done?' teal':'')+'" style="font-size:17px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span></div>';
+      '<span class="muted" style="font-size:12px;font-weight:700">'+esc(pt.name)+'</span>'+
+      '<span class="mono '+_col+'" style="font-size:18px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span></div>';
     if(pt.hasTarget){
-      h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:8px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
-        '<div class="row between" style="font-size:10px;margin-top:5px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+'</span>'+
-        '<span class="mono '+(pt.done?'teal':'muted')+'">'+(pt.done?'達成':'あと ¥'+pt.short.toLocaleString("ja-JP"))+'</span></div>';
+      h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:9px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
+        '<div class="row between" style="font-size:10px;margin-top:6px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+'</span>'+
+        '<span><span class="mono muted">'+(pt.done?'':'あと')+'</span> <span class="mono '+(pt.done?'teal':'amber')+'" style="font-weight:700">'+(pt.done?'達成':'¥'+pt.short.toLocaleString("ja-JP"))+'</span></span></div>';
+    } else {
+      h+='<div class="muted" style="font-size:10px;margin-top:6px">目標額 未設定</div>';
     }
-    h+='<div class="row" style="gap:6px;justify-content:flex-end;margin-top:9px">'+
+    h+='<div class="row" style="gap:6px;justify-content:flex-end;margin-top:11px">'+
       '<button class="btn" style="font-size:10px;padding:3px 12px" data-sa="potedit" data-v="'+pt.id+'">編集</button>'+
       '<button class="btn" style="font-size:10px;padding:3px 12px" data-sa="adjust" data-v="'+pt.id+'">調整</button>'+
       (pots.length>1?'<button class="btn" style="font-size:10px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-sa="potdel" data-v="'+pt.id+'">削除</button>':'')+
