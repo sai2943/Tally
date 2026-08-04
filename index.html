@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.26 (localStorage保存・完全オフライン)
+   Tally 4.27 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.26";
+const APP_VERSION = "4.27";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -799,16 +799,23 @@ function navHtml(){
    常時見えて親指が届く位置にあるので、本文中の振替ボタンより確実に速い。
    投資は買付が別建て(transferAccountsに含まれない)ので対象外 */
 const SUBNAV_TRANSFER = ["wallet","bank","savings"];
+/* 画面 → [本文内のセレクタ, ラベル] の並び。本文側のボタンはdisplay:noneで置いておく */
+const SUBNAV_EXTRA = { bank: [['[data-ba="edit"]','編集'], ['[data-ba="adjust"]','調整']] };
 function subNavHtml(){
   /* v3.96【バグ修正】ここに data-a を付けてはいけない。bind関数10本が
      `document.querySelectorAll("[data-a]")`(=#app内に限定していない)で全走査してonclickを上書きするため、
      data-a="subback"は各画面のハンドラに奪われ「どの分岐にも当たらない=無反応」になっていた。
      **#navbarは#appの外なので、bind関数と衝突しない属性名(data-nav)を使う** */
   const withTr = SUBNAV_TRANSFER.indexOf(UI.screen)>=0;
+  /* v4.27: 画面固有の操作も下バーへ置けるようにする(ユーザー要望: 軍資金の編集/調整を下へ)。
+     実装は本文に display:none で置いたボタンをclick()するだけ——遷移や処理を二重に書かない
+     (v3.96の戻るボタンと同じ手法)。数が増えると戻るが細るので**最大4つまで**に留める */
+  const extra = SUBNAV_EXTRA[UI.screen] || [];
+  const sep = '<div style="width:1px;background:var(--line)"></div>';
   return '<div class="subnav" style="display:flex">'+
-    '<button data-nav="back" aria-label="前の画面へ戻る"'+(withTr?' style="flex:1"':'')+'>'+TAB_ICONS.back+'<span>戻る</span></button>'+
-    (withTr?'<div style="width:1px;background:var(--line)"></div>'+
-      '<button data-nav="transfer" aria-label="振替する" style="flex:1;color:var(--teal)"><span style="font-weight:700">振替</span></button>':'')+
+    '<button data-nav="back" aria-label="前の画面へ戻る"'+((withTr||extra.length)?' style="flex:1"':'')+'>'+TAB_ICONS.back+'<span>戻る</span></button>'+
+    extra.map(x=>sep+'<button data-nav="app:'+x[0]+'" style="flex:1"><span>'+x[1]+'</span></button>').join("")+
+    (withTr?sep+'<button data-nav="transfer" aria-label="振替する" style="flex:1;color:var(--teal)"><span style="font-weight:700">振替</span></button>':'')+
     '</div>'+
     '<div class="muted" style="font-size:9px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 }
@@ -843,6 +850,10 @@ function _renderBody(){
       if(bb) bb.onclick = goBackViaHeader;
       const tb = navbar.querySelector('[data-nav="transfer"]');
       if(tb) tb.onclick = ()=>openTransfer("", "", UI.screen);
+      navbar.querySelectorAll('[data-nav^="app:"]').forEach(el=>{
+        const sel = el.dataset.nav.slice(4);
+        el.onclick = ()=>{ const t=document.querySelector("#app "+sel); if(t) t.click(); };
+      });
     }
     /* ナビバー実高を--navhへ(インジケーター行追加等で背が変わっても自動追随) */
     document.documentElement.style.setProperty("--navh", (navbar.offsetHeight||0)+"px");
@@ -2825,11 +2836,8 @@ function viewAssets(){
     '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div></div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
-    '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+bPct+'%;background:'+(bBal<ceil*0.15?"var(--red)":bBal>ceil?"var(--amber)":"var(--teal)")+'"></div></div>'+
-    /* v4.15: 残高が少ないのは「借金」ではないので数字は赤くしない。警告はバーの色とこの行が担う */
-    '<div class="row between" style="font-size:10px;margin-top:4px">'+
-    (bBal<ceil*0.15?'<span class="red" style="font-weight:700">⚠ 残りわずか</span>':bBal>ceil?'<span class="amber" style="font-weight:700">上限超え +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</span>':'<span class="muted">天井 ¥'+ceil.toLocaleString("ja-JP")+'</span>')+
-    '<span class="mono muted">'+Math.floor(bPct)+'%</span></div></div>';
+    /* v4.27: バーと「残りわずか」を撤去。目安を超えた時だけ回収を促す一行を出す */
+    (bBal>ceil?'<div class="amber" style="font-size:10px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'')+'</div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="savings">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">貯金</span><span><span class="mono teal" style="font-size:18px;font-weight:700">¥'+sBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>';
   /* v4.02: 箱ごとの目標をそのまま並べる(順次の梯子をやめたので「現在の目標」という概念が無い) */
@@ -3509,28 +3517,26 @@ function viewBank(){
   const b=S.bank, bal=bankBalance(), ceil=num(b.ceiling)||300000;
   const gnet=bankGameNet();
   const rUsed=bankRefillUsed(), rCap=bankRefillCap();   /* 当月の「入」= 補充枠の消化 */
-  const pct=Math.max(0,Math.min(100, ceil>0? bal/ceil*100 : 0));
-  const over=bal-ceil, low=bal<ceil*0.15;
+  const over=bal-ceil;   /* v4.27: バーを撤去したのでpct/lowは不要 */
   let h='<div class="hdr"><button class="navbtn" data-ba="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">軍資金</div><div style="width:44px"></div></div>';
   /* v4.09: 説明文4行を撤去(ユーザー指摘)。毎回読むものではない。
      「残りわずか」は独立カードをやめ**バーの直下の行に出す**——状態はグラフのそばで語る。
      設定(集計開始日/上限/開始時の残高)は貯金の箱と同じく[編集]に畳んだ */
   /* v4.25: 残高カードを貯金・所持金と同じ**中央揃え**へ(ユーザー指摘: 見た目が浮く)。
      左右分割だと残高が右端に寄って間延びし、操作ボタンだけが右に浮いていた */
+  /* v4.27: **上限のバーと「残りわずか」を撤去**(ユーザー指摘)。
+     ①残高が上限のどこにあるかを見ても行動は変わらない(40万勝てば上限自体が意味を失う)。
+     ②「残りわずか」は**何をすべきかを示さない警告**——少ないから補充しろ、では設計が逆。
+     数値は**「振替目安」**として残す。超えた分を貯金へ回す仕組み(+EVの回収)は中核なので落とせない。
+     操作ボタンは下バーへ移動。ここでは display:none で置いてハンドラの担い手だけ残す
+     (下バーがこれをclick()する——v3.96の戻るボタンと同じ手法) */
   h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">残高</div>'+
-    /* v3.83: 残高が少ないだけでマイナスではないので数字は赤くしない。警告はバーと下の行が担う */
     '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">¥'+bal.toLocaleString("ja-JP")+'</div>'+
-    '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:11px 0 6px"><div style="height:100%;width:'+pct+'%;background:'+(low?"var(--red)":over>0?"var(--amber)":"var(--teal)")+'"></div></div>'+
-    '<div class="row between" style="font-size:10px">'+
-      (low ? '<span class="red" style="font-weight:700">⚠ 残りわずか</span>'
-           : over>0 ? '<span class="amber" style="font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</span>'
-           : '<span class="muted">&nbsp;</span>')+
-      '<span class="muted">上限 ¥'+ceil.toLocaleString("ja-JP")+'</span></div>'+
-    '<div class="row" style="gap:6px;justify-content:center;margin-top:12px">'+
-      '<button class="btn" style="font-size:10px;padding:3px 14px" data-ba="edit">編集</button>'+
-      '<button class="btn" style="font-size:10px;padding:3px 14px" data-ba="adjust">調整</button></div></div>';
-  if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
+    '<div class="muted" style="font-size:10px;margin-top:8px">振替目安 ¥'+ceil.toLocaleString("ja-JP")+'</div>'+
+    '<div style="display:none">'+
+      '<button data-ba="edit">編集</button><button data-ba="adjust">調整</button></div></div>';
+  if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">振替目安を超えています +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
   /* v4.24: 開始時の残高を撤去(所持金の起点と同じ理屈——一度決めたら調整で上書きされる)。
      振替は累計を出入りの差分で示し、当月は補充枠の消化として示す(語彙は「振替」に統一) */
   const tAll=bankTransfer(), tMon=bankTransfer(todayStr().slice(0,7));
@@ -3582,14 +3588,14 @@ function bindBank(){
     const a=el.dataset.ba, v=el.dataset.v, b=S.bank;
     el.onclick=()=>{
       if(a==="back"){ UI.screen="main"; render(); return; }
-      /* v4.05: 実装は記帳画面の振替へ一本化。上限超えの回収だけ金額を前埋めして開く
+      /* v4.05: 実装は記帳画面の振替へ一本化。振替目安の超過分だけ金額を前埋めして開く
          (通常の振替は下バーから・v4.13) */
       if(a==="gotrover"){ const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000));
         openTransfer(ACC_BANK, "", "bank", over); return; }
       /* v4.09: 設定3つを[編集]に畳む(貯金の箱と同じ様式)。どれも滅多に触らない項目なので
          常設のカード2枚を占有させる価値がない。キャンセルした時点で以降は聞かない */
       if(a==="edit"){
-        const c=prompt("上限(円)\n超えた分は貯金へ回収します。", b.ceiling||"300000"); if(c===null)return;
+        const c=prompt("振替目安(円)\nこの額を超えたら、超過分を貯金へ振り替える合図です。", b.ceiling||"300000"); if(c===null)return;
         if(num(c)>0) b.ceiling=String(num(c));
         const rc=prompt("月あたりの振替枠(円)\nこの額までは警告なしで軍資金へ入れられます。\n超えると警告が出ます。", b.refillCap||"30000"); if(rc===null){ save(); render(); return; }
         if(num(rc)>0) b.refillCap=String(num(rc));
