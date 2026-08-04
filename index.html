@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.41 (localStorage保存・完全オフライン)
+   Tally 4.42 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -763,7 +763,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.41";
+const APP_VERSION = "4.42";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4808,12 +4808,16 @@ function viewEntry(){
   /* v4.36: **品目と金額を同じ行に置く**(ユーザー指摘: 1件目だけ金額が画面上端にあって戻る必要があった)。
      1件目も追加行とまったく同じ形にすることで、上から下へ一直線に埋められる。
      idは e-item / e-amount のまま(既存のバインドとチップ機構をそのまま使う) */
+  /* v4.42: **×の枠とスペーサーを同じ幅に固定**(ユーザー指摘: 1件目と追加行で金額欄の幅が違った)。
+     .xbtnは幅指定が無く内容+paddingで決まるため、スペーサーの28pxと一致していなかった。
+     両方を24pxに固定して、どの行でも金額欄が同じ幅になるようにする */
+  const DELW = 24;
   const itemRow = (idI, idA, itemV, amtV, delIdx) =>
     '<div class="row" style="gap:6px;margin-bottom:6px">'+
-    '<input class="input" id="'+idI+'" list="e-itemlist" placeholder="品目" value="'+esc(itemV||"")+'" autocomplete="off" style="flex:2">'+
-    '<input class="input mono r" id="'+idA+'" type="number" inputmode="numeric" placeholder="金額" value="'+esc(amtV||"")+'" style="flex:1">'+
-    (delIdx==null ? '<div style="width:28px;flex-shrink:0"></div>'
-                  : '<button class="xbtn" data-a="exdel" data-v="'+delIdx+'" style="flex-shrink:0;font-size:15px;padding:0 7px">×</button>')+
+    '<input class="input" id="'+idI+'" list="e-itemlist" placeholder="品目" value="'+esc(itemV||"")+'" autocomplete="off" style="flex:2;min-width:0">'+
+    '<input class="input mono r" id="'+idA+'" type="number" inputmode="numeric" placeholder="金額" value="'+esc(amtV||"")+'" style="flex:1;min-width:0">'+
+    (delIdx==null ? '<div style="width:'+DELW+'px;flex:0 0 '+DELW+'px"></div>'
+                  : '<button class="xbtn" data-a="exdel" data-v="'+delIdx+'" style="width:'+DELW+'px;flex:0 0 '+DELW+'px;padding:0;font-size:16px;text-align:center">×</button>')+
     '</div>';
   const fieldsHtml = '<input class="input" id="e-store" list="e-storelist" placeholder="店名(任意)" value="'+esc(f.store||"")+'" autocomplete="off" style="margin-bottom:'+(storeChips?"6":"8")+'px">'+
     '<datalist id="e-storelist">'+sh.map(v=>'<option value="'+esc(v)+'"></option>').join("")+'</datalist>'+
