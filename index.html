@@ -206,7 +206,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.39 (localStorage保存・完全オフライン)
+   Tally 4.40 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -758,7 +758,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.39";
+const APP_VERSION = "4.40";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -805,10 +805,11 @@ function subnavExtra(sc){
   if(sc==="entry"){
     const f=UI.entryForm||{};
     const lb = f.type==="transfer" ? "振り替える" : (UI.editEntryId!==null ? "更新する" : "記録する");
-    const out=[];
-    if(UI.editEntryId!==null) out.push(['[data-a="tofixed"]','固定費へ','color:var(--teal)']);
-    out.push(['[data-a="esave"]', lb, 'color:var(--amber);font-weight:700']);
-    return out;
+    /* v4.40: 固定費への登録は下バーから降ろした(ユーザー指摘)。**削除より使用頻度が低い**のに
+       親指の一等地を占め、しかも戻ると更新の間に挟まって誤タップを招いていた。
+       置き場所の規則: **複数画面に共通し位置を覚えたいもの=ヘッダ右(削除)** /
+       **この画面固有で稀なもの=本文末尾のテキストリンク(固定費へ)** */
+    return [['[data-a="esave"]', lb, 'color:var(--amber);font-weight:700']];
   }
   return [];
 }
@@ -4904,10 +4905,10 @@ function viewEntry(){
            日付はフォームの値を引き継ぐ */
         (UI.editEntryId===null?'<button class="btn full" style="margin-bottom:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''))+
     (isTr ? '' : walHtml + pasteHtml + transHtml + (composerHtml || (fieldsHtml + extraHtml))) +
-    /* v4.37/v4.39: 保存と固定費登録は下バー、削除はヘッダ右端へ。
-       本文にはdisplay:noneで置いてハンドラの担い手だけ残す(v4.27と同じ手法) */
-    '<div style="display:none"><button data-a="esave">保存</button>'+
-    (UI.editEntryId!==null?'<button data-a="tofixed">固定費</button>':'')+'</div>';
+    /* v4.40: 保存は下バー(display:noneの担い手経由)、削除はヘッダ右端。
+       固定費への登録は稀なので、ボタンの箱を持たない**テキストリンク**で本文の末尾に置く */
+    (UI.editEntryId!==null?'<div style="text-align:center;margin-top:18px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-a="tofixed">この内容で固定費に登録</button></div>':'')+
+    '<div style="display:none"><button data-a="esave">保存</button></div>';
 }
 function bindEntry(){
   const f = UI.entryForm;
