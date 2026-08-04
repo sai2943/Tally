@@ -206,7 +206,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.37 (localStorage保存・完全オフライン)
+   Tally 4.38 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -758,7 +758,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.37";
+const APP_VERSION = "4.38";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4841,9 +4841,12 @@ function viewEntry(){
   let walHtml="";
   if(!isTr && walletPots().length>1){
     const cur=String(f.wal||walletPots()[0].id);
+    /* v4.38: **等幅のグリッド**にする(ユーザー指摘)。名前の長さでボタンの大きさが変わると
+       押す位置が毎回ずれる。auto-fitなので財布が増減しても等幅のまま折り返す */
     walHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+(f.type==="income"?"どの財布に入る":"どの財布から出す")+'</div>'+
-      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
-      walletPots().map(w=>'<button class="btn '+(cur===String(w.id)?"sel":"")+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:6px 11px">'+esc(w.name)+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:12px">'+
+      walletPots().map(w=>'<button class="btn '+(cur===String(w.id)?"sel":"")+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
+        '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
         '<span class="mono muted" style="font-size:9px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
   }
   /* v4.35: **同じ店で複数の品目をまとめて入力**(ユーザー設計)。レシート1枚=1回の入力にする。
@@ -4875,15 +4878,13 @@ function viewEntry(){
                                       : [["expense","支出"],["income","収入"],["transfer","振替"]];
   return '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">'+(UI.editEntryId!==null?"記録を編集":isTr?"振替":"記録を追加")+'</div><div style="width:44px"></div></div>'+
+    /* v4.38: **日付を最上段へ**(ユーザー指摘)。いつの記録かが先に決まる方が読み順として自然。
+       金額は品目行にあるので、ここに残すのは品目行を使わない振替/交通コンポーザのときだけ */
+    '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="width:100%;margin-bottom:12px">'+
     '<div class="row" style="gap:8px;margin-bottom:12px">'+
     TYPES.map(([v,l])=>
       '<button class="btn '+(f.type===v?"sel":"")+'" style="flex:1" data-a="etype" data-v="'+v+'">'+l+'</button>').join("")+'</div>'+
-    /* v4.36: 支出/収入で品目行に金額を移したので、上段は日付だけ。
-       振替と交通コンポーザは品目行を使わないのでここに金額を残す */
-    '<div class="row" style="gap:8px;margin-bottom:12px">'+
-    '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="flex:1">'+
-    ((isTr || f.tmode) ? '<input class="input mono r" type="number" inputmode="numeric" id="e-amount" placeholder="金額" value="'+esc(f.amount)+'" style="flex:1">' : '')+
-    '</div>'+
+    ((isTr || f.tmode) ? '<input class="input mono r" type="number" inputmode="numeric" id="e-amount" placeholder="金額" value="'+esc(f.amount)+'" style="width:100%;margin-bottom:12px">' : '')+
     (isTr ? trHtml
       : f.type==="expense"
       ? ((f.tmode && UI.editEntryId===null) ? '' :
