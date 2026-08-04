@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.24 (localStorage保存・完全オフライン)
+   Tally 4.25 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.24";
+const APP_VERSION = "4.25";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3515,28 +3515,31 @@ function viewBank(){
   /* v4.09: 説明文4行を撤去(ユーザー指摘)。毎回読むものではない。
      「残りわずか」は独立カードをやめ**バーの直下の行に出す**——状態はグラフのそばで語る。
      設定(集計開始日/上限/開始時の残高)は貯金の箱と同じく[編集]に畳んだ */
-  h+='<div class="card" style="margin-bottom:12px">'+
-    '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">残高</span>'+
+  /* v4.25: 残高カードを貯金・所持金と同じ**中央揃え**へ(ユーザー指摘: 見た目が浮く)。
+     左右分割だと残高が右端に寄って間延びし、操作ボタンだけが右に浮いていた */
+  h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
+    '<div class="muted" style="font-size:12px;letter-spacing:.12em">残高</div>'+
     /* v3.83: 残高が少ないだけでマイナスではないので数字は赤くしない。警告はバーと下の行が担う */
-    '<span class="mono '+(bal<0?"red":"teal")+'" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>'+
-    '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:9px 0 5px"><div style="height:100%;width:'+pct+'%;background:'+(low?"var(--red)":over>0?"var(--amber)":"var(--teal)")+'"></div></div>'+
+    '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">¥'+bal.toLocaleString("ja-JP")+'</div>'+
+    '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:11px 0 6px"><div style="height:100%;width:'+pct+'%;background:'+(low?"var(--red)":over>0?"var(--amber)":"var(--teal)")+'"></div></div>'+
     '<div class="row between" style="font-size:10px">'+
       (low ? '<span class="red" style="font-weight:700">⚠ 残りわずか</span>'
            : over>0 ? '<span class="amber" style="font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</span>'
-           : '<span class="muted">¥0</span>')+
+           : '<span class="muted">&nbsp;</span>')+
       '<span class="muted">上限 ¥'+ceil.toLocaleString("ja-JP")+'</span></div>'+
-    '<div class="row" style="gap:6px;justify-content:flex-end;margin-top:10px">'+
-      '<button class="btn" style="font-size:10px;padding:3px 12px" data-ba="edit">編集</button>'+
-      '<button class="btn" style="font-size:10px;padding:3px 12px" data-ba="adjust">調整</button></div></div>';
+    '<div class="row" style="gap:6px;justify-content:center;margin-top:12px">'+
+      '<button class="btn" style="font-size:10px;padding:3px 14px" data-ba="edit">編集</button>'+
+      '<button class="btn" style="font-size:10px;padding:3px 14px" data-ba="adjust">調整</button></div></div>';
   if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">上限超え +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
   /* v4.24: 開始時の残高を撤去(所持金の起点と同じ理屈——一度決めたら調整で上書きされる)。
      振替は累計を出入りの差分で示し、当月は補充枠の消化として示す(語彙は「振替」に統一) */
   const tAll=bankTransfer(), tMon=bankTransfer(todayStr().slice(0,7));
   h+='<div class="card2" style="margin-bottom:14px;font-size:12px;padding:12px">'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">遊技の勝ち負け 累計</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
+    /* v4.25: 出/入の内訳を撤去(ユーザー指摘)。**振替は金の移動なので差分以外に価値がない**——
+       内訳が分かっても行動は変わらない(収支とは違う) */
     '<div class="row between" style="margin-bottom:5px"><span class="muted">振替 累計</span>'+
-      '<span><span class="mono '+clsPM(tAll.net)+'" style="font-weight:700">'+signYen(tAll.net)+'</span>'+
-      '<span class="mono muted" style="font-size:10px"> 　出 ¥'+tAll.out.toLocaleString("ja-JP")+' / 入 ¥'+tAll.inn.toLocaleString("ja-JP")+'</span></span></div>'+
+      '<span class="mono '+clsPM(tAll.net)+'" style="font-weight:700">'+signYen(tAll.net)+'</span></div>'+
     /* v4.11: 補充枠は**使い切る前に見えていないと意味がない**ので常設で出す */
     '<div class="row between"><span class="muted">今月の振替(入)</span><span class="mono '+(rUsed>=rCap?"red":rUsed>0?"amber":"muted")+'">¥'+rUsed.toLocaleString("ja-JP")+' / ¥'+rCap.toLocaleString("ja-JP")+'</span></div></div>';
   /* v4.12: 月別の増減内訳。1行目=その月の残高変化、2行目=その内訳 */
