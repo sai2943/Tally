@@ -207,7 +207,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.28 (localStorage保存・完全オフライン)
+   Tally 4.29 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +759,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.28";
+const APP_VERSION = "4.29";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2837,12 +2837,21 @@ function viewAssets(){
     '<div class="row between" style="align-items:baseline"><span style="font-size:13px;font-weight:700">所持金</span>'+
     '<span><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>';
   {
-    const wp=walletPots();
+    /* v4.29: 名前と数字を並べるだけでは情報が薄い(ユーザー指摘)。
+       **構成比という情報を既に持っているのだから使う**——貯金の目標バーと同じ位置に
+       構成比の帯を置き、財布ごとの色を凡例と対応させる。所持金は財布が固定メンバーなので多色 */
+    const wp=walletPots(), WCOL=["var(--teal)","var(--amber)","#7FB3D5","#B39DDB","#80CBC4","#E8A0A0"];
     if(wp.length>1){
-      h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">'+
-        wp.map(w=>'<div class="row between" style="font-size:11px;padding:2px 0">'+
-          '<span class="muted">'+esc(w.name)+'</span>'+
-          '<span class="mono muted">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></div>').join("")+'</div>';
+      h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:11px">'+
+        '<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--surface2);margin-bottom:9px">'+
+        wp.map((w,i)=>{ const v=walletBalance(null,w.id), pc=wBal>0?Math.max(0,v/wBal*100):0;
+          return pc>0?'<div style="width:'+pc+'%;background:'+WCOL[i%WCOL.length]+'"></div>':''; }).join("")+'</div>'+
+        wp.map((w,i)=>{ const v=walletBalance(null,w.id);
+          return '<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
+            '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+WCOL[i%WCOL.length]+';margin-right:6px"></span>'+
+            '<span class="muted">'+esc(w.name)+'</span></span>'+
+            '<span class="mono muted">¥'+v.toLocaleString("ja-JP")+'　'+(wBal>0?Math.round(v/wBal*100):0)+'%</span></div>'; }).join("")+
+        '</div>';
     }
   }
   h+='</div>';
