@@ -35,7 +35,7 @@
     background:linear-gradient(rgba(11,31,30,0), var(--bg)); pointer-events:none;}
   .mono{font-family:ui-monospace,'SF Mono',Menlo,monospace; font-variant-numeric:tabular-nums;}
   .muted{color:var(--muted);}
-  .teal{color:var(--teal);} .red{color:var(--red);} .amber{color:var(--amber);} .blue{color:var(--blue);}
+  .teal{color:var(--teal);} .red{color:var(--red);} .amber{color:var(--amber);}
   .band{display:flex; align-items:center; gap:8px; margin:20px 0 10px;}
   .band .tick{width:4px; height:14px; background:var(--amber); border-radius:2px;}
   .band .label{font-size:12px; letter-spacing:.12em; color:var(--muted); font-weight:600;}
@@ -112,7 +112,6 @@
   .mjt-auto{color:var(--amber);font-style:italic;}
   .mjt-add{color:var(--teal);cursor:pointer;font-weight:700;}
   .mjt-pdel{font-size:9px;color:var(--red);cursor:pointer;margin-top:2px;font-weight:400;}
-  .mjt-cell.blue{color:var(--blue);}
   .mjt-pad-wrap{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding-top:8px;}
   .mjt-pad-head{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 8px;}
   .mjt-pad-wrap .mjt-pad{position:static;border-top:none;padding:0 0 10px;}
@@ -207,7 +206,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.30 (localStorage保存・完全オフライン)
+   Tally 4.31 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -759,7 +758,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.30";
+const APP_VERSION = "4.31";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1695,7 +1694,9 @@ function mjStatRow(label, val, isYen, raw, unit){
   if(raw) disp = (val>=0?"+":"")+fmtPt(val)+(unit||"");
   else if(isYen) disp = signYen(val);
   else disp = "¥"+Math.abs(val).toLocaleString("ja-JP");
-  const col = isYen ? clsPM(val) : (raw ? (val>=0?"blue":"red") : "");
+  /* v4.31: 青を撤去(ユーザー指摘)。**このアプリの色は teal/amber/red の3色**で、
+     青はどの意味も持っていなかった。プラスはteal、マイナスはredで他と揃える */
+  const col = isYen ? clsPM(val) : (raw ? (val>=0?"teal":"red") : "");
   return '<div class="row between" style="font-size:12px;margin:5px 0"><span class="muted">'+label+'</span>'+
     '<span class="mono '+col+'">'+disp+'</span></div>';
 }
