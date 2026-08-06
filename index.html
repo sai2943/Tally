@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.46 (localStorage保存・完全オフライン)
+   Tally 4.50 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -470,7 +470,7 @@ function applyData(d){
   S.fixed = Array.isArray(d.fixed)?d.fixed:[];
   S.wishlist = Array.isArray(d.wishlist)?d.wishlist:[];
   S.bank = Object.assign({ceiling:"300000",seed:"",refillCap:"30000",txns:[]}, d.bank||{});   /* v4.11: refillCap=月あたりの補充許容枠。v4.15: switchは撤去 */
-  S.savings = Object.assign({goals:[],txns:[],pots:[]}, d.savings||{});
+  S.savings = Object.assign({goals:[],txns:[],pots:[]}, d.savings||{});   /* v4.47: pot.auto=生活費の何ヶ月分(自動目標) */
   /* v4.00: 箱。既定箱"main"は必ず先頭に居る(既存txnはpotId無し=main扱いなので非破壊) */
   if(!Array.isArray(S.savings.pots)) S.savings.pots=[];
   if(!S.savings.pots.some(p=>String(p.id)==="main")) S.savings.pots.unshift({id:"main", name:"貯金"});
@@ -763,7 +763,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.46";
+const APP_VERSION = "4.50";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1931,12 +1931,22 @@ function summaryText(){
   /* 総資産の定義は資産タブと同じ(所持金+軍資金+貯金)。**投資の簿価は含めない**——
      時価を持たない方針(v3.18)なので、資産額として足すと誤解を生む */
   const ivBook=((S.invest&&S.invest.holdings)||[]).reduce((a,x)=>a+num(x.cost),0);
-  L.push("総資産 "+yen(walletBalance()+bankBalance()+savingsBalance())+"  ※投資の簿価は含めない");
+  L.push("総資産 "+yen(walletBalance()+bankBalance()+savingsBalance())+"  ※投資の積立額は含めない");
   L.push("- 所持金 "+yen(walletBalance())+"  ("+wp.map(w=>w.name+" "+yen(walletBalance(null,w.id))).join(" / ")+")");
   L.push("- 軍資金 "+yen(bankBalance())+"  (振替目安 "+yen(num(S.bank.ceiling)||300000)+" / 今月の振替(入) "+yen(bankRefillUsed())+" of "+yen(bankRefillCap())+")");
   L.push("- 貯金 "+yen(savingsBalance()));
-  potProgress().forEach(pt=>L.push("    - "+pt.name+" "+yen(pt.bal)+(pt.hasTarget?("  目標 "+yen(pt.target)+" / 残り "+yen(pt.short)):"  目標なし")));
-  L.push("- 投資(累計簿価・時価なし) "+yen(ivBook));
+  potProgress().forEach(pt=>L.push("    - "+pt.name+" "+yen(pt.bal)+
+    (pt.hasTarget?("  目標 "+yen(pt.target)+" / 残り "+yen(pt.short)+
+      (pt.auto?("  ※生活費 "+yen(pt.basis)+"/月 × "+pt.months+"ヶ月で自動計算"+(pt.samples<3?("(実測"+pt.samples+"ヶ月分のみ・暫定)"):"")):"")):"  目標なし")));
+  { const lc=livingCost(3);
+    L.push("");
+    L.push("### 生活費(実測)");
+    L.push("- 定義: 消費+承認の支出。**娯楽と遊技は含まない**(収入が止まれば削れるため)");
+    L.push("- 直近"+lc.mks.length+"ヶ月の"+lc.stat+" "+yen(lc.avg)+"/月"+(lc.mks.length?("  ("+lc.mks.map(m=>m+" "+yen(lc.by[m])).join(" / ")+")"):""));
+    if(lc.mks.length>=3) L.push("  ※まとめ買いや単発の買い物が特定の月に集中すると平均が跳ねるため、3ヶ月以上あれば中央値を使う(参考: 平均 "+yen(lc.mean)+")");
+    L.push("- 当月は集計に入れない(月の途中だと過少に出るため)");
+  }
+  L.push("- 投資(積立額の累計・時価は扱わない) "+yen(ivBook));
   L.push("");
   const me=(S.entries||[]).filter(e=>String(e.date||"").startsWith(mk));
   const done=me.filter(e=>e.date<=today), plan=me;
@@ -3043,7 +3053,7 @@ function viewAssets(){
     /* v4.27: バーと「残りわずか」を撤去。目安を超えた時だけ回収を促す一行を出す */
     (bBal>ceil?'<div class="amber" style="font-size:10px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'')+'</div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="invest">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:13px;font-weight:700">投資 <span class="muted" style="font-size:10px;font-weight:400">簿価・時価なし</span></span>'+
+    '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:13px;font-weight:700">投資 <span class="muted" style="font-size:10px;font-weight:400">積立額</span></span>'+
     '<span><span class="mono teal" style="font-size:18px;font-weight:700">¥'+invCost.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     '<div class="row between" style="font-size:11px"><span class="muted">'+((inv.holdings||[]).length)+'銘柄 ・ Buffer ¥'+bufBal.toLocaleString("ja-JP")+'</span>'+
     '<span class="muted">今月の買付 '+boughtThis+'/'+((inv.holdings||[]).filter(x=>x.frame!=="yutai").length||0)+'銘柄</span></div></div>';
@@ -3234,8 +3244,36 @@ function bindLeak(){
 }
 
 /* ---------- 投資台帳(時価を追わない・シナリオ帳つき) ---------- */
+/* v4.48: **生涯枠(非課税保有限度額)**。1800万のうち成長投資枠に使えるのは1200万まで。
+   **つみたて投資枠に個別の上限は無い**(成長を使わなければ1800万全部つみたてで埋められる)。
+   「つみたて600万」という上限があると誤解されがちだが、それは成長を満額1200万使った場合の残り。
+   制度は**簿価(買った金額)で管理**される——値上がりしても枠は増えない。
+   だからこのアプリが評価額を持たない方針(v3.18)と、枠の管理は完全に一致する。 */
+const NISA_LIFETIME = {total:18000000, seicho:12000000};
+function invBookByFrame(){
+  const out={tsumitate:0, seicho:0, other:0};
+  (((S.invest||{}).holdings)||[]).forEach(x=>{
+    const k=(x.frame==="tsumitate"||x.frame==="seicho")?x.frame:"other";
+    out[k]+=num(x.cost);
+  });
+  out.nisa=out.tsumitate+out.seicho;
+  return out;
+}
 const NISA_CAPS = { tsumitate: 1200000, seicho: 2400000 };
 const FRAME_LABEL = { tsumitate:"つみたて", seicho:"成長", tokutei:"特定", yutai:"優待" };
+/* v4.49: **積立のペース**(ユーザー要望)。累計簿価 ÷ 積立を始めてからの月数。
+   買付の記録が1件も無ければペースは出せない(0除算を避ける)。
+   到達年数は**年間枠の上限(月30万相当)で頭打ち**にする——月50万入れても制度が受け付けない */
+function invPace(){
+  const all=[];
+  (((S.invest||{}).holdings)||[]).forEach(x=>(x.buys||[]).forEach(b=>{
+    if(b.date) all.push({mk:String(b.date).slice(0,7), amt:num(b.amount)}); }));
+  const bk=invBookByFrame();
+  if(!all.length) return {months:0, perMonth:0, total:bk.nisa, hasData:false};
+  const first=all.map(b=>b.mk).sort()[0], cur=todayStr().slice(0,7);
+  const months=(num(cur.slice(0,4))-num(first.slice(0,4)))*12 + (num(cur.slice(5))-num(first.slice(5))) + 1;
+  return {months:months, perMonth: months>0 ? bk.nisa/months : 0, total:bk.nisa, hasData:true, first:first};
+}
 function invYearBuys(frame){
   const y=String(new Date().getFullYear());
   return ((S.invest||{}).holdings||[]).filter(x=>x.frame===frame)
@@ -3250,10 +3288,10 @@ function genInvestAudit(){
   L.push("## 投資方針(本人記述)");
   L.push(inv.policy && inv.policy.trim() ? inv.policy.trim() : "(未記入)");
   L.push("");
-  L.push("## 保有一覧(簿価ベース・時価は意図的に不採用)");
+  L.push("## 保有一覧(積立額ベース・時価は意図的に不採用)");
   (inv.holdings||[]).forEach(x=>{
     L.push("### "+x.name+" ["+(FRAME_LABEL[x.frame]||x.frame)+"枠]");
-    L.push("- 保有: "+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+" / 累計簿価 ¥"+num(x.cost).toLocaleString("ja-JP"));
+    L.push("- 保有: "+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+" / 積立額の累計 ¥"+num(x.cost).toLocaleString("ja-JP"));
     const yb=(x.buys||[]).filter(b=>(b.date||"").startsWith(String(new Date().getFullYear()))).reduce((s,b)=>s+num(b.amount),0);
     L.push("- 当年買付額: ¥"+yb.toLocaleString("ja-JP")+" / 買付回数(通算): "+((x.buys||[]).length)+"回");
     L.push("- 保有理由: "+(x.thesis||"(未記入)"));
@@ -3312,6 +3350,69 @@ function viewInvest(){
   const inv=S.invest||{policy:"",holdings:[],bufferTxns:[]};
   const bufBal=(inv.bufferTxns||[]).reduce((a,t)=>a+num(t.amount),0);
   let h='<div class="hdr"><button class="navbtn" data-iv="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">投資</div><button class="navbtn" data-iv="audit" style="font-size:12px;color:var(--teal)">AI監査</button></div>';
+  /* v4.48/v4.49: **生涯枠と年間枠を1枚で見せる**(ユーザー設計)。
+     枠は2段構え——生涯1800万(成長は1200万まで)と、年間360万(つみたて120/成長240)。
+     **年間枠は繰り越せない**ので、埋めきるには最短でも5年かかる。
+     評価額は一切扱わない——制度が簿価で管理する以上、枠を見るのに時価は不要 */
+  {
+    const bk=invBookByFrame(), L=NISA_LIFETIME, YC=NISA_CAPS;
+    const rest=Math.max(0, L.total-bk.nisa);
+    /* つみたては「生涯枠 − 成長に入れた分」、成長は「1200万」と「生涯枠 − つみたてに入れた分」の小さい方 */
+    const tCap=Math.max(0, L.total-bk.seicho);
+    const sCap=Math.max(0, Math.min(L.seicho, L.total-bk.tsumitate));
+    const pct=L.total>0?Math.min(100, bk.nisa/L.total*100):0;
+    const ty=invYearBuys("tsumitate"), sy=invYearBuys("seicho");
+    const yTotal=ty+sy, yCap=YC.tsumitate+YC.seicho;
+    const pace=invPace();
+    const capPerMonth=yCap/12;
+    const eff=pace.hasData?Math.min(pace.perMonth, capPerMonth):0;
+    const monthsLeft=eff>0?Math.ceil(rest/eff):0;
+    const yen=n=>"¥"+Math.round(n).toLocaleString("ja-JP");
+    const row=(lb,used,cap,note)=>{
+      const p=cap>0?Math.min(100,used/cap*100):0;
+      return '<div class="row between" style="font-size:11px;margin-bottom:3px"><span class="muted">'+lb+'</span>'+
+        '<span class="mono">'+yen(used)+'<span class="muted"> / '+yen(cap)+'</span></span></div>'+
+        '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:'+(note?'3':'9')+'px">'+
+        '<div style="height:100%;width:'+p+'%;background:var(--teal)"></div></div>'+
+        (note?'<div class="muted" style="font-size:10px;margin-bottom:9px">'+note+'</div>':'');
+    };
+    h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
+      '<div class="muted" style="font-size:12px;letter-spacing:.12em">NISA 生涯枠の残り</div>'+
+      '<div class="mono teal" style="font-size:32px;font-weight:700;line-height:1.25">'+yen(rest)+'</div>'+
+      '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:11px 0 6px">'+
+      '<div style="height:100%;width:'+pct+'%;background:var(--teal)"></div></div>'+
+      '<div class="row between" style="font-size:10px">'+
+      '<span class="mono muted">積立 '+yen(bk.nisa)+'</span>'+
+      '<span class="muted">上限 '+yen(L.total)+'</span></div>'+
+      '<div style="text-align:left;border-top:1px solid var(--line);margin-top:12px;padding-top:10px">'+
+      '<div class="muted" style="font-size:10px;margin-bottom:6px">生涯枠の内訳　'+
+        '<span style="opacity:.8">※枠は買った金額で数えます(値上がりは関係ありません)</span></div>'+
+      /* v4.50: **つみたて枠に個別上限は無いが、生涯枠から成長に入れた分を引けば実質の上限が出る**
+         (ユーザー指摘)。成長側も「1200万」と「生涯枠からつみたて分を引いた額」の小さい方が実質上限 */
+      '<div class="row between" style="font-size:11px;padding:2px 0"><span class="muted">つみたて投資枠</span>'+
+        '<span><span class="mono">'+yen(bk.tsumitate)+'</span><span class="muted" style="font-size:10px"> / '+yen(tCap)+'　残り '+yen(Math.max(0,tCap-bk.tsumitate))+'</span></span></div>'+
+      '<div class="row between" style="font-size:11px;padding:2px 0"><span class="muted">成長投資枠</span>'+
+        '<span><span class="mono">'+yen(bk.seicho)+'</span><span class="muted" style="font-size:10px"> / '+yen(sCap)+'　残り '+yen(Math.max(0,sCap-bk.seicho))+'</span></span></div>'+
+      (bk.other>0?'<div class="row between" style="font-size:11px;padding:2px 0"><span class="amber">枠の指定なし</span><span class="mono amber">'+yen(bk.other)+'</span></div>':'')+
+      '</div>'+
+      '<div style="text-align:left;border-top:1px solid var(--line);margin-top:12px;padding-top:10px">'+
+      '<div class="muted" style="font-size:10px;margin-bottom:6px">'+new Date().getFullYear()+'年の積立</div>'+
+      row("合計", yTotal, yCap)+
+      row("つみたて投資枠", ty, YC.tsumitate)+
+      row("成長投資枠", sy, YC.seicho)+
+      '</div>'+
+      '<div style="text-align:left;border-top:1px solid var(--line);margin-top:2px;padding-top:10px">'+
+      '<div class="row between" style="font-size:11px;padding:2px 0"><span class="muted">月平均の積立</span>'+
+        '<span class="mono '+(pace.hasData?"teal":"muted")+'" style="font-weight:700">'+(pace.hasData?yen(pace.perMonth)+"/月":"—")+'</span></div>'+
+      (pace.hasData
+        ? '<div class="muted" style="font-size:10px;line-height:1.7;margin-top:3px">'+
+          pace.first.replace("-","/")+' から '+pace.months+'ヶ月の実測<br>'+
+          (monthsLeft>0 ? ('このペースだと残り約 '+Math.floor(monthsLeft/12)+'年'+(monthsLeft%12)+'ヶ月'+
+            (pace.perMonth>capPerMonth?'　<span class="amber">※年間枠の上限で頭打ち</span>':'')) : '')+
+          '</div>'
+        : '<div class="muted" style="font-size:10px;margin-top:3px">買付を記録するとペースが出ます。<br>満額(月30万)でも埋めきるのに5年かかります。</div>')+
+      '</div></div>';
+  }
   /* 振替ロードマップ: 貯金目標の梯子→投資スタート。欲の視線をカウントダウンへ */
   /* v4.02: ロードマップも箱ごとの目標に。順次の梯子をやめたので「次の目標」ではなく
      **目標を持つ全ての箱の不足合計**が投資スタートまでの距離になる */
@@ -3342,15 +3443,7 @@ function viewInvest(){
       '<div style="font-size:12px;line-height:1.7;white-space:pre-wrap">'+(inv.policy&&inv.policy.trim()?esc(inv.policy):'<span class="muted">未記入 — シナリオと出口を書いておくと、<br>暴落の夜に過去の自分が答えてくれます</span>')+'</div>';
   }
   h+='</div>';
-  /* NISA枠 */
-  const ty=invYearBuys("tsumitate"), sy=invYearBuys("seicho");
-  h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:10px;margin-bottom:8px">NISA枠 '+new Date().getFullYear()+'年の消化</div>';
-  [["つみたて",ty,NISA_CAPS.tsumitate],["成長",sy,NISA_CAPS.seicho]].forEach(([lb,used,cap])=>{
-    const pct=Math.min(100,cap>0?used/cap*100:0);
-    h+='<div class="row between" style="font-size:11px;margin-bottom:3px"><span class="muted">'+lb+'</span><span class="mono">¥'+used.toLocaleString("ja-JP")+' <span class="muted">/ ¥'+cap.toLocaleString("ja-JP")+'</span></span></div>'+
-      '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:'+pct+'%;background:var(--teal)"></div></div>';
-  });
-  h+='</div>';
+  /* v4.49: 年間枠の消化は生涯枠カードに統合したのでここには置かない(二重表示になる) */
   /* Buffer */
   h+='<div class="card" style="margin-bottom:12px"><div class="row between" style="align-items:baseline;margin-bottom:6px">'+
     '<span style="font-size:13px;font-weight:700">Buffer <span class="muted" style="font-size:10px;font-weight:400">暴落時の弾</span></span>'+
@@ -3386,10 +3479,10 @@ function viewInvestDetail(){
     '<div class="row" style="gap:6px;align-items:center;padding:5px 0;border-top:1px solid var(--line)">'+
     '<span class="muted" style="flex:none;width:44px;font-size:12px">枠</span>'+
     Object.keys(FRAME_LABEL).map(fr=>'<button class="btn '+(x.frame===fr?"sel":"")+'" style="flex:1;font-size:11px;padding:7px 0" data-iv="frame" data-v="'+fr+'">'+FRAME_LABEL[fr]+'</button>').join("")+'</div>'+
-    '<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)"><span class="muted" style="flex:1;font-size:12px">保有 / 累計簿価</span>'+
+    '<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)"><span class="muted" style="flex:1;font-size:12px">保有 / 積立額の累計</span>'+
     '<span class="mono" style="font-size:14px;font-weight:700">'+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+' ・ ¥'+num(x.cost).toLocaleString("ja-JP")+'</span></div></div>';
   /* 買付記録 */
-  h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:10px;margin-bottom:6px">買付を記録(数量と簿価に加算)</div>'+
+  h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:10px;margin-bottom:6px">買付を記録(数量と積立額に加算)</div>'+
     '<div class="row" style="gap:6px">'+
     '<input class="input sm mono" type="date" id="iv-bdate" value="'+todayStr()+'" style="width:118px;flex:none">'+
     '<input class="input sm mono r" type="number" inputmode="decimal" id="iv-bqty" placeholder="数量" style="flex:1;min-width:0">'+
@@ -3885,10 +3978,44 @@ function doTransfer(from, to, amt, date){
 }
 /* v4.02: 目標は箱ごとなので「梯子の残高」という概念自体が不要になった。
    各箱が自分の残高で自分の目標を測る。未達合計=投資スタートまでの距離 */
+/* v4.47: **生活費の実測**(ユーザー設計: 生活防衛資金=生活費6ヶ月分)。
+   生活費 = 消費 + 承認 の支出。**娯楽と遊技は除く**——収入が止まった時に真っ先に削れる支出は
+   「生きるのに要る額」ではない。固定費はカテゴリ付きでentriesに入るので自動的に含まれる。
+   **当月は数えない**——月の途中だと過少に出て、目標が下振れしてしまう。 */
+const LIVING_CATS = ["消費","承認"];
+function livingCost(n){
+  const NET=["slot","mahjong"], cur=todayStr().slice(0,7), by={};
+  (S.entries||[]).forEach(e=>{
+    if(e.type!=="expense" || NET.indexOf(e.src)>=0) return;
+    if(LIVING_CATS.indexOf(e.category)<0) return;
+    const mk=String(e.date||"").slice(0,7);
+    if(!mk || mk>=cur) return;
+    by[mk]=(by[mk]||0)+e.amount;
+  });
+  const mks=Object.keys(by).sort().slice(-(n||3));
+  const vals=mks.map(m=>by[m]).sort((a,b)=>a-b);
+  const mean = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
+  /* v4.47: **3ヶ月以上あれば中央値を使う**。実データで、まとめ買い(冷凍食品3セット・回数券2枚)や
+     単発の買い物(バッグ)、解約済みのサブスクが1ヶ月に集中し、平均だとそれがそのまま6倍された。
+     中央値なら「普通の月」に寄る。2ヶ月以下は中央値の意味が薄いので平均のまま */
+  const med = !vals.length ? 0
+    : vals.length%2 ? vals[(vals.length-1)/2] : (vals[vals.length/2-1]+vals[vals.length/2])/2;
+  const use = vals.length>=3 ? med : mean;
+  return {mks:mks, avg:use, mean:mean, median:med, stat:(vals.length>=3?"中央値":"平均"), by:by};
+}
+/* 箱の目標。auto(=何ヶ月分)が入っていれば実測から毎回計算し直す。
+   **目標が動く**のが要点——生活費が上がれば必要額も上がるので、達成済みが未達に戻ることがある */
+function potTarget(p){
+  const m=num(p&&p.auto);
+  if(m>0){ const lc=livingCost(3);
+    return {v: Math.round(lc.avg*m), auto:true, months:m, basis:lc.avg, n:lc.mks.length, stat:lc.stat}; }
+  return {v: num(p&&p.target)||0, auto:false, n:0};
+}
 function potProgress(){
   return savingsPots().map(p=>{
-    const bal=savingsBalance(p.id), tgt=num(p.target)||0;
+    const bal=savingsBalance(p.id), t=potTarget(p), tgt=t.v;
     return {id:String(p.id), name:p.name, bal:bal, target:tgt,
+            auto:t.auto, months:t.months, basis:t.basis, samples:t.n, stat:t.stat,
             pct: tgt>0 ? Math.min(100, bal/tgt*100) : 0,
             short: tgt>0 ? Math.max(0, tgt-bal) : 0,
             done: tgt>0 && bal>=tgt, hasTarget: tgt>0};
@@ -3937,7 +4064,12 @@ function viewSavings(){
     if(pt.hasTarget){
       h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:9px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
         '<div class="row between" style="font-size:10px;margin-top:6px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+'</span>'+
-        '<span><span class="mono muted">'+(pt.done?'':'あと')+'</span> <span class="mono '+(pt.done?'teal':'amber')+'" style="font-weight:700">'+(pt.done?'達成':'¥'+pt.short.toLocaleString("ja-JP"))+'</span></span></div>';
+        '<span><span class="mono muted">'+(pt.done?'':'あと')+'</span> <span class="mono '+(pt.done?'teal':'amber')+'" style="font-weight:700">'+(pt.done?'達成':'¥'+pt.short.toLocaleString("ja-JP"))+'</span></span></div>'+
+        /* v4.47: 自動目標は**根拠と信頼度を必ず出す**。実測が何ヶ月分あるかで数字の重みが違うため */
+        (pt.auto ? '<div class="muted" style="font-size:10px;margin-top:4px">生活費 ¥'+Math.round(pt.basis).toLocaleString("ja-JP")+'/月 × '+pt.months+'ヶ月'+
+          (pt.samples>=3 ? '　(直近3ヶ月の'+pt.stat+')'
+           : pt.samples>0 ? '　<span class="amber">実測'+pt.samples+'ヶ月分のみ・暫定</span>'
+                          : '　<span class="amber">実測データなし</span>')+'</div>' : '');
     } else {
       h+='<div class="muted" style="font-size:10px;margin-top:6px">目標額 未設定</div>';
     }
@@ -3988,8 +4120,14 @@ function bindSavings(){
         (sv.pots=sv.pots||[]).push({id:uid(), name:name.trim(), target:(num(tg)>0?String(num(tg)):"")}); save(); render(); return; }
       if(a==="potedit"){ const pt=(sv.pots||[]).find(x=>String(x.id)===String(v)); if(!pt)return;
         const name=prompt("箱の名前:",pt.name||""); if(name===null)return;
-        const tg=prompt("目標額(円・0か空欄で目標なし):", pt.target||"");  if(tg===null)return;
         if(name.trim()) pt.name=name.trim();
+        /* v4.47: 生活防衛資金のように**目標が生活費に連動して動く**箱を作れるようにする。
+           0を入れれば従来どおりの固定額 */
+        const au=prompt("生活費の何ヶ月分を目標にしますか\n(6 なら生活費6ヶ月分。目標を固定額にするなら 0)\n\n生活費=消費+承認。娯楽と遊技は含みません。",
+          pt.auto||"0"); if(au===null){ save(); render(); return; }
+        if(num(au)>0){ pt.auto=String(num(au)); pt.target=""; save(); render(); return; }
+        pt.auto="";
+        const tg=prompt("目標額(円・0か空欄で目標なし):", pt.target||"");  if(tg===null){ save(); render(); return; }
         pt.target=(num(tg)>0?String(num(tg)):"");
         save(); render(); return; }
       /* v4.04: どの箱も削除できる(最後の1つを除く)。**残高と履歴の引き取り先はユーザーが選ぶ**——
