@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.53 (localStorage保存・完全オフライン)
+   Tally 4.54 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -764,7 +764,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.53";
+const APP_VERSION = "4.54";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5083,6 +5083,8 @@ function applyReceiptDated(r){
 function applyReceipt(txt){
   const f=UI.entryForm, r=parseReceipt(txt);
   if(!r.items.length) return 0;
+  /* v4.54: 貼り付けた内容が優先。コンポーザが残っていると保存時に店名と品目を上書きされる */
+  f.tmode=null; f.tfrom=""; f.tto=""; f.tplace="";
   if(r.items.some(x=>x.date)) return applyReceiptDated(r) ? -1 : 0;
   if(/^\d{4}-\d{2}-\d{2}$/.test(r.date)) f.date=r.date;
   if(r.store) f.store=r.store;
@@ -5198,8 +5200,11 @@ function viewEntry(){
      保存時は**行ごとに別のエントリ**を作る(日付/分類/店/財布は共有)ので、
      ジャンル分析や内訳ドリルなど下流は一切変更なしで動く。
      新規の支出・収入のみ(編集中は既存1件を分割できないので出さない。交通コンポーザ中も出さない) */
+  /* v4.54: **交通コンポーザ中でも貼り付けを出す**(ユーザー指摘)。
+     `!f.tmode` を条件にしていたため、交通で記帳を選んだ瞬間に貼り付けが消えていた。
+     交通こそレシートが出ず履歴を貼る用途なのに、そのフローから貼り付けに入れないのは逆 */
   let pasteHtml="";
-  if(!isTr && UI.editEntryId===null && !(f.tmode)){
+  if(!isTr && UI.editEntryId===null){
     pasteHtml = UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px">'+
         '<div class="muted" style="font-size:10px;line-height:1.7;margin-bottom:8px">レシートを撮ってClaudeに読ませ、返ってきた文字列をそのまま貼ります。</div>'+
