@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.58 (localStorage保存・完全オフライン)
+   Tally 4.59 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.58";
+const APP_VERSION = "4.59";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1366,48 +1366,14 @@ function viewLedger(){
   /* v3.80: 見出しを「当月収支」へ差し戻し(ユーザー指摘)。
      収支は収入−支出という定義の明確な事実であり、計画(先取り)を引いて実態を模擬するのは
      事実と意図の混在だった。手元にいくら残るかは所持金が語るべき役割。 */
+  /* v4.59: **当月収支を主役から降ろす**(ユーザー設計)。
+     収支=収入−支出は、収入の大半が給料なので**「給料日を過ぎたか」を表す数字**になる。
+     月初は−¥13,000、給料後は+¥150,000——振れ幅の大半がカレンダーの都合で、行動の結果ではない。
+     家計簿で行動が変わるのは**「箱に収まっているか」「あといくら使えるか」**なので予算を最上段へ。
+     収支と内訳は残す(支出の見直しには要る)が、位置は下げて折りたたむ。
+     ※遊技タブの月次収支は逆に主役のまま——あちらは負けが自分の判断やEVを疑う契機になる */
   const leftover=bal;
-  let h = '<div class="card" style="margin-top:10px"><div style="text-align:center;margin:4px 0 6px">'+
-    '<div style="font-size:12px;letter-spacing:.15em" class="muted">当月収支'+(hasFuture?'(予定込)':'')+'</div>'+
-    '<div class="mono '+clsPM(leftover)+'" style="font-size:36px;font-weight:700;line-height:1.2">'+signYen(leftover)+'</div>'+
-    '</div>'+
-    '<div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px">'+
-    '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">収入</div><div class="mono teal" style="font-size:18px;font-weight:700">'+yen(normIncome)+'</div></div>'+
-    '<div style="width:1px;background:var(--line)"></div>'+
-    '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">支出</div><div class="mono red" style="font-size:18px;font-weight:700">'+yen(normExpense)+'</div></div></div>'+
-    '<div style="text-align:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)"><span class="muted" style="font-size:11px;cursor:pointer" data-a="bdtoggle">'+(UI.bdOpen?"内訳を隠す ▾":"内訳を見る ▸")+'</span></div></div>';
-
-
-  /* v3.48: 内訳は1タップで支出+収入を一体展開(排他アコーディオン廃止・ユーザー指摘)。金額は分類色(既存の予算バー文法)。
-     固定行はタップで固定費画面へ(予算カードからの移設——固定費は予算ではないため)。%分母は月内合計 */
-  if(UI.bdOpen){
-    const exG=[["固定",e=>e.category==="消費"&&isFixedCost(e),"var(--muted)"],
-      ["変動消費",e=>e.category==="消費"&&!isFixedCost(e),"var(--red)"],
-      ["娯楽",e=>e.category==="娯楽","var(--amber)"],
-      ["承認",e=>e.category==="承認","var(--blue)"]];
-    const exRows=exG.map(([nm,f,col])=>[nm, me.filter(e=>e.type==="expense"&&!isNetEntry(e)&&f(e)).reduce((a,e)=>a+e.amount,0), col, me.filter(e=>e.type==="expense"&&!isNetEntry(e)&&f(e)&&e.date>todayS).reduce((a,e)=>a+e.amount,0)]);
-    const exTotal=exRows.reduce((a,x)=>a+x[1],0);
-    const fxDone=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!isNetEntry(e)&&e.date<=todayS).reduce((a,e)=>a+e.amount,0);
-    const bdRow=(nm,a,col,total,extra,tap,fut)=>'<div style="margin:8px 0'+(tap?';cursor:pointer':'')+'"'+(tap?' data-a="fixed"':'')+'>'+
-      '<div class="row between" style="font-size:12px;margin-bottom:3px"><span>'+nm+'</span>'+
-      '<span class="mono">'+yen(a)+' <span class="muted" style="font-size:10px">('+(total>0?Math.round(a/total*100):0)+'%)</span>'+(tap?' <span class="muted">›</span>':'')+'</span></div>'+
-      '<div class="bar"><div style="width:'+(total>0?a/total*100:0)+'%;background:'+col+'"></div></div>'+(extra||'')+((fut||0)>0?'<div class="muted" style="font-size:10px;margin-top:3px">うち予定 ¥'+fut.toLocaleString("ja-JP")+'</div>':'')+'</div>';
-    let incHtml='';
-    { const incCats={}; me.filter(e=>e.type==="income"&&!isNetEntry(e)).forEach(e=>incCats[e.category]=(incCats[e.category]||0)+e.amount);
-      const incFut={}; me.filter(e=>e.type==="income"&&!isNetEntry(e)&&e.date>todayS).forEach(e=>incFut[e.category]=(incFut[e.category]||0)+e.amount);
-      const ict=Object.entries(incCats).sort((a,b)=>b[1]-a[1]); const incTotal=ict.reduce((a,x)=>a+x[1],0);
-      incHtml = incTotal>0 ? ict.map(([c,a])=>bdRow(esc(c),a,"var(--teal)",incTotal,'',false,(incFut[c]||0))).join("")
-        : '<div class="muted" style="font-size:12px;padding:6px 0">収入の記録がありません。</div>'; }
-    h += '<div class="card" style="margin-top:8px">'+
-      '<div class="row between" style="margin-bottom:2px"><span class="muted" style="font-size:11px">今月の支出内訳'+(hasFuture?'(予定込)':'')+'</span>'+(futExpense>0?'<span class="mono muted" style="font-size:10px">予定計 ¥'+futExpense.toLocaleString("ja-JP")+'</span>':'')+'</div>'+
-      exRows.map(([nm,a,col,fut])=> bdRow(nm,a,col,exTotal,
-        nm==="固定"?'<div class="muted" style="font-size:10px;margin-top:3px">支払済 ¥'+fxDone.toLocaleString("ja-JP")+' ・ この後の予定 ¥'+Math.max(0,a-fxDone).toLocaleString("ja-JP")+'</div>':'',
-        nm==="固定", nm==="固定"?0:fut)).join("")+
-      '<div style="height:1px;background:var(--line);margin:12px 0"></div>'+
-      '<div class="row between" style="margin-bottom:2px"><span class="muted" style="font-size:11px">今月の収入内訳</span>'+(futIncome>0?'<span class="mono muted" style="font-size:10px">予定計 ¥'+futIncome.toLocaleString("ja-JP")+'</span>':'')+'</div>'+incHtml+'</div>';
-  }
-
-  /* 予算(カテゴリ別・月次上限) */
+  let h = "";
   h += band("予算");
   h += '<div class="card" style="margin-bottom:14px">';
   EXPENSE_CATS.filter(c=>c!=="承認").forEach((cat,i)=>{  /* 承認は予算バー対象外(承認プロセス自体が統制) */
@@ -1556,6 +1522,41 @@ function viewLedger(){
         '変動消費と娯楽を見直すか、貯金から引き出してください。</div></div>';
     }
   }
+  /* v4.59: **狙った貯金・投資ができているか**(ユーザー設計)。
+     予算は「使いすぎていないか」しか見ておらず、**先取りが実行されたかは別の問い**。
+     計画(preSplit)と実績(securedSplit=実際に動いた額)を並べる。
+     振替バンド(v3.91)は「まだやっていない月」にだけ催促する仕組みなので、
+     **済んだ月には何も残らない**。ここは達成したことも含めて常に見える場所として置く */
+  {
+    const _p=preSplit(mk), _d=securedSplit(mk);
+    const _row=(nm,plan,done)=>{
+      if(plan<=0) return "";
+      const ok=done>=plan, pc=Math.min(100, plan>0?done/plan*100:0);
+      return '<div style="margin-bottom:10px">'+
+        '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
+        '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
+        '<span class="mono muted" style="font-size:10px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
+        '<span><span class="mono muted" style="font-size:10px">'+(ok?'':'あと')+'</span> '+
+        '<span class="mono '+(ok?"teal":"amber")+'" style="font-size:17px;font-weight:700">'+
+        (ok?'達成':'¥'+(plan-done).toLocaleString("ja-JP"))+'</span></span></div>'+
+        '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div></div>';
+    };
+    const _h1=_row("貯金へ", _p.sv, _d.sv), _h2=_row("投資へ", _p.iv, _d.iv);
+    if(_h1||_h2){
+      h += band("先取り");
+      h += '<div class="card" style="margin-bottom:14px">'+_h1+_h2+'</div>';
+    }
+  }
+  /* v4.59: 収支と内訳は下へ。**支出を見直すための入口**として残すが、開かない限り1行しか占有しない */
+  h += band("収支と内訳");
+  h += '<div class="card" style="margin-bottom:'+(UI.bdOpen?'0':'14')+'px;cursor:pointer" data-a="bdtoggle">'+
+    '<div class="row between" style="align-items:baseline">'+
+    '<span class="muted" style="font-size:12px">当月収支'+(hasFuture?'(予定込)':'')+'</span>'+
+    '<span><span class="mono '+clsPM(leftover)+'" style="font-size:17px;font-weight:700">'+signYen(leftover)+'</span>'+
+    '<span class="muted" style="font-size:11px"> '+(UI.bdOpen?"▾":"▸")+'</span></span></div>'+
+    '<div class="row between" style="font-size:10px;margin-top:4px">'+
+    '<span class="muted">収入 <span class="mono teal">'+yen(normIncome)+'</span></span>'+
+    '<span class="muted">支出 <span class="mono red">'+yen(normExpense)+'</span></span></div></div>';
   h += band("明細");
   const detEntries = me.filter(e=>!isNetEntry(e));
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
