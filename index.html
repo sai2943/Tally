@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.57 (localStorage保存・完全オフライン)
+   Tally 4.58 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.57";
+const APP_VERSION = "4.58";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3935,6 +3935,37 @@ function bindBank(){
       if(a==="back"){ UI.screen="main"; render(); return; }
       /* v4.05: 実装は記帳画面の振替へ一本化。振替目安の超過分だけ金額を前埋めして開く
          (通常の振替は下バーから・v4.13) */
+      /* v4.57: 軍資金の置き場(山木の貯玉・相手への借り・現金の軍資金など)。
+         **マイナスを許す**——借りている状態をそのまま入れられないと実態を写せない */
+      if(a==="bpadd"){
+        const nm=prompt("置き場の名前(例: 山木の貯玉 / ツルさんへの借り):",""); if(nm===null) return;
+        if(!nm.trim()) return;
+        const sd=prompt("いまの残高(円・借りているならマイナス):","0"); if(sd===null) return;
+        S.bank.pots=(S.bank.pots||[]).concat([{id:"b"+uid(), name:nm.trim(), seed:String(num(sd))}]);
+        save(); render(); return; }
+      if(a==="bpedit"){
+        const p=(S.bank.pots||[]).find(x=>String(x.id)===String(v)); if(!p) return;
+        const nm=prompt("置き場の名前:",p.name||""); if(nm===null) return;
+        if(nm.trim()) p.name=nm.trim();
+        save(); render(); return; }
+      if(a==="bpadj"){
+        const p=(S.bank.pots||[]).find(x=>String(x.id)===String(v)); if(!p) return;
+        const cur=bankBalance(p.id);
+        const t=prompt(p.name+" の実際の残高(円・借りているならマイナス):", String(cur)); if(t===null) return;
+        const diff=num(t)-cur; if(!diff) return;
+        S.bank.txns=(S.bank.txns||[]).concat([{id:uid(),date:todayStr(),type:"adjust",amount:String(diff),bwal:String(p.id)}]);
+        save(); render(); return; }
+      if(a==="bpdel"){
+        const pots=S.bank.pots||[]; if(pots.length<2) return;
+        const p=pots.find(x=>String(x.id)===String(v)); if(!p) return;
+        const other=pots.find(x=>String(x.id)!==String(v));
+        if(!confirm(p.name+" を削除します。\n\n記録は「"+other.name+"」に移ります(残高は変わりません)。")) return;
+        /* 削除は**記録を移す**——消すと総額が変わる。所持金の財布と同じ扱い */
+        (S.entries||[]).forEach(e=>{ if((e.src==="slot"||e.src==="mahjong") && String(e.bwal)===String(v)) e.bwal=String(other.id); });
+        (S.bank.txns||[]).forEach(t=>{ if(String(t.bwal)===String(v)) t.bwal=String(other.id); });
+        other.seed=String(num(other.seed)+num(p.seed));
+        S.bank.pots=pots.filter(x=>String(x.id)!==String(v));
+        save(); render(); return; }
       if(a==="gotrover"){ const over=Math.max(0,bankBalance()-(num(b.ceiling)||300000));
         openTransfer(ACC_BANK, "", "bank", over); return; }
       /* v4.09: 設定3つを[編集]に畳む(貯金の箱と同じ様式)。どれも滅多に触らない項目なので
