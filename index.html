@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.52 (localStorage保存・完全オフライン)
+   Tally 4.53 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -764,7 +764,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.52";
+const APP_VERSION = "4.53";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5031,6 +5031,10 @@ function entryDetailHtml(e){
    金額の拾い方はモデル側が引き受ける。ここは決まった書式を受け取るだけなので保守が要らない。
    #で始まる行はヘッダ、それ以外は「品目 | 金額」。区切りが無ければ**行末の数字を金額**とみなす。
    取り込みは**フォームを埋めるだけで保存はしない**——必ず目視で直せるようにする */
+function normDate(v){
+  const m=/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/.exec(String(v||"").trim());
+  return m ? (m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0")) : "";
+}
 function parseReceipt(txt){
   const out={date:"",store:"",wallet:"",category:"",type:"",items:[]};
   String(txt||"").split(/\r?\n/).forEach(ln=>{
@@ -5038,6 +5042,15 @@ function parseReceipt(txt){
     let m=/^#\s*([A-Za-z]+)\s*[:=]?\s*(.+)$/.exec(t);
     if(m){ const k=m[1].toLowerCase(), v=m[2].trim();
       if(k in out && k!=="items") out[k]=v; return; }
+    /* v4.53: **行ごとに日付を書ける**(ユーザー指摘: 交通系はレシートが出ず、Suicaの利用履歴を渡すことになる)。
+       履歴は日付がバラバラなので、1回の貼り付けで1日付しか持てないと使えない。
+       `日付 | 品目 | 金額` の3項目なら先頭を日付として扱う */
+    let d3=/^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*[|｜]\s*(.*?)\s*[|｜]\s*[¥￥]?\s*([\d,]+)\s*円?$/.exec(t);
+    if(d3){
+      const am=num(String(d3[3]).replace(/,/g,""));
+      if(am>0) out.items.push({date:normDate(d3[1]), item:d3[2].trim(), amount:String(am)});
+      return;
+    }
     m=/^(.*?)[|｜]\s*[¥￥]?\s*([\d,]+)\s*円?$/.exec(t);
     if(!m) m=/^(.*?)[\s\u3000]+[¥￥]?\s*([\d,]+)\s*円?$/.exec(t);
     if(m){ const nm=m[1].trim().replace(/[|｜]\s*$/,""), am=num(String(m[2]).replace(/,/g,""));
@@ -5045,9 +5058,32 @@ function parseReceipt(txt){
   });
   return out;
 }
+/* v4.53: 行に日付が付いていれば**フォームではなく直接エントリを作る**。
+   フォームは日付を1つしか持てないため。**保存前に必ず件数と合計を確認させる**(取り込みは目視できる形を崩さない) */
+function applyReceiptDated(r){
+  const cats = r.type==="income" ? INCOME_CATS : EXPENSE_CATS;
+  const cat = (r.category && cats.indexOf(r.category)>=0) ? r.category : (r.type==="income"?"臨時":"消費");
+  const w = walletPots().find(x=>x.name===r.wallet);
+  const wal = String(w ? w.id : walletPots()[0].id);
+  const store = (r.store||"").trim();
+  const rows = r.items.filter(x=>x.date);
+  const total = rows.reduce((a,x)=>a+num(x.amount),0);
+  const days = [...new Set(rows.map(x=>x.date))].sort();
+  if(!confirm(rows.length+"件を取り込みます\n\n"+days[0]+" 〜 "+days[days.length-1]+"\n"+
+      (store?store+"\n":"")+walName(wal)+" / "+cat+"\n合計 ¥"+total.toLocaleString("ja-JP")+"\n\nよろしいですか?")) return 0;
+  rows.forEach(x=>{
+    const item=(x.item||"").trim();
+    S.entries.push({id:uid(), date:x.date, type:(r.type==="income"?"income":"expense"),
+      category:cat, amount:num(x.amount), store:store, item:item,
+      memo:[store,item].filter(Boolean).join(" "), wal:wal});
+  });
+  save();
+  return rows.length;
+}
 function applyReceipt(txt){
   const f=UI.entryForm, r=parseReceipt(txt);
   if(!r.items.length) return 0;
+  if(r.items.some(x=>x.date)) return applyReceiptDated(r) ? -1 : 0;
   if(/^\d{4}-\d{2}-\d{2}$/.test(r.date)) f.date=r.date;
   if(r.store) f.store=r.store;
   if(r.type==="income"||r.type==="expense") f.type=r.type;
@@ -5167,7 +5203,7 @@ function viewEntry(){
     pasteHtml = UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px">'+
         '<div class="muted" style="font-size:10px;line-height:1.7;margin-bottom:8px">レシートを撮ってClaudeに読ませ、返ってきた文字列をそのまま貼ります。</div>'+
-        '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;耳栓 | 873" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
+        '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | 宮城野通→連坊 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
         '<button class="btn tealb" style="flex:1;font-size:12px;padding:9px 0;font-weight:700" data-a="papply">取り込む</button></div></div>'
@@ -5244,7 +5280,9 @@ function bindEntry(){
         const el=document.getElementById("e-paste");
         const n=applyReceipt(el?el.value:UI.pasteText);
         if(!n){ toast("品目を読み取れませんでした"); return; }
-        UI.pasteOpen=false; UI.pasteText=""; render(); toast(n+"件を取り込みました");
+        UI.pasteOpen=false; UI.pasteText="";
+        if(n<0){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
+        render(); toast(n+"件を取り込みました");
       }
       else if(a==="exadd"){ f.extra=(f.extra||[]).concat([{item:"",amount:""}]); render(); }
       else if(a==="exdel"){ f.extra=(f.extra||[]).filter((_,i)=>String(i)!==String(v)); render(); }
