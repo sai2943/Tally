@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.60 (localStorage保存・完全オフライン)
+   Tally 4.61 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.60";
+const APP_VERSION = "4.61";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1348,8 +1348,6 @@ function viewLedger(){
   const _inBank = e => (e.src==="slot"||e.src==="mahjong");
   const bal = me.filter(e=>!_inBank(e)).reduce((s,e)=> s + (e.type==="income"?e.amount:-e.amount), 0);
   /* 内訳用: 収支カテゴリを除いた通常の収入・支出 */
-  const normIncome = me.filter(e=>e.type==="income" && !isNetEntry(e)).reduce((s,e)=>s+e.amount,0);
-  const normExpense = me.filter(e=>e.type==="expense" && !isNetEntry(e)).reduce((s,e)=>s+e.amount,0);
   /* 実績/予定(案ア): 日付が今日以前=実績、未来=予定。大きい数字は予定込みの見込み */
   const todayS = todayStr();
   const hasFuture = me.some(e=>e.date>todayS);
@@ -1373,7 +1371,6 @@ function viewLedger(){
      家計簿で行動が変わるのは**「箱に収まっているか」「あといくら使えるか」**なので予算を最上段へ。
      収支と内訳は残す(支出の見直しには要る)が、位置は下げて折りたたむ。
      ※遊技タブの月次収支は逆に主役のまま——あちらは負けが自分の判断やEVを疑う契機になる */
-  const leftover=bal;
   let h = "";
   h += band("予算");
   h += '<div class="card" style="margin-bottom:14px">';
@@ -1440,6 +1437,24 @@ function viewLedger(){
     }
     h += '</div>';
   });
+  /* v4.61: **固定費を予算カードの中へ**(ユーザー設計)。予算バーの対象外だが、
+     可処分から最初に引かれる金なので**同じカードで見えないと全体像が掴めない**。
+     タップで固定費の一覧へ飛ぶ(内訳を別に持たせるより、編集できる場所へ直行する方が有用) */
+  {
+    const fxAll=me.filter(e=>e.type==="expense"&&isFixedCost(e)&&!isNetEntry(e)).reduce((a,e)=>a+e.amount,0);
+    const fxDone=me.filter(e=>e.type==="expense"&&isFixedCost(e)&&!isNetEntry(e)&&e.date<=todayS).reduce((a,e)=>a+e.amount,0);
+    if(fxAll>0){
+      const fp=Math.min(100, fxAll>0?fxDone/fxAll*100:0);
+      h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="fixed">'+
+        '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
+        '<span><span class="muted" style="font-size:12px;font-weight:700">固定費</span>'+
+        '<span class="mono muted" style="font-size:10px"> ¥'+fxDone.toLocaleString("ja-JP")+' / ¥'+fxAll.toLocaleString("ja-JP")+'</span></span>'+
+        '<span><span class="mono muted" style="font-size:10px">'+(fxDone>=fxAll?'引落済み':'残り')+'</span> '+
+        '<span class="mono muted" style="font-size:17px;font-weight:700">¥'+Math.max(0,fxAll-fxDone).toLocaleString("ja-JP")+'</span>'+
+        '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
+        '<div class="bar"><div style="width:'+fp+'%;background:var(--muted)"></div></div></div>';
+    }
+  }
   h += '</div>';   /* 予算カード(使う)を閉じる */
 
   /* v3.91: **先取りは常設をやめ、給料日に催促して終わったら消える**(ユーザー設計)。
@@ -1523,11 +1538,10 @@ function viewLedger(){
         '変動消費と娯楽を見直すか、貯金から引き出してください。</div></div>';
     }
   }
-  /* v4.59: **狙った貯金・投資ができているか**(ユーザー設計)。
-     予算は「使いすぎていないか」しか見ておらず、**先取りが実行されたかは別の問い**。
-     計画(preSplit)と実績(securedSplit=実際に動いた額)を並べる。
-     振替バンド(v3.91)は「まだやっていない月」にだけ催促する仕組みなので、
-     **済んだ月には何も残らない**。ここは達成したことも含めて常に見える場所として置く */
+  /* v4.61: **「先取り」→「振替予定」**(ユーザー指摘)。先取りは家計の用語で、
+     アプリ内の操作は一貫して「振替」と呼んでいる(v4.24で語彙統一済み)。ここだけ別語だった。
+     **給料前でも出す**——金額は可処分から計算されるので、着弾を待たずに「今月いくら回す予定か」が分かる。
+     v3.91の振替カードは「まだやっていない月に催促して済んだら消える」仕組みで役割が違う。 */
   {
     const _p=preSplit(mk), _d=securedSplit(mk);
     const _row=(nm,plan,done)=>{
@@ -1544,38 +1558,13 @@ function viewLedger(){
     };
     const _h1=_row("貯金へ", _p.sv, _d.sv), _h2=_row("投資へ", _p.iv, _d.iv);
     if(_h1||_h2){
-      h += band("先取り");
+      h += band("振替予定");
       h += '<div class="card" style="margin-bottom:14px">'+_h1+_h2+'</div>';
     }
   }
-  /* v4.59: 収支と内訳は下へ。**支出を見直すための入口**として残すが、開かない限り1行しか占有しない */
-  h += band("収支と内訳");
-  h += '<div class="card" style="margin-bottom:'+(UI.bdOpen?'0':'14')+'px;cursor:pointer" data-a="bdtoggle">'+
-    '<div class="row between" style="align-items:baseline">'+
-    '<span class="muted" style="font-size:12px">当月収支'+(hasFuture?'(予定込)':'')+'</span>'+
-    '<span><span class="mono '+clsPM(leftover)+'" style="font-size:17px;font-weight:700">'+signYen(leftover)+'</span>'+
-    '<span class="muted" style="font-size:11px"> '+(UI.bdOpen?"▾":"▸")+'</span></span></div>'+
-    '<div class="row between" style="font-size:10px;margin-top:4px">'+
-    '<span class="muted">収入 <span class="mono teal">'+yen(normIncome)+'</span></span>'+
-    '<span class="muted">支出 <span class="mono red">'+yen(normExpense)+'</span></span></div></div>';
-  /* v4.60: **所持金を家計簿タブへ**(ユーザー設計)。**明細との付け合わせは実際の作業**なのに、
-     今は資産タブと往復していた。同じ画面にあるべき。
-     資産タブ側は残す——あちらは「貯める・増やす」の場所で、ここは「使う」の場所 */
-  {
-    const wb=walletBalance(), wp=walletPots();
-    h += band("所持金");
-    h += '<div class="card" style="margin-bottom:14px;cursor:pointer" data-a="wallet">'+
-      '<div class="row between" style="align-items:baseline">'+
-      '<span class="muted" style="font-size:12px">残高</span>'+
-      '<span><span class="mono '+(wb<0?"red":"teal")+'" style="font-size:20px;font-weight:700">'+
-      (wb<0?"−¥"+Math.abs(wb).toLocaleString("ja-JP"):"¥"+wb.toLocaleString("ja-JP"))+'</span>'+
-      '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
-      (wp.length>1 ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:4px 10px;margin-top:9px">'+
-        wp.map(p=>{ const v=walletBalance(null,p.id);
-          return '<div class="row between" style="font-size:11px"><span class="muted ellip">'+esc(p.name)+'</span>'+
-          '<span class="mono '+(v<0?"red":"muted")+'">¥'+v.toLocaleString("ja-JP")+'</span></div>';}).join("")+'</div>' : '')+
-      '</div>';
-  }
+  /* v4.61: **所持金カードは撤去**(ユーザー指摘: 表記が見づらい)。
+     財布が4つあると1行に収まらず折り返し、名前と金額の対応が読めなくなる。
+     付け合わせの動線は資産タブ→所持金に戻す。ここは予算と明細に絞る */
   h += band("明細");
   const detEntries = me.filter(e=>!isNetEntry(e));
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
@@ -5040,7 +5029,6 @@ function bindMain(){
         if(!s) return;
         UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.screen="mahjong-edit"; render();
       }
-      else if(a==="bdtoggle"){ UI.bdOpen=!UI.bdOpen; render(); }
       else if(a==="dtoggle"){ const d=el.dataset.v; UI.dayOpen=UI.dayOpen||{}; const cur=(UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayStr()); UI.dayOpen[d]=!cur; render(); }
       else if(a==="eedit"){
         const e = S.entries.find(x=>String(x.id)===String(v));
