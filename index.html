@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.54 (localStorage保存・完全オフライン)
+   Tally 4.55 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -764,7 +764,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.54";
+const APP_VERSION = "4.55";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5031,6 +5031,7 @@ function entryDetailHtml(e){
    金額の拾い方はモデル側が引き受ける。ここは決まった書式を受け取るだけなので保守が要らない。
    #で始まる行はヘッダ、それ以外は「品目 | 金額」。区切りが無ければ**行末の数字を金額**とみなす。
    取り込みは**フォームを埋めるだけで保存はしない**——必ず目視で直せるようにする */
+const TRANS_MODES=["地下鉄","バス","電車","駐輪"];
 function normDate(v){
   const m=/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/.exec(String(v||"").trim());
   return m ? (m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0")) : "";
@@ -5083,8 +5084,19 @@ function applyReceiptDated(r){
 function applyReceipt(txt){
   const f=UI.entryForm, r=parseReceipt(txt);
   if(!r.items.length) return 0;
-  /* v4.54: 貼り付けた内容が優先。コンポーザが残っていると保存時に店名と品目を上書きされる */
+  /* v4.55: **交通は解除でなく「コンポーザを埋める」**(ユーザー指摘)。v4.54は解除していたが、
+     取り込んだ後も駅名の候補チップから直せる方が有用。1件のときだけ効かせる
+     (コンポーザは1件しか表現できないため)。該当しなければ従来どおり店名+品目に入る */
   f.tmode=null; f.tfrom=""; f.tto=""; f.tplace="";
+  if(r.items.length===1 && !r.items[0].date){
+    const st=(r.store||"").trim(), it=(r.items[0].item||"").trim();
+    const arrow=/^(.+?)\s*(?:→|->|＞|>)\s*(.+)$/.exec(it);
+    if(TRANS_MODES.indexOf(st)>=0 && st!=="駐輪" && arrow){
+      f.tmode=st; f.tfrom=arrow[1].trim(); f.tto=arrow[2].trim();
+    } else if(it==="駐輪" && st){
+      f.tmode="駐輪"; f.tplace=st;
+    }
+  }
   if(r.items.some(x=>x.date)) return applyReceiptDated(r) ? -1 : 0;
   if(/^\d{4}-\d{2}-\d{2}$/.test(r.date)) f.date=r.date;
   if(r.store) f.store=r.store;
@@ -5118,7 +5130,7 @@ function viewEntry(){
   const amtChips   = (curStore && curItem) ? chipRow("金額", entryChipAmounts(f.type, curStore, curItem), "uamt", num(f.amount)||"") : '';
   /* v3.31: 交通コンポーザ(新規支出のみ)。分類は増やさず保存時に 店名=モード/場所・品目=乗車→降車・分類=消費 へ合成する入力支援レイヤー。
      表記規約(店名固定・A→B)を規律でなく構造で強制する関所。編集画面は素の店名/品目に戻る一方通行 */
-  const TRANS_MODES=["地下鉄","バス","電車","駐輪"];
+
   let transHtml="", composerHtml="";
   if(f.type==="expense" && UI.editEntryId===null){
     transHtml='<div class="muted" style="font-size:11px;margin:0 2px 6px">交通で記帳</div>'+
