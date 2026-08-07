@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.61 (localStorage保存・完全オフライン)
+   Tally 4.62 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.61";
+const APP_VERSION = "4.62";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1448,9 +1448,11 @@ function viewLedger(){
       h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="fixed">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">固定費</span>'+
-        '<span class="mono muted" style="font-size:10px"> ¥'+fxDone.toLocaleString("ja-JP")+' / ¥'+fxAll.toLocaleString("ja-JP")+'</span></span>'+
-        '<span><span class="mono muted" style="font-size:10px">'+(fxDone>=fxAll?'引落済み':'残り')+'</span> '+
-        '<span class="mono muted" style="font-size:17px;font-weight:700">¥'+Math.max(0,fxAll-fxDone).toLocaleString("ja-JP")+'</span>'+
+        '<span class="mono muted" style="font-size:10px"> 引落済み ¥'+fxDone.toLocaleString("ja-JP")+' / ¥'+fxAll.toLocaleString("ja-JP")+'</span></span>'+
+        /* v4.62: **「残り」と呼ばない**(ユーザー指摘)。予算の残りは「まだ使える額」だが、
+           固定費のこれは「まだ引き落とされていない予定額」で意味が違う。同じ語を使うと誤読される */
+        '<span><span class="mono muted" style="font-size:10px">'+(fxDone>=fxAll?'すべて引落済み':'未引落')+'</span> '+
+        (fxDone>=fxAll?'':'<span class="mono muted" style="font-size:17px;font-weight:700">¥'+(fxAll-fxDone).toLocaleString("ja-JP")+'</span>')+
         '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
         '<div class="bar"><div style="width:'+fp+'%;background:var(--muted)"></div></div></div>';
     }
@@ -1538,12 +1540,19 @@ function viewLedger(){
         '変動消費と娯楽を見直すか、貯金から引き出してください。</div></div>';
     }
   }
-  /* v4.61: **「先取り」→「振替予定」**(ユーザー指摘)。先取りは家計の用語で、
-     アプリ内の操作は一貫して「振替」と呼んでいる(v4.24で語彙統一済み)。ここだけ別語だった。
-     **給料前でも出す**——金額は可処分から計算されるので、着弾を待たずに「今月いくら回す予定か」が分かる。
-     v3.91の振替カードは「まだやっていない月に催促して済んだら消える」仕組みで役割が違う。 */
+  /* v4.62: **給料着弾前は出さない**(ユーザー指摘: 出ても何も出来ない)。
+     v3.91の催促カードと同じゲートを掛ける。さらに**催促カードが出ている月は出さない**——
+     同じ数字が2箇所に並ぶだけで冗長。役割分担は:
+       催促カード(v3.91) = 今月・着弾済み・未達 → 「やれ」とボタンを出す
+       このバンド        = 済んだ月・過去の月   → 「やったか」を確認する
+     過去の月は着弾を問わず出す(振り返りとして意味がある)。未来の月は出さない */
   {
     const _p=preSplit(mk), _d=securedSplit(mk);
+    const _isCurM = (mk === todayStr().slice(0,7));
+    const _isFutM = (mk > todayStr().slice(0,7));
+    const _remain = Math.max(0,_p.sv-_d.sv) + Math.max(0,_p.iv-_d.iv);
+    const _nagging = _isCurM && mainIncomeLanded(mk) && _remain > 0;   /* 催促カードが出ている状態 */
+    const _show = !_isFutM && !_nagging && (!_isCurM || mainIncomeLanded(mk));
     const _row=(nm,plan,done)=>{
       if(plan<=0) return "";
       const ok=done>=plan, pc=Math.min(100, plan>0?done/plan*100:0);
@@ -1557,8 +1566,8 @@ function viewLedger(){
         '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div></div>';
     };
     const _h1=_row("貯金へ", _p.sv, _d.sv), _h2=_row("投資へ", _p.iv, _d.iv);
-    if(_h1||_h2){
-      h += band("振替予定");
+    if(_show && (_h1||_h2)){
+      h += band("今月の振替");
       h += '<div class="card" style="margin-bottom:14px">'+_h1+_h2+'</div>';
     }
   }
