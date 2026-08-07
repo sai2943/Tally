@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.55 (localStorage保存・完全オフライン)
+   Tally 4.56 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -764,7 +764,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.55";
+const APP_VERSION = "4.56";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5495,6 +5495,16 @@ function viewSession(){
     h += band("報酬(家計簿に反映)");
     h += '<div><div class="muted" style="font-size:11px;margin:0 2px 4px">受取報酬(円)</div>'+
       '<input class="input mono r" type="number" inputmode="numeric" placeholder="例: 15000" value="'+esc(s.fee)+'" data-in="fee"></div>';
+    /* v4.56: **どの財布で受け取ったか**。現金で受け取ることが多いので既定任せにしない。
+       財布が1つのうちは出さない(選ぶ余地が無い) */
+    if(walletPots().length>1){
+      const cw=String(s.wal||walletPots()[0].id);
+      h += '<div class="muted" style="font-size:11px;margin:10px 2px 5px">どの財布で受け取った</div>'+
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px">'+
+        walletPots().map(w=>'<button class="btn '+(cw===String(w.id)?"sel":"")+'" data-a="swal" data-v="'+w.id+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
+          '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
+          '<span class="mono muted" style="font-size:9px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+    }
   }
 
   /* ----- 台データ(貯玉方式) ----- */
@@ -6114,6 +6124,7 @@ function bindSessionActions(){
         S.sessions = S.sessions.filter(x=>x.id!==s.id);
         save(); UI.screen="main"; UI.draft=null; render();
       }
+      else if(a==="swal"){ UI.draft.wal=String(v); render(); }
       else if(a==="ssave") saveSession();
     };
   });
@@ -6140,11 +6151,15 @@ function saveSession(){
   const isDai = cleaned.mode==="dai";
   S.entries = S.entries.filter(e=>e.id!==linkId);
   if(fin!==0){
+    /* v4.56: **代打報酬をどの財布で受け取ったか**を持たせる(ユーザー指摘)。
+       現金で受け取ることが多いのに、未設定だと移行で先頭の財布(口座)に寄ってしまい実態とズレる。
+       遊技(乗打/単独)は軍資金で完結し所持金に触れないので財布は不要——代打のときだけ効く */
     S.entries.push({id:linkId, date:cleaned.date,
       src: isDai ? "daida" : "slot",
       type: fin>0?"income":"expense",
       category: isDai ? "副業" : "遊技",
       amount: Math.abs(fin),
+      wal: isDai ? String(cleaned.wal || walletPots()[0].id) : undefined,
       memo: modeLabel(cleaned.mode)+(cleaned.store?" @"+cleaned.store:"")});
   }
   /* 家計簿からの振替: 選択元の記録をここで削除(保存とワンセット) */
