@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.50 (localStorage保存・完全オフライン)
+   Tally 4.52 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -350,7 +350,8 @@ function genFixedEntries(tpl){
         /* v4.16: **固定費ごとにどの財布から出るか**(ユーザー指摘)。
            家賃や光熱費は口座、駐輪はSuica——実態がバラバラなので、
            テンプレに持たせて生成エントリへ引き継ぐ。未設定は先頭の財布 */
-        wal: String(tpl.wal || walletPots()[0].id)
+        wal: String(tpl.wal || walletPots()[0].id),
+        varc: !!tpl.varc   /* v4.52: trueなら予算上は変動支出として扱う */
       });
     }
   });
@@ -424,7 +425,7 @@ function updateFixed(tpl){
   /* v4.16: 財布を変えたら、この固定費が生んだ**過去の分も含めて**付け替える。
      光熱費の引き落とし口座を変えたら過去分も同じ口座だった、というのが実態に近い */
   const wal = String(tpl.wal || walletPots()[0].id);
-  S.entries.forEach(e=>{ if(String(e.fixedId)===String(tpl.id)) e.wal = wal; });
+  S.entries.forEach(e=>{ if(String(e.fixedId)===String(tpl.id)){ e.wal = wal; e.varc = !!tpl.varc; } });
   genFixedEntries(tpl);
   save();
 }
@@ -763,7 +764,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.50";
+const APP_VERSION = "4.52";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1095,7 +1096,7 @@ function viewCatDrill(){
   const parts = mk.split("-");
   const NET_SRCS = ["slot","mahjong"];
   const isNetEntry = e => NET_SRCS.includes(e.src);
-  const list = S.entries.filter(e=> e.date.startsWith(mk) && e.type==="expense" && e.category===cat && !isNetEntry(e) && (!UI.drillVarOnly || e.fixedId==null));
+  const list = S.entries.filter(e=> e.date.startsWith(mk) && e.type==="expense" && e.category===cat && !isNetEntry(e) && (!UI.drillVarOnly || !isFixedCost(e)));
   const cap = budgetAmt((S.budgets||{})[cat], disposableBase(mk))||0;   /* v3.73: 割合対応 */
   const spent = list.reduce((a,e)=>a+e.amount,0);
   const pct = cap>0 ? Math.min(100, spent/cap*100) : 0;
@@ -1243,7 +1244,7 @@ function bindCatDrill(){
         const gn=v; const cur=String((S.genreCaps||{})[gn]||"");
         const _mk=monthKey();
         const unassigned=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(_mk)&&e.type==="expense"
-          &&e.category==="消費"&&e.fixedId==null&&e.src!=="slot"&&e.src!=="mahjong"
+          &&e.category==="消費"&&!isFixedCost(e)&&e.src!=="slot"&&e.src!=="mahjong"
           &&!((S.genres||{})[chainKeyOf(e.store)])).reduce((a2,e)=>a2+e.amount,0);
         const warn=unassigned>0 ? "\n\n※未分類の店が ¥"+unassigned.toLocaleString("ja-JP")+" あります。\n先にジャンルを割り当てると枠が正確になります。" : "";
         const p=prompt(gn+"の月間上限\n金額(35000)または変動消費に対する割合(35%)で入力。\n割合なら月ごとの枠に自動で追随します。\n0で解除。"+warn, cur);
@@ -1371,13 +1372,13 @@ function viewLedger(){
   /* v3.48: 内訳は1タップで支出+収入を一体展開(排他アコーディオン廃止・ユーザー指摘)。金額は分類色(既存の予算バー文法)。
      固定行はタップで固定費画面へ(予算カードからの移設——固定費は予算ではないため)。%分母は月内合計 */
   if(UI.bdOpen){
-    const exG=[["固定",e=>e.category==="消費"&&e.fixedId!=null,"var(--muted)"],
-      ["変動消費",e=>e.category==="消費"&&e.fixedId==null,"var(--red)"],
+    const exG=[["固定",e=>e.category==="消費"&&isFixedCost(e),"var(--muted)"],
+      ["変動消費",e=>e.category==="消費"&&!isFixedCost(e),"var(--red)"],
       ["娯楽",e=>e.category==="娯楽","var(--amber)"],
       ["承認",e=>e.category==="承認","var(--blue)"]];
     const exRows=exG.map(([nm,f,col])=>[nm, me.filter(e=>e.type==="expense"&&!isNetEntry(e)&&f(e)).reduce((a,e)=>a+e.amount,0), col, me.filter(e=>e.type==="expense"&&!isNetEntry(e)&&f(e)&&e.date>todayS).reduce((a,e)=>a+e.amount,0)]);
     const exTotal=exRows.reduce((a,x)=>a+x[1],0);
-    const fxDone=me.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&!isNetEntry(e)&&e.date<=todayS).reduce((a,e)=>a+e.amount,0);
+    const fxDone=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!isNetEntry(e)&&e.date<=todayS).reduce((a,e)=>a+e.amount,0);
     const bdRow=(nm,a,col,total,extra,tap,fut)=>'<div style="margin:8px 0'+(tap?';cursor:pointer':'')+'"'+(tap?' data-a="fixed"':'')+'>'+
       '<div class="row between" style="font-size:12px;margin-bottom:3px"><span>'+nm+'</span>'+
       '<span class="mono">'+yen(a)+' <span class="muted" style="font-size:10px">('+(total>0?Math.round(a/total*100):0)+'%)</span>'+(tap?' <span class="muted">›</span>':'')+'</span></div>'+
@@ -1404,7 +1405,7 @@ function viewLedger(){
     const _bv=(S.budgets||{})[cat];
     const monthCap = budgetAmt(_bv, disposableBase(mk));   /* v3.73: 割合対応 */
     const capIsPct = budgetIsPct(_bv);
-    const spent = me.filter(e=>e.type==="expense" && e.category===cat && !isNetEntry(e) && (cat!=="消費" || e.fixedId==null)).reduce((a,e)=>a+e.amount,0);
+    const spent = me.filter(e=>e.type==="expense" && e.category===cat && !isNetEntry(e) && (cat!=="消費" || !isFixedCost(e))).reduce((a,e)=>a+e.amount,0);
     /* v3.85: 所持金が月枠より厳しい時は**上限そのものを書き換える**(ユーザー設計・別行にするより見やすい)。
        実効枠 = 使った額 + 所持金×割合。こうすると「残り」がそのまま「いま使える額」になり、
        月の後半でも同じ式で成立する。月枠を超えることはない */
@@ -3153,11 +3154,18 @@ function furusatoDue(mk){
   return {target:target, done:done, left:left, covered:Math.min(left,covered), short:short,
           active: !!(inMonth && left>0 && (landed || done>0))};
 }
+/* v4.52: **固定費として登録しても、計上先は「固定費」と「変動支出」を選べる**(ユーザー指摘)。
+   Amazonの定期便のように**自動で来るが削れる支出**を固定費に入れると、
+   ①可処分が実態より小さく出る ②**食費などの予算枠に一切乗らず、何に使ったか見えなくなる**。
+   ②の方が実害が大きい——月1.4万の冷凍食品が食費として集計されないのは家計簿として機能不全。
+   tpl.varc=true なら生成エントリに varc を付け、予算上は普通の変動支出として扱う。
+   **生成の仕組み(fixedId)はそのまま**なので、停止・一括修正・削除は従来どおり効く */
+function isFixedCost(e){ return !!(e && e.fixedId!=null && !e.varc); }
 function disposableBase(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
   const NET=["slot","mahjong"];
   const inc=me.filter(e=>e.type==="income"&&!NET.includes(e.src)).reduce((a,e)=>a+e.amount,0);
-  const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId!=null&&!NET.includes(e.src)).reduce((a,e)=>a+e.amount,0);
+  const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!NET.includes(e.src)).reduce((a,e)=>a+e.amount,0);
   const fs=furusatoDue(mk);                      /* v3.99: 貯金で賄えない分(short)だけをフローから確保する */
   return Math.max(0, inc-fx-(fs.active?fs.short:0));
 }
@@ -3264,15 +3272,27 @@ const FRAME_LABEL = { tsumitate:"つみたて", seicho:"成長", tokutei:"特定
 /* v4.49: **積立のペース**(ユーザー要望)。累計簿価 ÷ 積立を始めてからの月数。
    買付の記録が1件も無ければペースは出せない(0除算を避ける)。
    到達年数は**年間枠の上限(月30万相当)で頭打ち**にする——月50万入れても制度が受け付けない */
+/* v4.51: 月平均は**直近12ヶ月**で出す(投資方針書 §5.8)。
+   累計÷全期間だと、積立額を上げても平均が過去に引きずられて見込みが古いままになる。
+   12ヶ月に満たない場合は**あるだけの月数で割る**——ゼロ埋めすると平均が不当に下がる */
 function invPace(){
-  const all=[];
+  const cur=todayStr().slice(0,7), by={};
   (((S.invest||{}).holdings)||[]).forEach(x=>(x.buys||[]).forEach(b=>{
-    if(b.date) all.push({mk:String(b.date).slice(0,7), amt:num(b.amount)}); }));
-  const bk=invBookByFrame();
-  if(!all.length) return {months:0, perMonth:0, total:bk.nisa, hasData:false};
-  const first=all.map(b=>b.mk).sort()[0], cur=todayStr().slice(0,7);
-  const months=(num(cur.slice(0,4))-num(first.slice(0,4)))*12 + (num(cur.slice(5))-num(first.slice(5))) + 1;
-  return {months:months, perMonth: months>0 ? bk.nisa/months : 0, total:bk.nisa, hasData:true, first:first};
+    const mk=String(b.date||"").slice(0,7); if(!mk||mk>cur) return;
+    by[mk]=(by[mk]||0)+num(b.amount); }));
+  const bk=invBookByFrame(), all=Object.keys(by).sort();
+  if(!all.length) return {perMonth:0, months:0, total:bk.nisa, hasData:false};
+  /* 直近12ヶ月の窓。買付が無い月も、積立を始めた後なら0として数える(止めた月も平均に効く) */
+  const first=all[0];
+  const span=(num(cur.slice(0,4))-num(first.slice(0,4)))*12+(num(cur.slice(5))-num(first.slice(5)))+1;
+  const win=Math.min(12, span);
+  let sum=0;
+  for(let i=0;i<win;i++){
+    const d=new Date(num(cur.slice(0,4)), num(cur.slice(5))-1-i, 1);
+    const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+    sum+=(by[mk]||0);
+  }
+  return {perMonth: win>0?sum/win:0, months:win, total:bk.nisa, hasData:true, first:first, span:span};
 }
 function invYearBuys(frame){
   const y=String(new Date().getFullYear());
@@ -3383,7 +3403,7 @@ function viewInvest(){
       '<div style="height:100%;width:'+pct+'%;background:var(--teal)"></div></div>'+
       '<div class="row between" style="font-size:10px">'+
       '<span class="mono muted">積立 '+yen(bk.nisa)+'</span>'+
-      '<span class="muted">上限 '+yen(L.total)+'</span></div>'+
+      '<span class="muted">'+pct.toFixed(1)+'% / '+yen(L.total)+'</span></div>'+
       '<div style="text-align:left;border-top:1px solid var(--line);margin-top:12px;padding-top:10px">'+
       '<div class="muted" style="font-size:10px;margin-bottom:6px">生涯枠の内訳　'+
         '<span style="opacity:.8">※枠は買った金額で数えます(値上がりは関係ありません)</span></div>'+
@@ -3397,16 +3417,16 @@ function viewInvest(){
       '</div>'+
       '<div style="text-align:left;border-top:1px solid var(--line);margin-top:12px;padding-top:10px">'+
       '<div class="muted" style="font-size:10px;margin-bottom:6px">'+new Date().getFullYear()+'年の積立</div>'+
-      row("合計", yTotal, yCap)+
-      row("つみたて投資枠", ty, YC.tsumitate)+
-      row("成長投資枠", sy, YC.seicho)+
+      row("合計", yTotal, yCap, "残り "+yen(Math.max(0,yCap-yTotal)))+
+      row("つみたて投資枠", ty, YC.tsumitate, "残り "+yen(Math.max(0,YC.tsumitate-ty)))+
+      row("成長投資枠", sy, YC.seicho, "残り "+yen(Math.max(0,YC.seicho-sy)))+
       '</div>'+
       '<div style="text-align:left;border-top:1px solid var(--line);margin-top:2px;padding-top:10px">'+
       '<div class="row between" style="font-size:11px;padding:2px 0"><span class="muted">月平均の積立</span>'+
         '<span class="mono '+(pace.hasData?"teal":"muted")+'" style="font-weight:700">'+(pace.hasData?yen(pace.perMonth)+"/月":"—")+'</span></div>'+
       (pace.hasData
         ? '<div class="muted" style="font-size:10px;line-height:1.7;margin-top:3px">'+
-          pace.first.replace("-","/")+' から '+pace.months+'ヶ月の実測<br>'+
+          '直近'+pace.months+'ヶ月の実測'+(pace.span<12?'(積立開始から'+pace.span+'ヶ月)':'')+'<br>'+
           (monthsLeft>0 ? ('このペースだと残り約 '+Math.floor(monthsLeft/12)+'年'+(monthsLeft%12)+'ヶ月'+
             (pace.perMonth>capPerMonth?'　<span class="amber">※年間枠の上限で頭打ち</span>':'')) : '')+
           '</div>'
@@ -4300,6 +4320,8 @@ function viewFixed(){
         (fSub?'<div class="muted ellip" style="font-size:11px;margin-top:2px">'+esc(fSub)+'</div>':'')+
         '<div class="row" style="gap:6px;margin-top:4px;align-items:center">'+
         '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+esc(t.category)+'</span>'+
+        /* v4.52: 計上先が変動のものは一覧でも見分けられるようにする */
+        (t.varc?'<span class="tag" style="border:1px solid var(--teal);color:var(--teal)">変動</span>':'')+
         '<span class="muted" style="font-size:11px">'+fixedSchedLabel(t)+'</span></div></div>'+
         '<div style="text-align:right"><div class="mono '+(t.type==="income"?"teal":"red")+'" style="font-size:16px;font-weight:700">'+
         (t.type==="income"?"+":"−")+yen(num(t.amount))+'</div>'+
@@ -4351,6 +4373,18 @@ function viewFixed(){
       '<input class="input mono r" type="number" inputmode="numeric" id="fx-amount" placeholder="円" value="'+esc(f.amount)+'"></div>';
     /* v4.16: **どの財布から引き落とされるか**(ユーザー指摘)。家賃・光熱費は口座、駐輪はSuica のように実態が分かれる。
        財布が1つのうちは出さない */
+    /* v4.52: **計上先の切り替え**。固定費として自動生成しつつ、予算上は変動支出として扱える。
+       収入には関係ないので支出のときだけ出す */
+    let fxKind="";
+    if(f.type!=="income"){
+      fxKind='<div class="fxl" style="margin-top:2px">計上先</div>'+
+        '<div class="row" style="gap:6px;margin-bottom:4px">'+
+        [[false,"固定費"],[true,"変動支出"]].map(([v,l])=>
+          '<button class="btn '+((!!f.varc)===v?"sel":"")+'" data-fa="fkind" data-v="'+(v?"1":"0")+'" style="flex:1;font-size:11px;padding:6px 0">'+l+'</button>').join("")+'</div>'+
+        '<div class="muted" style="font-size:10px;line-height:1.6;margin-bottom:10px">'+
+        (f.varc ? '自動で計上しますが、可処分は減らさず予算の枠に乗せます。<br>定期便のように「自動で来るが削れる」支出向け。'
+                : '可処分から先に引きます。予算の枠には乗りません。<br>家賃・光熱費のように削れない支出向け。')+'</div>';
+    }
     let fxWal="";
     if(walletPots().length>1){
       const cw=String(f.wal||walletPots()[0].id);
@@ -4358,7 +4392,7 @@ function viewFixed(){
         '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">'+
         walletPots().map(w=>'<button class="btn '+(cw===String(w.id)?"sel":"")+'" data-fa="fwal" data-v="'+w.id+'" style="font-size:11px;padding:6px 11px">'+esc(w.name)+'</button>').join("")+'</div>';
     }
-    h += fxWal;
+    h += fxKind + fxWal;
     h += ((isWeekly||isDays)
       ? '<div class="fxg"><div><div class="fxl">'+(isDays?"開始日":"起点日("+(freq==="weekly"?"毎週":"2週ごと")+")")+'</div>'+
         '<input class="input mono" type="date" id="fx-start" value="'+esc(f.start||todayStr())+'"></div>'+fxEnd+'</div>'+
@@ -4441,9 +4475,10 @@ function bindFixed(){
           navigator.clipboard.writeText(full).then(done, ()=>alert(full));
         } else alert(full);
       }
-      else if(a==="new"){ UI.fixForm={type:"expense",name:"",store:"",item:"",category:"消費",freq:"monthly",day:"",start:todayStr(),amount:"",wal:""}; render(); }
+      else if(a==="new"){ UI.fixForm={type:"expense",name:"",store:"",item:"",category:"消費",freq:"monthly",day:"",start:todayStr(),amount:"",wal:"",varc:false}; render(); }
       else if(a==="fcancel"){ UI.fixForm=null; render(); }
       else if(a==="ftype"){ f.type=v; f.category=v==="expense"?"消費":"給与"; render(); }
+      else if(a==="fkind"){ f.varc=(String(v)==="1"); render(); }
       else if(a==="fwal"){ f.wal=String(v); render(); }
       else if(a==="fcat"){ f.category=v; render(); }
       else if(a==="ffreq"){ f.freq=v; if((v==="weekly"||v==="biweekly")&&!f.start) f.start=todayStr(); render(); }
@@ -4458,7 +4493,7 @@ function bindFixed(){
             const _n=new Date(); const _d=Math.min(num(t.day), new Date(_n.getFullYear(),_n.getMonth()+1,0).getDate());
             st0=_n.getFullYear()+"-"+String(_n.getMonth()+1).padStart(2,"0")+"-"+String(_d).padStart(2,"0");
           }
-          UI.fixForm={editId:t.id, type:t.type, name:t.name, store:t.store||"", item:(t.item!=null?t.item:(t.name||"")), category:t.category, freq:lf, day:t.day?String(t.day):"", start:st0||todayStr(), amount:String(t.amount), holidayShift:t.holidayShift||"none", days:(t.days||[]).slice(), end:t.end||"", every:lev, wal:t.wal||""}; render(); }
+          UI.fixForm={editId:t.id, type:t.type, name:t.name, store:t.store||"", item:(t.item!=null?t.item:(t.name||"")), category:t.category, freq:lf, day:t.day?String(t.day):"", start:st0||todayStr(), amount:String(t.amount), holidayShift:t.holidayShift||"none", days:(t.days||[]).slice(), end:t.end||"", every:lev, wal:t.wal||"", varc:!!t.varc}; render(); }
       }
       else if(a==="stop"){
         const t=(S.fixed||[]).find(x=>String(x.id)===String(v));
