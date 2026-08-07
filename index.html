@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.56 (localStorage保存・完全オフライン)
+   Tally 4.57 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -470,7 +470,16 @@ function applyData(d){
   S.mjSessions = Array.isArray(d.mjSessions)?d.mjSessions:[];
   S.fixed = Array.isArray(d.fixed)?d.fixed:[];
   S.wishlist = Array.isArray(d.wishlist)?d.wishlist:[];
-  S.bank = Object.assign({ceiling:"300000",seed:"",refillCap:"30000",txns:[]}, d.bank||{});   /* v4.11: refillCap=月あたりの補充許容枠。v4.15: switchは撤去 */
+  S.bank = Object.assign({ceiling:"300000",seed:"",refillCap:"30000",pots:[],txns:[]}, d.bank||{});
+  /* v4.57: 軍資金の財布。既存データは非破壊——財布が無ければ既定の1つを作り旧seedを引き継ぐ。
+     遊技エントリとtxnには先頭の財布のidを冪等に書き込む(v4.14と同じ手法) */
+  if(!Array.isArray(S.bank.pots)) S.bank.pots=[];
+  if(!S.bank.pots.length) S.bank.pots=[{id:"b_main", name:"軍資金", seed:String(num(S.bank.seed)||0)}];
+  {
+    const fb=String(S.bank.pots[0].id);
+    (S.entries||[]).forEach(e=>{ if((e.src==="slot"||e.src==="mahjong") && (e.bwal==null||e.bwal==="")) e.bwal=fb; });
+    (S.bank.txns||[]).forEach(t=>{ if(t.bwal==null||t.bwal==="") t.bwal=fb; });
+  }   /* v4.11: refillCap=月あたりの補充許容枠。v4.15: switchは撤去 */
   S.savings = Object.assign({goals:[],txns:[],pots:[]}, d.savings||{});   /* v4.47: pot.auto=生活費の何ヶ月分(自動目標) */
   /* v4.00: 箱。既定箱"main"は必ず先頭に居る(既存txnはpotId無し=main扱いなので非破壊) */
   if(!Array.isArray(S.savings.pots)) S.savings.pots=[];
@@ -764,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.56";
+const APP_VERSION = "4.57";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2930,6 +2939,7 @@ function mjtToKakei(){
   if(fin!==0){
     S.entries.push({id:linkId, date:sess.date, src:"mahjong",
       type: fin>0?"income":"expense", category:"遊技", amount:Math.abs(fin),
+      bwal: String(sess.bwal || bankPots()[0].id),   /* v4.57: どの置き場の金か */
       memo:"麻雀(セット・"+sess.rule+"麻)"+(sess.store?" @"+sess.store:"")});
   }
   t.reflectedKey = pi+":"+c.net;   /* 反映済みキー: スコア/チップ/レート編集で自動的に未反映へ戻る */
@@ -3642,8 +3652,22 @@ function bankRefillCap(){ const v=num((S.bank||{}).refillCap); return v>0?v:3000
 /* v4.15: **集計開始日を撤去**(ユーザー指摘)。月別で見る方針にしたのに、残高だけが
    開始日以降しか数えておらず、**月別の合計と残高が一致しない状態**だった(実データで確認)。
    遊技は全期間を数え、開始時の残高は「記録開始前の残高」と定義し直す */
-function bankGameNet(){
-  return (S.entries||[]).filter(e=>(e.src==="slot"||e.src==="mahjong"))
+/* v4.57: **軍資金も財布に分割**(ユーザー設計)。山木の貯玉、麻雀の相手への借り、現金の軍資金など、
+   遊技の金は複数の置き場に分かれている。**マイナスなら借り、プラスなら預け**として同じ仕組みで扱う
+   ——貯玉も借金も「遊技に紐づく金の置き場」であり、符号が違うだけ。
+   bwal省略=全財布の合計なので、既存の呼び出し(資産タブ・警告・月別・振替枠)は無変更で動く */
+function bankPots(){
+  const p=((S.bank||{}).pots)||[];
+  return p.length ? p : [{id:"b_main", name:"軍資金", seed:String(num((S.bank||{}).seed)||0)}];
+}
+function bankName(id){ const p=bankPots().find(x=>String(x.id)===String(id)); return p?p.name:"軍資金"; }
+function eBWal(e){ return String(e.bwal || bankPots()[0].id); }
+function tBWal(t){ return String(t.bwal || bankPots()[0].id); }
+function bankSeed(bw){
+  return bankPots().filter(p=>bw==null||String(p.id)===String(bw)).reduce((a,p)=>a+num(p.seed),0);
+}
+function bankGameNet(bw){
+  return (S.entries||[]).filter(e=>(e.src==="slot"||e.src==="mahjong") && (bw==null||eBWal(e)===String(bw)))
     .reduce((a,e)=> a + (e.type==="income"?e.amount:-e.amount), 0);
 }
 /* v3.81: 所持金(論理残高)。実際の銀行残高ではなく帳簿上の位置——カード払いの決済ズレは吸収しない。
@@ -3701,13 +3725,13 @@ function walletForecast(){
   return {now:now, futIncome:inc, futExpense:exp, end:now+inc-exp, short:Math.max(0,-(now+inc-exp))};
 }
 function bankSaved(){ return ((S.bank&&S.bank.txns)||[]).filter(t=>t.type==="sweep").reduce((a,t)=>a+num(t.amount),0); }
-function bankBalance(){
-  const b=S.bank||{}, tx=b.txns||[];
+function bankBalance(bw){
+  const b=S.bank||{}, tx=(b.txns||[]).filter(t=>bw==null||tBWal(t)===String(bw));
   const topup=tx.filter(t=>t.type==="topup").reduce((a,t)=>a+num(t.amount),0);
   const sweep=tx.filter(t=>t.type==="sweep").reduce((a,t)=>a+num(t.amount),0);
   const ret=tx.filter(t=>t.type==="return").reduce((a,t)=>a+num(t.amount),0);   /* v3.81: 所持金へ戻す */
   const adj=tx.filter(t=>t.type==="adjust").reduce((a,t)=>a+num(t.amount),0);
-  return num(b.seed)+bankGameNet()+topup-sweep-ret+adj;
+  return bankSeed(bw)+bankGameNet(bw)+topup-sweep-ret+adj;
 }
 /* v3.81: 所持金画面。残高の内訳(何が入って何が出たか)を全て見せ、起点残高だけを手で設定する。
    移動そのものは各ポットの画面(貯金の先取り入金・軍資金の補充/戻し・投資の買付)で行う */
@@ -3838,6 +3862,28 @@ function viewBank(){
   if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">振替目安を超えています +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
   /* v4.24: 開始時の残高を撤去(所持金の起点と同じ理屈——一度決めたら調整で上書きされる)。
      振替は累計を出入りの差分で示し、当月は補充枠の消化として示す(語彙は「振替」に統一) */
+  /* v4.57: **軍資金の財布の一覧**(ユーザー設計: 山木の貯玉、麻雀の相手への借り、現金の軍資金)。
+     **マイナスは異常ではなく「借り」**——貯玉も借金も遊技に紐づく金の置き場で、符号が違うだけ。
+     赤は超過・危険に予約(v4.26)しているが、ここでは**負債であること自体が意味**なので赤を使う。
+     財布が1つのうちは内訳を出さない(合計と同じ数字が並ぶだけ) */
+  {
+    const bp=bankPots();
+    h+=band("置き場");
+    bp.forEach(p=>{
+      const v=bankBalance(p.id);
+      h+='<div class="card" style="margin-bottom:8px;padding:12px">'+
+        '<div class="row between" style="align-items:baseline">'+
+        '<span style="font-size:13px;font-weight:700">'+esc(p.name)+'</span>'+
+        '<span class="mono '+(v<0?"red":v>0?"teal":"muted")+'" style="font-size:17px;font-weight:700">'+signYen(v)+'</span></div>'+
+        (v<0?'<div class="muted" style="font-size:10px;margin-top:3px">借りている状態です</div>':'')+
+        '<div class="row" style="gap:6px;margin-top:9px">'+
+        '<button class="btn" style="flex:1;font-size:11px;padding:6px 0" data-ba="bpedit" data-v="'+esc(p.id)+'">編集</button>'+
+        '<button class="btn" style="flex:1;font-size:11px;padding:6px 0" data-ba="bpadj" data-v="'+esc(p.id)+'">調整</button>'+
+        (bp.length>1?'<button class="btn" style="flex:1;font-size:11px;padding:6px 0;color:var(--red)" data-ba="bpdel" data-v="'+esc(p.id)+'">削除</button>':'')+
+        '</div></div>';
+    });
+    h+='<button class="btn full dash" style="padding:10px 0;font-size:12px;margin-bottom:14px" data-ba="bpadd">＋ 置き場を追加</button>';
+  }
   const tAll=bankTransfer(), tMon=bankTransfer(todayStr().slice(0,7));
   h+='<div class="card2" style="margin-bottom:14px;font-size:12px;padding:12px">'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">遊技収支 累計</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
@@ -3953,7 +3999,9 @@ function isWalAcc(id){ return walletPots().some(p=>String(p.id)===String(id)); }
 function transferAccounts(){
   const out=[];
   walletPots().forEach(p=>out.push({id:String(p.id), name:p.name, bal:walletBalance(null,p.id), kind:"wal"}));
-  out.push({id:ACC_BANK, name:"軍資金", bal:bankBalance(), kind:"bank"});
+  /* v4.57: 軍資金も財布ごとに1件ずつ出す(所持金と同じ扱い)。
+     idは ACC_BANK+":"+potId。旧IDのACC_BANK単体は先頭の財布として解釈する(下位互換) */
+  bankPots().forEach(p=>out.push({id:ACC_BANK+":"+p.id, name:p.name, bal:bankBalance(p.id), kind:"bank"}));
   savingsPots().forEach(p=>out.push({id:String(p.id), name:p.name, bal:savingsBalance(p.id), kind:"pot"}));
   return out;
 }
@@ -3968,20 +4016,29 @@ function openTransfer(fromId, toId, backScreen, amount){
 }
 function doTransfer(from, to, amt, date){
   const d=date||todayStr(), sv=S.savings, bk=S.bank, wl=S.wallet;
-  const isW=id=>isWalAcc(id), isB=id=>id===ACC_BANK;
+  const isW=id=>isWalAcc(id);
+  const isB=id=>String(id)===ACC_BANK || String(id).indexOf(ACC_BANK+":")===0;
+  /* v4.57: 軍資金の財布id。旧IDのACC_BANK単体なら先頭の財布 */
+  const bwOf=id=>{ const q=String(id); const i=q.indexOf(":");
+    return i>=0 ? q.slice(i+1) : String(bankPots()[0].id); };
   const isPot=id=>!isW(id) && !isB(id);
   sv.txns=sv.txns||[]; bk.txns=bk.txns||[]; wl.txns=wl.txns||[];
   /* v4.14: 所持金側は**どの財布か**をwalIdで必ず記録する。これが無いと財布別残高が出せない */
-  if(isW(from) && isB(to)){ bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt),walId:from}); }
-  else if(isB(from) && isW(to)){ bk.txns.push({id:uid(),date:d,type:"return",amount:String(amt),walId:to}); }
+  if(isW(from) && isB(to)){ bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt),walId:from,bwal:bwOf(to)}); }
+  else if(isB(from) && isW(to)){ bk.txns.push({id:uid(),date:d,type:"return",amount:String(amt),walId:to,bwal:bwOf(from)}); }
   else if(isW(from) && isPot(to)){ sv.txns.push({id:uid(),date:d,type:"deposit",amount:String(amt),potId:to,walId:from}); }
   else if(isPot(from) && isW(to)){ sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from,walId:to}); }
-  else if(isB(from) && isPot(to)){ bk.txns.push({id:uid(),date:d,type:"sweep",amount:String(amt),potId:to}); }
+  else if(isB(from) && isPot(to)){ bk.txns.push({id:uid(),date:d,type:"sweep",amount:String(amt),potId:to,bwal:bwOf(from)}); }
+  /* v4.57: 軍資金の財布同士(山木の貯玉→現金の軍資金 など)。総額は動かないので両側adjust */
+  else if(isB(from) && isB(to)){
+    bk.txns.push({id:uid(),date:d,type:"adjust",amount:String(-amt),bwal:bwOf(from)});
+    bk.txns.push({id:uid(),date:d,type:"adjust",amount:String(amt),bwal:bwOf(to)});
+  }
   else if(isPot(from) && isB(to)){
     /* 所持金を経由させず、出入りを相殺して軍資金へ(walIdは同一なので合計influenceはゼロ) */
     const w0=walletPots()[0].id;
     sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from,walId:w0});
-    bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt),walId:w0});
+    bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt),walId:w0,bwal:bwOf(to)});
   }
   else if(isPot(from) && isPot(to)){
     /* 箱同士は外部と出入りしないので両側adjust(depositとwithdrawだと所持金が二重に動く) */
@@ -4629,6 +4686,17 @@ function viewMj(){
 
   h += band("この日の結果");
   h += '<div class="card" id="mj-summary">'+mjSummary(m)+'</div>';
+  /* v4.57: 麻雀も**どの置き場の金でやったか**。高レートで負けて相手に借りる場合、
+     その相手を置き場として作れば借りがマイナス残高として残る */
+  if(bankPots().length>1){
+    const cb=String(m.bwal||bankPots()[0].id);
+    h += band("軍資金の置き場");
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:6px;margin-bottom:4px">'+
+      bankPots().map(p=>{ const v=bankBalance(p.id);
+        return '<button class="btn '+(cb===String(p.id)?"sel":"")+'" data-a="mjbwal" data-v="'+esc(p.id)+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
+        '<span class="ellip" style="display:block">'+esc(p.name)+'</span>'+
+        '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:9px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
+  }
   h += '<input class="input" placeholder="メモ(任意)" value="'+esc(m.memo||"")+'" style="margin:14px 0" data-in="mjf" data-v="memo">';
   h += '<div style="display:none"><button data-a="mjsave">保存</button></div>';
   return h;
@@ -4734,6 +4802,7 @@ function bindMj(){
         const e=(S.entries||[]).find(x=>String(x.id)===String(v));
         if(e){ (m.expenses=m.expenses||[]).push({id:uid(), store:e.store||"", item:(e.item||e.memo||e.category||"支出"), amount:String(num(e.amount)), fromEntry:e.id, fromData:Object.assign({},e)}); UI.xferOpen=false; render(); }
       }
+      else if(a==="mjbwal"){ UI.mjDraft.bwal=String(v); render(); }
       else if(a==="mjsave") saveMj();
     };
   });
@@ -4770,6 +4839,7 @@ function saveMj(){
       type: fin>0?"income":"expense",
       category: "遊技",
       amount: Math.abs(fin),
+      bwal: String(cleaned.bwal || bankPots()[0].id),   /* v4.57: どの置き場の金か */
       memo: "麻雀"+(cleaned.category==="free"?"(フリー":"(セット")+"・"+cleaned.rule+"麻)"+(cleaned.store?" @"+cleaned.store:"")});
   }
   /* 家計簿からの振替: 選択元の記録をここで削除(保存とワンセット) */
@@ -5371,7 +5441,9 @@ function bindEntry(){
              毎回出す警告は必ず読み飛ばされる。枠内(既定¥30,000/月)は計画的な資金投入として黙って通し、
              超えた瞬間だけ止める。**出所は問わない**——貯金→所持金→軍資金と迂回しても
              最後は必ずtopupになるので、月次合計で見れば同じ数字になる */
-          if(ta.id===ACC_BANK){
+          /* v4.57: 軍資金のidが ACC_BANK:<財布> になったので前方一致で判定する。
+             **枠は軍資金の総量に対するもの**なので、どの財布へ入れても同じ枠を消費する */
+          if(String(ta.id).indexOf(ACC_BANK)===0){
             const cap=bankRefillCap(), used=bankRefillUsed(String(f.date).slice(0,7));
             if(used+amt > cap){
               const over=used+amt-cap;
@@ -5507,6 +5579,17 @@ function viewSession(){
     }
   }
 
+  /* v4.57: 遊技(乗打/単独)は軍資金で完結するので、**どの置き場の金で打ったか**を選ぶ。
+     山木の貯玉で打てば勝ち負けは山木に積まれる。代打は報酬が所持金へ入るのでここには出さない */
+  if(s.mode!=="dai" && bankPots().length>1){
+    const cb=String(s.bwal||bankPots()[0].id);
+    h += band("軍資金の置き場");
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:6px;margin-bottom:14px">'+
+      bankPots().map(p=>{ const v=bankBalance(p.id);
+        return '<button class="btn '+(cb===String(p.id)?"sel":"")+'" data-a="sbwal" data-v="'+esc(p.id)+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
+        '<span class="ellip" style="display:block">'+esc(p.name)+'</span>'+
+        '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:9px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
+  }
   /* ----- 台データ(貯玉方式) ----- */
   if(s.mode==="nori"){
     /* 乗り打ち: 自分/相方タブ */
@@ -6125,6 +6208,7 @@ function bindSessionActions(){
         save(); UI.screen="main"; UI.draft=null; render();
       }
       else if(a==="swal"){ UI.draft.wal=String(v); render(); }
+      else if(a==="sbwal"){ UI.draft.bwal=String(v); render(); }
       else if(a==="ssave") saveSession();
     };
   });
@@ -6160,6 +6244,7 @@ function saveSession(){
       category: isDai ? "副業" : "遊技",
       amount: Math.abs(fin),
       wal: isDai ? String(cleaned.wal || walletPots()[0].id) : undefined,
+      bwal: isDai ? undefined : String(cleaned.bwal || bankPots()[0].id),   /* v4.57: どの置き場の金か */
       memo: modeLabel(cleaned.mode)+(cleaned.store?" @"+cleaned.store:"")});
   }
   /* 家計簿からの振替: 選択元の記録をここで削除(保存とワンセット) */
