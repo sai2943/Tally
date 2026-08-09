@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.62 (localStorage保存・完全オフライン)
+   Tally 4.63 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.62";
+const APP_VERSION = "4.63";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3098,7 +3098,11 @@ function viewAssets(){
           return '<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
             '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+WCOL[i%WCOL.length]+';margin-right:6px"></span>'+
             '<span class="muted">'+esc(w.name)+'</span></span>'+
-            '<span class="mono muted">¥'+v.toLocaleString("ja-JP")+'　'+(wBal>0?Math.round(v/wBal*100):0)+'%</span></div>'; }).join("")+
+            /* v4.63: **割合の幅を固定**(ユーザー指摘)。56%と7%で桁数が違うと、
+               金額の桁が同じでも右端がずれて読みにくい。数字の列は幅を揃える */
+            '<span><span class="mono muted">¥'+v.toLocaleString("ja-JP")+'</span>'+
+            '<span class="mono muted" style="display:inline-block;width:38px;text-align:right">'+
+            (wBal>0?Math.round(v/wBal*100):0)+'%</span></span></div>'; }).join("")+
         '</div>';
     }
   }
@@ -3835,7 +3839,9 @@ function viewWallet(){
       wpots.map((w,i)=>{ const v=walletBalance(null,w.id);
         return '<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
           '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+COLS[i%COLS.length]+';margin-right:6px"></span>'+esc(w.name)+'</span>'+
-          '<span class="mono muted">¥'+v.toLocaleString("ja-JP")+'　'+(bal>0?Math.round(v/bal*100):0)+'%</span></div>'; }).join("")+
+          /* v4.63: 割合の幅を固定(桁数の違いで金額の右端がずれるため) */
+          '<span><span class="mono muted">¥'+v.toLocaleString("ja-JP")+'</span>'+
+          '<span class="mono muted" style="display:inline-block;width:38px;text-align:right">'+(bal>0?Math.round(v/bal*100):0)+'%</span></span></div>'; }).join("")+
       '</div></div>';
   }
   wpots.forEach(w=>{
@@ -4215,7 +4221,9 @@ function viewSavings(){
     pots.forEach((pt,i)=>{
       h+='<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
         '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+COLS[i%COLS.length]+';margin-right:6px"></span>'+esc(pt.name)+'</span>'+
-        '<span class="mono muted">¥'+pt.bal.toLocaleString("ja-JP")+'　'+(bal>0?Math.round(pt.bal/bal*100):0)+'%</span></div>';
+        /* v4.63: 割合の幅を固定(桁数の違いで金額の右端がずれるため) */
+        '<span><span class="mono muted">¥'+pt.bal.toLocaleString("ja-JP")+'</span>'+
+        '<span class="mono muted" style="display:inline-block;width:38px;text-align:right">'+(bal>0?Math.round(pt.bal/bal*100):0)+'%</span></span></div>';
     });
     h+='</div>';
   }
