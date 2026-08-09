@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.64 (localStorage保存・完全オフライン)
+   Tally 4.65 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.64";
+const APP_VERSION = "4.65";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3129,7 +3129,6 @@ function viewAssets(){
   h+='</div>';
   const inv=S.invest||{holdings:[]};
   const invCost=(inv.holdings||[]).reduce((a,x)=>a+num(x.cost),0);
-  const bufBal=((inv.bufferTxns)||[]).reduce((a,t)=>a+num(t.amount),0);
   const mkNow=monthKey();
   const boughtThis=(inv.holdings||[]).filter(x=>(x.buys||[]).some(b=>(b.date||"").startsWith(mkNow))).length;
   /* v4.30: 並びを **所持金→貯金→軍資金→投資** に(ユーザー設計)。
@@ -3142,7 +3141,7 @@ function viewAssets(){
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="invest">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:13px;font-weight:700">投資 <span class="muted" style="font-size:10px;font-weight:400">積立額</span></span>'+
     '<span><span class="mono teal" style="font-size:18px;font-weight:700">¥'+invCost.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
-    '<div class="row between" style="font-size:11px"><span class="muted">'+((inv.holdings||[]).length)+'銘柄 ・ Buffer ¥'+bufBal.toLocaleString("ja-JP")+'</span>'+
+    '<div class="row between" style="font-size:11px"><span class="muted">'+((inv.holdings||[]).length)+'銘柄</span>'+
     '<span class="muted">今月の買付 '+boughtThis+'/'+((inv.holdings||[]).filter(x=>x.frame!=="yutai").length||0)+'銘柄</span></div></div>';
   return h;
 }
@@ -3387,32 +3386,33 @@ function invYearBuys(frame){
 }
 function genInvestAudit(){
   const inv=S.invest||{}; const today=todayStr();
-  const bufBal=((inv.bufferTxns)||[]).reduce((a,t)=>a+num(t.amount),0);
   const L=[];
   L.push("# 投資ポートフォリオ監査資料("+today+")");
   L.push("");
-  L.push("## 投資方針(本人記述)");
-  L.push(inv.policy && inv.policy.trim() ? inv.policy.trim() : "(未記入)");
-  L.push("");
+  /* v4.65: 方針の記述は出力しない(IPSという別文書が持つ)。
+     ここが答えるべきは**どの銘柄にいくら入れて、枠がどれだけ残っているか**だけ */
   L.push("## 保有一覧(積立額ベース・時価は意図的に不採用)");
   (inv.holdings||[]).forEach(x=>{
     L.push("### "+x.name+" ["+(FRAME_LABEL[x.frame]||x.frame)+"枠]");
     L.push("- 保有: "+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+" / 積立額の累計 ¥"+num(x.cost).toLocaleString("ja-JP"));
     const yb=(x.buys||[]).filter(b=>(b.date||"").startsWith(String(new Date().getFullYear()))).reduce((s,b)=>s+num(b.amount),0);
     L.push("- 当年買付額: ¥"+yb.toLocaleString("ja-JP")+" / 買付回数(通算): "+((x.buys||[]).length)+"回");
-    L.push("- 保有理由: "+(x.thesis||"(未記入)"));
-    L.push("- 売却条件: "+(x.exit||"(未記入)"));
-    if(x.note) L.push("- メモ: "+x.note);
     L.push("");
   });
+  { const bk=invBookByFrame(), L2=NISA_LIFETIME;
+    L.push("## NISA生涯枠(簿価=買った金額で管理)");
+    L.push("- 合計: ¥"+bk.nisa.toLocaleString("ja-JP")+" / ¥"+L2.total.toLocaleString("ja-JP")+
+      "  残り ¥"+Math.max(0,L2.total-bk.nisa).toLocaleString("ja-JP"));
+    L.push("- つみたて投資枠: ¥"+bk.tsumitate.toLocaleString("ja-JP")+
+      "  (実質上限 ¥"+Math.max(0,L2.total-bk.seicho).toLocaleString("ja-JP")+")");
+    L.push("- 成長投資枠: ¥"+bk.seicho.toLocaleString("ja-JP")+
+      " / ¥"+L2.seicho.toLocaleString("ja-JP"));
+    if(bk.other>0) L.push("- 枠の指定なし: ¥"+bk.other.toLocaleString("ja-JP"));
+    L.push("");
+  }
   L.push("## NISA枠の当年消化");
   L.push("- つみたて枠: ¥"+invYearBuys("tsumitate").toLocaleString("ja-JP")+" / ¥"+NISA_CAPS.tsumitate.toLocaleString("ja-JP"));
   L.push("- 成長枠: ¥"+invYearBuys("seicho").toLocaleString("ja-JP")+" / ¥"+NISA_CAPS.seicho.toLocaleString("ja-JP"));
-  L.push("");
-  L.push("## 暴落時Buffer(現金)");
-  L.push("- 残高: ¥"+bufBal.toLocaleString("ja-JP"));
-  const recent=((inv.bufferTxns)||[]).slice(-6).reverse();
-  recent.forEach(t=>L.push("- "+t.date+" "+(num(t.amount)>=0?"+":"")+"¥"+num(t.amount).toLocaleString("ja-JP")+(t.memo?" ("+t.memo+")":"")));
   L.push("");
   /* v3.29: 生活防衛資金・現金ポジション(貯金台帳から自動導出・画面のロードマップと同一計算)。
      防衛資金なき投資=強制売却リスクの購入(v3.24)——現金の守備線を見せずにリスク監査はさせられない */
@@ -3447,14 +3447,13 @@ function genInvestAudit(){
   L.push("1. 方針と保有の整合性(シナリオと実際の銘柄構成のズレ)");
   L.push("2. 集中リスク・相関(想定シナリオが外れた場合の同時毀損)");
   L.push("3. 各銘柄の売却条件の明確性・検証可能性");
-  L.push("4. 実行規律(買付頻度・NISA枠の使い方・Bufferの運用)");
+  L.push("4. 実行規律(買付頻度・NISA枠の使い方)");
   L.push("5. 見落としているリスクや盲点");
   L.push("6. 生活防衛資金の十分性(月間支出との比・投資規模とのバランス・暴落時に売らずに耐える態勢か)");
   return L.join("\n");
 }
 function viewInvest(){
   const inv=S.invest||{policy:"",holdings:[],bufferTxns:[]};
-  const bufBal=(inv.bufferTxns||[]).reduce((a,t)=>a+num(t.amount),0);
   let h='<div class="hdr"><button class="navbtn" data-iv="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">投資</div><button class="navbtn" data-iv="audit" style="font-size:12px;color:var(--teal)">AI監査</button></div>';
   /* v4.48/v4.49: **生涯枠と年間枠を1枚で見せる**(ユーザー設計)。
      枠は2段構え——生涯1800万(成長は1200万まで)と、年間360万(つみたて120/成長240)。
@@ -3550,12 +3549,8 @@ function viewInvest(){
   }
   h+='</div>';
   /* v4.49: 年間枠の消化は生涯枠カードに統合したのでここには置かない(二重表示になる) */
-  /* Buffer */
-  h+='<div class="card" style="margin-bottom:12px"><div class="row between" style="align-items:baseline;margin-bottom:6px">'+
-    '<span style="font-size:13px;font-weight:700">Buffer <span class="muted" style="font-size:10px;font-weight:400">暴落時の弾</span></span>'+
-    '<span class="mono teal" style="font-size:18px;font-weight:700">¥'+bufBal.toLocaleString("ja-JP")+'</span></div>'+
-    '<div class="row" style="gap:8px"><button class="btn" style="flex:1;font-size:12px;padding:8px 0" data-iv="bufin">＋ 積立を記録</button>'+
-    '<button class="btn" style="flex:1;font-size:12px;padding:8px 0" data-iv="bufout">− 出動を記録</button></div></div>';
+  /* v4.65: **Bufferを撤去**(ユーザー設計: 投資用の貯金は作らない)。
+     待機現金は持たない方針(IPS §3.2)と整合する。貯金が必要なら貯金の箱で作る */
   /* 保有一覧 */
   h+=band("保有(タップで詳細・買付)");
   if(!(inv.holdings||[]).length){
@@ -3596,14 +3591,10 @@ function viewInvestDetail(){
     '<button class="btn tealb" style="flex:none;padding:8px 12px;font-weight:700" data-iv="buy">記録</button></div>'+
     '<div class="row" style="gap:8px;align-items:center;margin-top:8px"><span class="muted" style="font-size:11px;flex:none">単位</span>'+
     ["株","口"].map(u=>'<button class="btn '+((x.unit||"株")===u?"sel":"")+'" style="flex:none;font-size:11px;padding:5px 14px" data-iv="unit" data-v="'+u+'">'+u+'</button>').join("")+'</div></div>';
-  /* シナリオ帳 */
-  h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:10px;margin-bottom:4px">保有理由(なぜ持つのか)</div>'+
-    '<textarea class="input" id="iv-thesis" rows="2" style="width:100%;font-size:12px;line-height:1.6">'+esc(x.thesis||"")+'</textarea>'+
-    '<div class="muted" style="font-size:10px;margin:8px 0 4px">売却条件(いつ・何が起きたら手放すか)</div>'+
-    '<textarea class="input" id="iv-exit" rows="2" style="width:100%;font-size:12px;line-height:1.6">'+esc(x.exit||"")+'</textarea>'+
-    '<div class="muted" style="font-size:10px;margin:8px 0 4px">メモ(優待内容・権利月など)</div>'+
-    '<textarea class="input" id="iv-note" rows="2" style="width:100%;font-size:12px;line-height:1.6">'+esc(x.note||"")+'</textarea>'+
-    '<button class="btn tealb full" style="margin-top:8px;padding:9px 0;font-weight:700" data-iv="scsave">シナリオを保存</button></div>';
+  /* v4.65: **保有理由・売却条件・メモを撤去**(ユーザー設計)。
+     投資の理由づけは別の場で議論するものであり、家計簿アプリが持つ必要がない。
+     ここが答えるべきは**「どの銘柄にいくら入れたか」だけ**。方針はIPS(別文書)が持つ */
+
   /* 買付履歴 */
   const buys=(x.buys||[]).slice().reverse();
   if(buys.length){
@@ -3634,17 +3625,11 @@ function bindInvest(){
         const done=()=>toast("監査資料をコピーしました("+md.length+"字) — Claudeに貼り付けてください");
         if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(md).then(done,()=>alert(md)); } else alert(md);
       }
-      else if(a==="bufin"||a==="bufout"){
-        const p=prompt(a==="bufin"?"積立額(円):":"出動額(円):"); if(p==null)return;
-        const amt=num(p); if(!amt)return;
-        const memo=prompt("メモ(任意):")||"";
-        inv.bufferTxns=inv.bufferTxns||[];
-        inv.bufferTxns.push({id:uid(),date:todayStr(),amount:(a==="bufin"?amt:-amt),memo:memo});
-        save(); render();
-      }
       else if(a==="new"){
         const nm=prompt("銘柄名(例: S&P500 / URA / 楽天G):"); if(nm==null||!nm.trim())return;
-        const x={id:uid(),name:nm.trim(),frame:"seicho",qty:0,cost:0,unit:"株",thesis:"",exit:"",note:"",buys:[]};
+        /* v4.65: 既定は**つみたて枠・口**(オルカンの投信を想定)。
+           シナリオ項目(thesis/exit/note)は持たない——投資理由は別の場で議論する */
+        const x={id:uid(),name:nm.trim(),frame:"tsumitate",qty:0,cost:0,unit:"口",buys:[]};
         inv.holdings=inv.holdings||[]; inv.holdings.push(x);
         UI.invId=x.id; UI.screen="investdetail"; save(); render();
       }
@@ -3660,15 +3645,6 @@ function bindInvest(){
         x.buys=x.buys||[]; x.buys.push({id:uid(),date:d,qty:q,amount:amt});
         x.qty=num(x.qty)+q; x.cost=num(x.cost)+amt;
         save(); render(); toast("買付を記録しました");
-      }
-      else if(a==="scsave"){
-        const x=inv.holdings.find(z=>String(z.id)===String(UI.invId)); if(!x)return;
-        const nm=document.getElementById("iv-name");
-        x.name=(nm&&nm.value.trim())||x.name;
-        x.thesis=(document.getElementById("iv-thesis")||{}).value||"";
-        x.exit=(document.getElementById("iv-exit")||{}).value||"";
-        x.note=(document.getElementById("iv-note")||{}).value||"";
-        save(); render(); toast("シナリオを保存しました");
       }
       else if(a==="del"){
         const x=inv.holdings.find(z=>String(z.id)===String(UI.invId)); if(!x)return;
