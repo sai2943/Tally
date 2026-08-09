@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.63 (localStorage保存・完全オフライン)
+   Tally 4.64 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.63";
+const APP_VERSION = "4.64";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3114,7 +3114,14 @@ function viewAssets(){
     h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">';
     pots4.filter(p=>p.hasTarget).forEach(p=>{
       h+='<div class="row between" style="font-size:11px;margin-bottom:3px"><span class="muted">'+esc(p.name)+'</span>'+
-        '<span class="mono '+(p.done?'teal':'muted')+'">'+(p.done?'達成':'あと ¥'+p.short.toLocaleString("ja-JP"))+'</span></div>'+
+        /* v4.64: **「あと」の位置を固定**(ユーザー指摘)。金額と同じspanに入れていたため、
+           桁数(¥60,000 と ¥460,000)で「あと」の位置が左右に動いていた。
+           語と数字を分け、**数字側に固定幅を与えて右端で揃える** */
+        (p.done
+          ? '<span class="mono teal">達成</span>'
+          : '<span><span class="mono muted" style="font-size:10px">あと</span>'+
+            '<span class="mono muted" style="display:inline-block;min-width:74px;text-align:right"> ¥'+
+            p.short.toLocaleString("ja-JP")+'</span></span>')+'</div>'+
         '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:7px"><div style="height:100%;width:'+p.pct+'%;background:'+(p.done?'var(--teal)':'var(--amber)')+'"></div></div>';
     });
     h+='</div>';
