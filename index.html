@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.66 (localStorage保存・完全オフライン)
+   Tally 4.67 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.66";
+const APP_VERSION = "4.67";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5195,8 +5195,20 @@ function normDate(v){
   return m ? (m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0")) : "";
 }
 function parseReceipt(txt){
-  const out={date:"",store:"",wallet:"",category:"",type:"",items:[]};
-  String(txt||"").split(/\r?\n/).forEach(ln=>{
+  const out={date:"",store:"",wallet:"",category:"",type:"",total:"",items:[],blocks:0,totalNum:null};
+  /* v4.67: **コードフェンスがあれば中だけを読む**。
+     ショートカットで自動化すると**モデルの出力が丸ごとクリップボードに入る**ため、
+     前後の散文が混ざる。「合計 5,432円」のような行は品目として拾えてしまうので、
+     プロンプトで禁じるのではなく構造で締め出す(v3.31の交通コンポーザと同じ思想)。
+     閉じフェンスが無い(出力が途中で切れた)場合も開始以降を拾う。
+     ブロックが複数あるときは**最初の1つだけ**——ヘッダは1組しか持てず、
+     2つ目の#storeが1つ目の品目に被さって誤った店に入るため。件数は呼び出し側で警告する */
+  let src=String(txt||"");
+  if(src.indexOf("```")>=0){
+    const blocks=[...src.matchAll(/```[^\n]*\n([\s\S]*?)(?:```|$)/g)].map(m=>m[1]);
+    if(blocks.length){ out.blocks=blocks.length; src=blocks[0]; }
+  }
+  src.split(/\r?\n/).forEach(ln=>{
     const t=ln.trim(); if(!t) return;
     let m=/^#\s*([A-Za-z]+)\s*[:=]?\s*(.+)$/.exec(t);
     if(m){ const k=m[1].toLowerCase(), v=m[2].trim();
@@ -5215,7 +5227,23 @@ function parseReceipt(txt){
     if(m){ const nm=m[1].trim().replace(/[|｜]\s*$/,""), am=num(String(m[2]).replace(/,/g,""));
       if(am>0) out.items.push({item:nm, amount:String(am)}); }
   });
+  if(/\d/.test(out.total)) out.totalNum=num(String(out.total).replace(/[,¥￥円\s]/g,""));
   return out;
+}
+/* v4.67: 取り込みの警告。**自動化すると人間がブロックを目で選ぶ工程が無くなる**ので、
+   取りこぼしとブロックの取り違えを機械に言わせる。
+   `#total`(レシートの請求額)と明細の合計が合わなければ、読み落としか按分ミス。
+   トーストは1.2秒で消えるため**警告はalertで止める**(routineな確認とは surface を分ける) */
+function receiptNote(r){
+  const w=[];
+  if(r.blocks>1) w.push("⚠ ブロックが"+r.blocks+"個あります\n最初の1つだけ取り込みました。\n残りはもう一度貼ってください。");
+  if(r.totalNum!=null){
+    const sum=r.items.reduce((a,x)=>a+num(x.amount),0);
+    if(sum!==r.totalNum) w.push("⚠ 合計が ¥"+Math.abs(r.totalNum-sum).toLocaleString("ja-JP")+" ズレています\n"+
+      "レシート ¥"+r.totalNum.toLocaleString("ja-JP")+" / 明細 ¥"+sum.toLocaleString("ja-JP")+"\n"+
+      "読み落としか按分ミスの可能性。\n金額を確認してください。");
+  }
+  return w.join("\n\n");
 }
 /* v4.53: 行に日付が付いていれば**フォームではなく直接エントリを作る**。
    フォームは日付を1つしか持てないため。**保存前に必ず件数と合計を確認させる**(取り込みは目視できる形を崩さない) */
@@ -5228,7 +5256,9 @@ function applyReceiptDated(r){
   const rows = r.items.filter(x=>x.date);
   const total = rows.reduce((a,x)=>a+num(x.amount),0);
   const days = [...new Set(rows.map(x=>x.date))].sort();
-  if(!confirm(rows.length+"件を取り込みます\n\n"+days[0]+" 〜 "+days[days.length-1]+"\n"+
+  /* v4.67: **保存前に止められる唯一の場所**なので、警告はここに出す */
+  const note=receiptNote(r);
+  if(!confirm((note?note+"\n\n":"")+rows.length+"件を取り込みます\n\n"+days[0]+" 〜 "+days[days.length-1]+"\n"+
       (store?store+"\n":"")+walName(wal)+" / "+cat+"\n合計 ¥"+total.toLocaleString("ja-JP")+"\n\nよろしいですか?")) return 0;
   rows.forEach(x=>{
     const item=(x.item||"").trim();
@@ -5459,23 +5489,28 @@ function bindEntry(){
           navigator.clipboard.readText().then(txt=>{
             const t=String(txt||"").trim();
             if(!t){ toast("クリップボードが空です"); fallback(""); return; }
-            if(!parseReceipt(t).items.length){ toast("書式が読み取れません"); fallback(t); return; }
+            const r=parseReceipt(t);
+            if(!r.items.length){ toast("書式が読み取れません"); fallback(t); return; }
             const n=applyReceipt(t);
             if(!n){ fallback(t); return; }
             UI.pasteOpen=false; UI.pasteText="";
             if(n<0){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
             render(); toast(n+"件を取り込みました");
+            /* v4.67: 日付ありの経路は確認ダイアログで既に出しているので、ここは重複させない */
+            const note=receiptNote(r); if(note) alert(note);
           }).catch(()=>fallback(""));
         } else fallback("");
       }
       else if(a==="pcancel"){ UI.pasteOpen=false; render(); }
       else if(a==="papply"){
         const el=document.getElementById("e-paste");
-        const n=applyReceipt(el?el.value:UI.pasteText);
+        const raw=el?el.value:UI.pasteText;
+        const n=applyReceipt(raw);
         if(!n){ toast("品目を読み取れませんでした"); return; }
         UI.pasteOpen=false; UI.pasteText="";
         if(n<0){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
         render(); toast(n+"件を取り込みました");
+        const note=receiptNote(parseReceipt(raw)); if(note) alert(note);
       }
       else if(a==="exadd"){ f.extra=(f.extra||[]).concat([{item:"",amount:""}]); render(); }
       else if(a==="exdel"){ f.extra=(f.extra||[]).filter((_,i)=>String(i)!==String(v)); render(); }
