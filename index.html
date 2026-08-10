@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.65 (localStorage保存・完全オフライン)
+   Tally 4.66 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.65";
+const APP_VERSION = "4.66";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5382,7 +5382,7 @@ function viewEntry(){
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
         '<button class="btn tealb" style="flex:1;font-size:12px;padding:9px 0;font-weight:700" data-a="papply">取り込む</button></div></div>'
-      : '<button class="btn full" style="padding:9px 0;font-size:12px;margin-bottom:12px;color:var(--teal)" data-a="popen">レシートを貼り付けて取り込む</button>';
+      : '<button class="btn full" style="padding:9px 0;font-size:12px;margin-bottom:12px;color:var(--teal)" data-a="popen">レシートを取り込む</button>';
   }
   let extraHtml="";
   if(!isTr && UI.editEntryId===null && !(f.tmode)){
@@ -5449,7 +5449,25 @@ function bindEntry(){
       if(a==="back"){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }
       else if(a==="etype"){ f.type=v; if(v!=="transfer") f.category = v==="expense"?"消費":"給与"; render(); }
       else if(a==="ewal"){ f.wal=String(v); render(); }
-      else if(a==="popen"){ UI.pasteOpen=true; UI.pasteText=""; render(); }
+      /* v4.66: **まずクリップボードから直接読む**(ユーザー要望: ワンタッチにしたい)。
+         iOSは読み取りに「ペースト」の確認を挟むので、実質2タップで取り込みまで終わる。
+         読めない/中身が書式でない場合は従来どおり貼り付け欄を開く——**黙って失敗させない**。
+         ショートカット経由でURLを叩く案は、PWAではなくSafariが開くことがあるため採らない */
+      else if(a==="popen"){
+        const fallback=(txt)=>{ UI.pasteOpen=true; UI.pasteText=txt||""; render(); };
+        if(navigator.clipboard && navigator.clipboard.readText){
+          navigator.clipboard.readText().then(txt=>{
+            const t=String(txt||"").trim();
+            if(!t){ toast("クリップボードが空です"); fallback(""); return; }
+            if(!parseReceipt(t).items.length){ toast("書式が読み取れません"); fallback(t); return; }
+            const n=applyReceipt(t);
+            if(!n){ fallback(t); return; }
+            UI.pasteOpen=false; UI.pasteText="";
+            if(n<0){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
+            render(); toast(n+"件を取り込みました");
+          }).catch(()=>fallback(""));
+        } else fallback("");
+      }
       else if(a==="pcancel"){ UI.pasteOpen=false; render(); }
       else if(a==="papply"){
         const el=document.getElementById("e-paste");
