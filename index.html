@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.68 (localStorage保存・完全オフライン)
+   Tally 4.69 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.68";
+const APP_VERSION = "4.69";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3156,8 +3156,6 @@ function viewAssets(){
   h+='</div>';
   const inv=S.invest||{holdings:[]};
   const invCost=(inv.holdings||[]).reduce((a,x)=>a+num(x.cost),0);
-  const mkNow=monthKey();
-  const boughtThis=(inv.holdings||[]).filter(x=>(x.buys||[]).some(b=>(b.date||"").startsWith(mkNow))).length;
   /* v4.30: 並びを **所持金→貯金→軍資金→投資** に(ユーザー設計)。
      **情報量の多い順であり、使う頻度の順でもある**——軍資金は構造上どうしても薄く、
      投資は2027年開始まで使わない。上から順に見て、下ほど「今は見なくていい」になる */
@@ -3165,11 +3163,29 @@ function viewAssets(){
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     /* v4.27: バーと「残りわずか」を撤去。目安を超えた時だけ回収を促す一行を出す */
     (bBal>ceil?'<div class="amber" style="font-size:10px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'')+'</div>';
+  /* v4.69: **銘柄数と「今月の買付 N/M銘柄」を撤去**(ユーザー指摘)。
+     オルカン1本の方針(IPS)では**銘柄数は常に1になる数字**で、見ても行動が変わらない。
+     ヘッダの小さいサブラベル「積立額」も外した——所持金・貯金・軍資金はどれもラベル1語で、
+     **ここだけが文法から外れていたのが「ダサく見える」の正体**。
+     代わりに**貯金カードとまったく同じ形**(目標に対する「あと」+進捗バー)にする。
+     投資の目標は**NISA生涯枠1,800万を埋めること**で、これはIPSの
+     「投入額が唯一の管理対象・評価額は見ない」と完全に一致する(v3.18で時価を持たない方針)。
+     消化率(%)は出さない——貯金カードが出していないので、揃える方を採る */
+  const nisaBook=invBookByFrame().nisa;
+  const nisaLeft=Math.max(0, NISA_LIFETIME.total-nisaBook);
+  const nisaPct=Math.min(100, Math.round(nisaBook/NISA_LIFETIME.total*1000)/10);
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="invest">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:6px"><span style="font-size:13px;font-weight:700">投資 <span class="muted" style="font-size:10px;font-weight:400">積立額</span></span>'+
+    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">投資</span>'+
     '<span><span class="mono teal" style="font-size:18px;font-weight:700">¥'+invCost.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
-    '<div class="row between" style="font-size:11px"><span class="muted">'+((inv.holdings||[]).length)+'銘柄</span>'+
-    '<span class="muted">今月の買付 '+boughtThis+'/'+((inv.holdings||[]).filter(x=>x.frame!=="yutai").length||0)+'銘柄</span></div></div>';
+    '<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">'+
+    '<div class="row between" style="font-size:11px;margin-bottom:3px"><span class="muted">NISA 生涯枠</span>'+
+    /* v4.64の文法: 語と数字を分け、数字側に固定幅を与えて右端で揃える */
+    (nisaLeft<=0
+      ? '<span class="mono teal">埋まりました</span>'
+      : '<span><span class="mono muted" style="font-size:10px">あと</span>'+
+        '<span class="mono muted" style="display:inline-block;min-width:74px;text-align:right"> ¥'+nisaLeft.toLocaleString("ja-JP")+'</span></span>')+'</div>'+
+    '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+nisaPct+'%;background:'+(nisaLeft<=0?'var(--teal)':'var(--amber)')+'"></div></div>'+
+    '</div></div>';
   return h;
 }
 
