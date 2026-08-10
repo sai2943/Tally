@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.67 (localStorage保存・完全オフライン)
+   Tally 4.68 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.67";
+const APP_VERSION = "4.68";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1579,9 +1579,12 @@ function viewLedger(){
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
   const byDate = {};
   detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
-  Object.entries(byDate).sort((a,b)=>a[0]<b[0]?1:-1).forEach(([d,list])=>{
+  const dayNetOf = list => list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
+  const mdOf = d => d.slice(5).replace("-","/");
+  const dayHtml = ([d,list])=>{
+    let h="";
     /* v3.46: 日別折り畳み(ユーザー発案)。既定=今日のみ展開、UI.dayOpenで明示開閉(セッション内保持・render()のscroll復元が効く) */
-    const dayNet=list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
+    const dayNet=dayNetOf(list);
     const dOpen=(UI.dayOpen&&UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayS);
     h += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;'+(d>todayS?'opacity:.62;':'')+'" data-a="dtoggle" data-v="'+d+'">'+
@@ -1602,7 +1605,31 @@ function viewLedger(){
         entryDetailHtml(e)+'</div>'+
         '<div class="mono '+clsPM(signedAmt)+'" style="font-size:14px">'+signYen(signedAmt)+'</div></div>';
       }).join("")+'</div>')+'</div>';
-  });
+    return h;
+  };
+  /* v4.68: **未来は1行に畳む**(ユーザー指摘: 今日の日付に辿り着くのも一苦労)。
+     固定費は年内分が先に生成されるので、8月なら平日の駐輪だけで**今日より上に14行=ちょうど1画面**積まれていた。
+     未来の固定費は明細のどの用途にも寄与しない——今日使った金ではなく、まだ引き落とされておらず、
+     自動生成なのでミスはテンプレ側にあり、検索の対象でもない。**しかもv4.62で予算カードに「未引落」として既に出ている**
+     (催促カードとバンドの重複を潰したのと同じ問題がここに残っていた)。
+     **消さずに畳む**のは、手で入れた未来の予定支出が埋もれると困るため。畳んだ姿はv2.83の
+     「🔒 X〜Y回戦 確定済み」バーと同じ語彙で、新しい概念を増やさない。
+     **明細のゴール = 上から3行で今日と昨日が読めて、下へ行けば月全体を付け合わせできる。** */
+  const allDays = Object.entries(byDate).sort((a,b)=>a[0]<b[0]?1:-1);
+  const futDays = allDays.filter(x=>x[0]>todayS), pastDays = allDays.filter(x=>x[0]<=todayS);
+  if(futDays.length){
+    const fCnt=futDays.reduce((a2,x)=>a2+x[1].length,0);
+    const fNet=futDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
+    const fOpen=!!UI.futOpen;
+    const span=futDays.length>1 ? mdOf(futDays[futDays.length-1][0])+'〜'+mdOf(futDays[0][0]) : mdOf(futDays[0][0]);
+    h += '<div style="margin-bottom:8px">'+
+      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ftoggle">'+
+      '<span class="mono muted" style="font-size:11px">'+(fOpen?'▾':'▸')+' 予定 '+span+
+      '<span style="margin-left:8px;font-size:10px">'+fCnt+'件</span></span>'+
+      '<span class="mono '+clsPM(fNet)+'" style="font-size:13px;font-weight:700">'+signYen(fNet)+'</span></div></div>';
+    if(fOpen) futDays.forEach(x=>{ h += dayHtml(x); });
+  }
+  pastDays.forEach(x=>{ h += dayHtml(x); });
   return h;
 }
 
@@ -5030,6 +5057,8 @@ function bindMain(){
         UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.screen="mahjong-edit"; render();
       }
       else if(a==="dtoggle"){ const d=el.dataset.v; UI.dayOpen=UI.dayOpen||{}; const cur=(UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayStr()); UI.dayOpen[d]=!cur; render(); }
+      /* v4.68: 明細の「予定」バー。既定は畳んだまま(UI.futOpenの未定義=false) */
+      else if(a==="ftoggle"){ UI.futOpen=!UI.futOpen; render(); }
       else if(a==="eedit"){
         const e = S.entries.find(x=>String(x.id)===String(v));
         if(!e) return;
