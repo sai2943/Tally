@@ -222,7 +222,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.74 (localStorage保存・完全オフライン)
+   Tally 4.75 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -784,7 +784,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.74";
+const APP_VERSION = "4.75";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -832,6 +832,8 @@ function subnavExtra(sc){
      フォームが開いている時だけ出す画面は、その状態を条件にする */
   const SV = 'color:var(--amber);font-weight:700';
   if(sc==="bank") return [["[data-ba='edit']",'編集',''], ["[data-ba='adjust']",'調整','']];
+  /* v4.75: ボーダー試算のクリア。ヘッダに置くとスクロール時にステータスバーと重なるため下バーへ */
+  if(sc==="bordertool") return [["[data-a='btreset']",'クリア','color:var(--red)']];
   if(sc==="mahjong-edit") return [["[data-a='mjsave']",'保存する',SV]];
   if(sc==="session")      return [["[data-a='ssave']",'保存する',SV]];
   if(sc==="fixed"  && UI.fixForm)   return [["[data-fa='fsave']", UI.fixForm.editId?'保存する':'登録する', SV]];
@@ -6095,10 +6097,18 @@ function viewBorderTool(){
   const m = S.borderTool;
   const rates = { pushPayout: m.pushPayout, pushDraw: m.pushDraw, genkin: m.genkin };
   const master = findMaster(m);
+  /* v4.75: **クリアをヘッダから下バーへ**(ユーザー設計)。
+     ヘッダは本文と一緒にスクロールするので、下まで送るとステータスバーの時刻・電池と重なって
+     読めなくなっていた(実機で確認)。下バーは #app の外の兄弟(flex:0 0 auto)で**常に見えている**ので、
+     この重なりが起きない。v4.39の「滅多に触らない操作は最下部まで探させない」とは矛盾しない——
+     あれは**スクロールする本文の末尾**の話で、こちらは常設のバーだから。
+     実装はv4.43と同じ「本文に display:none で置いたボタンを下バーがclick()する」方式。
+     処理を二重に書かないので btreset の分岐は1つのまま */
   let h = '<div class="row between" style="align-items:center;margin-bottom:6px">'+
     '<button class="navbtn" data-a="btback" style="font-size:14px">‹ 戻る</button>'+
     '<h1 style="font-size:17px;margin:0">ボーダー試算</h1>'+
-    '<button class="chip" data-a="btreset" style="color:var(--red)">クリア</button></div>';
+    '<div style="width:44px"></div></div>'+
+    '<button class="chip" data-a="btreset" style="display:none">クリア</button>';
   h += '<div class="muted" style="font-size:11px;margin-bottom:12px">この台を続けるか判断する試算(収支の記録とは別)。<br>着席時・当たり後の再開時・現金追加時に区間を追加。<br>回転率とボーダー乖離が出ます。</div>';
 
   /* 貯玉プッシュ レート */
