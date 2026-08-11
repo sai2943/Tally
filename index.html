@@ -44,16 +44,11 @@
      navbarはmain画面(常にダーク)でのみ表示されるため色は固定値でよい */
   #navbar::before{content:""; position:absolute; left:0; right:0; top:-24px; height:24px;
     background:linear-gradient(rgba(11,31,30,0), var(--bg)); pointer-events:none;}
-  /* v4.73: **金額の書体を等幅からシステム書体へ**(ユーザー判断)。
-     金額はこのアプリで一番読む対象なのに、**一番細い書体で一番小さいサイズ**に置かれていた
-     (mono 135箇所のうち66%が11px以下)。SF Monoはコード用で12〜14px以上を想定した設計であり、
-     10〜11pxの小サイズはSF Pro Textの領分(iOSの本文書体は光学サイズが小サイズ用に別途調整されている)。
-     **桁揃えは tabular-nums が担うので等幅である必要はない**——v4.64で作った右端揃えの文法は保たれる。
-     字送りに依存した箇所は無いことを確認済み(padStartは全て日付/時刻の"0"埋めで空白揃えではない)。
-     クラス名は .mono のまま(135箇所+ウィジェット側の参照があるため)。意味は「等幅」ではなく
-     **「桁が揃う数字」**に読み替える。
-     戻すときはこの1行を ui-monospace,'SF Mono',Menlo,monospace に戻すだけでよい */
-  .mono{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,'Hiragino Sans',sans-serif;
+  /* v4.73→v4.74: **等幅へ戻した**(ユーザー判断)。SF Pro Textに替えると小サイズは読みやすくなったが、
+     **数字と日本語が同じ書体族になり「変動消費 ¥22,742 / ¥28,339」が一続きの文字列に見える**。
+     等幅は雰囲気の話だと思っていたが、**書体の違いが「ここから数字」という区切りとして機能していた**。
+     可読性はサイズ側(v4.74で10px→11px)で取る。**この行はもう触らない。** */
+  .mono{font-family:ui-monospace,'SF Mono',Menlo,monospace;
     font-variant-numeric:tabular-nums; -webkit-font-feature-settings:"tnum" 1; font-feature-settings:"tnum" 1;}
   .muted{color:var(--muted);}
   .teal{color:var(--teal);} .red{color:var(--red);} .amber{color:var(--amber);}
@@ -97,8 +92,8 @@
     background:transparent; color:var(--muted); cursor:pointer; font-family:inherit;}
   .chip.sel{border-color:var(--teal); color:var(--teal); background:rgba(45,212,191,.12);}
   .grid2{display:grid; grid-template-columns:1fr 1fr; gap:6px;}
-  .tag{font-size:10px; padding:1px 6px; border-radius:4px; white-space:nowrap;}
-  .syncbadge{font-size:10px; padding:3px 9px; border-radius:20px; font-weight:700; white-space:nowrap; border:1px solid var(--line); color:var(--muted);}
+  .tag{font-size:11px; padding:1px 6px; border-radius:4px; white-space:nowrap;}
+  .syncbadge{font-size:11px; padding:3px 9px; border-radius:20px; font-weight:700; white-space:nowrap; border:1px solid var(--line); color:var(--muted);}
   .syncbadge.ready{border-color:var(--teal); color:var(--teal);}
   .syncbadge.syncing{border-color:var(--amber); color:var(--amber);}
   .syncbadge.error{border-color:var(--red); color:var(--red);}
@@ -127,12 +122,12 @@
   .mjt-sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding-bottom:8px;margin-bottom:10px;border-bottom:1px solid var(--line);}
   table.mjt.sum .mjt-no{white-space:nowrap;}
   table.mjt.sum td,table.mjt.sum th{border-color:var(--line);}
-  .mjt-mini{font-size:10px;font-family:ui-monospace,monospace;color:var(--muted);padding:4px 3px;white-space:nowrap;}
+  .mjt-mini{font-size:11px;font-family:ui-monospace,monospace;color:var(--muted);padding:4px 3px;white-space:nowrap;}
   .mjt-abs{color:var(--muted);font-size:12px;}
   .mjt-cell.abs{background:rgba(143,170,167,.10);}
   .mjt-auto{color:var(--amber);font-style:italic;}
   .mjt-add{color:var(--teal);cursor:pointer;font-weight:700;}
-  .mjt-pdel{font-size:10px;color:var(--red);cursor:pointer;margin-top:2px;font-weight:400;}
+  .mjt-pdel{font-size:11px;color:var(--red);cursor:pointer;margin-top:2px;font-weight:400;}
   .mjt-pad-wrap{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding-top:8px;}
   .mjt-pad-head{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 8px;}
   .mjt-pad-wrap .mjt-pad{position:static;border-top:none;padding:0 0 10px;}
@@ -216,7 +211,7 @@
   #app .pr-mid .pr-tbl th, #app .pr-mid .pr-tbl td{ font-size:15px; padding:7px 2px; }
   #app .pr-mid .pr-sum td, #app .pr-mid .pr-sum th{ font-size:13.5px; padding:6px 2px; }
   .pr-sum .pr-final td{ font-weight:700; border-top:2px solid #333 !important; font-size:12px; }
-  .pr-foot{ font-size:10px; color:#666 !important; margin-top:6px; }
+  .pr-foot{ font-size:11px; color:#666 !important; margin-top:6px; }
 </style>
 </head>
 <body>
@@ -227,7 +222,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.73 (localStorage保存・完全オフライン)
+   Tally 4.74 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -607,7 +602,7 @@ function saveLocal(){
    作業中(スコア表・記帳・各台帳)が最も不安な瞬間なので、そこにこそ常時出す。
    navbar版と同じ短形+バージョン。挿入は_renderBodyが一元的に行うので、
    **view関数の中でこれを呼ばないこと**(二重表示になる) */
-const saveIndicatorHtml = () => '<div class="muted" style="font-size:10px;text-align:center;padding:10px 0 2px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
+const saveIndicatorHtml = () => '<div class="muted" style="font-size:11px;text-align:center;padding:10px 0 2px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 /* ---------- 自動スナップショット(ローカル3世代) ----------
    起動時(日次)・復元前・同期上書き前に全データを退避。誤操作からの復旧用 */
 const SNAP_KEY = KEY + ":snaps";
@@ -712,7 +707,7 @@ function xferRowsHtml(list, act){
       '<span class="mono">'+yen(num(e.amount))+'</span></button>';
   }).join("");
 }
-const xferHint = '<div class="muted" style="font-size:10px;margin:8px 2px 0">選ぶと経費に入ります。<br>セッション保存時に元の家計簿記録は削除されます。</div>';
+const xferHint = '<div class="muted" style="font-size:11px;margin:8px 2px 0">選ぶと経費に入ります。<br>セッション保存時に元の家計簿記録は削除されます。</div>';
 /* 乗り打ちの折半調整: myShareが入力されていればそれを自分の取り分に使う(なければ折半) */
 const halfSplit = s => Math.round(poolTotal(s)/2);
 const myShare = s => (s.myShare!==undefined && s.myShare!=="") ? num(s.myShare) : halfSplit(s);
@@ -789,7 +784,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.73";
+const APP_VERSION = "4.74";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -817,7 +812,7 @@ function navHtml(){
      常時見えるのはバージョンの方が実用的——更新が反映されたかを画面を移らずに確認できる。
      v3.94: saveIndicatorHtml()も同じ文言に統一したため、オフライン保証の断言は
      文言でなくバックアップ画面の説明が担う(同じ行を2つの書式で持たない) */
-  return tabBar() + '<div class="muted" style="font-size:10px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
+  return tabBar() + '<div class="muted" style="font-size:11px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 }
 /* v3.95: **navbarの無い画面に「戻る」バーを出す**(ユーザー設計・案B)。
    従来は戻るがヘッダー左上にしか無く、下へスクロールすると一度上まで戻らないと画面を出られなかった。
@@ -872,7 +867,7 @@ function subNavHtml(){
     extra.map(x=>sep+'<button data-nav="app:'+esc(x[0])+'" style="flex:1;'+(x[2]||'')+'"><span>'+x[1]+'</span></button>').join("")+
     (withTr?sep+'<button data-nav="transfer" aria-label="振替する" style="flex:1;color:var(--teal)"><span style="font-weight:700">振替</span></button>':'')+
     '</div>'+
-    '<div class="muted" style="font-size:10px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
+    '<div class="muted" style="font-size:11px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
 }
 /* 戻る先の判定は各画面の既存ハンドラに任せ、**ヘッダーの戻るボタンをclick()するだけ**にする。
    属性名は画面ごとにdata-a/wa/sa/mt/lk/iv/fa/bu/baとバラバラだが、全て.navbtnで先頭が「‹」。
@@ -935,7 +930,7 @@ function _renderBody(){
     app.innerHTML = '<div class="hdr"><div style="width:44px"></div><div style="font-size:14px;font-weight:700">表示エラー</div><div style="width:44px"></div></div>'+
       '<div class="card"><div class="red" style="font-size:13px;font-weight:700;margin-bottom:6px">この画面の描画に失敗しました</div>'+
       '<div class="muted" style="font-size:11px;line-height:1.7">記録は無事です(保存済み)。<br>下のタブから他の画面へ移動できます。</div>'+
-      '<div class="mono muted" style="font-size:10px;margin-top:10px;word-break:break-all">'+esc(String((err&&err.message)||err))+'</div></div>';
+      '<div class="mono muted" style="font-size:11px;margin-top:10px;word-break:break-all">'+esc(String((err&&err.message)||err))+'</div></div>';
     if(navbar){ navbar.innerHTML = navHtml(); navbar.style.display="";
       document.documentElement.style.setProperty("--navh", (navbar.offsetHeight||0)+"px"); }
     bindMain();
@@ -1058,13 +1053,13 @@ function viewBudget(){
     const solved=budgetAmt(budJoin(amtV,pctV), base);
     return '<div class="card" style="margin-bottom:12px">'+
       '<div style="font-size:13px;font-weight:700;margin-bottom:2px">'+label+'</div>'+
-      '<div class="muted" style="font-size:10px;margin-bottom:8px">'+hint+'</div>'+
+      '<div class="muted" style="font-size:11px;margin-bottom:8px">'+hint+'</div>'+
       '<div class="row" style="gap:8px">'+
       '<div style="flex:1"><div class="fxl">金額(円)</div>'+
       '<input class="input mono r" type="number" inputmode="numeric" id="bud-'+key+'-amt" placeholder="上限" value="'+esc(amtV)+'"></div>'+
       '<div style="flex:1"><div class="fxl">割合(%)</div>'+
       '<input class="input mono r" type="number" inputmode="numeric" id="bud-'+key+'-pct" placeholder="任意" value="'+esc(pctV)+'"></div></div>'+
-      '<div class="muted" style="font-size:10px;margin-top:6px">今月はこの枠 → <span class="mono teal">¥'+solved.toLocaleString("ja-JP")+'</span>'+
+      '<div class="muted" style="font-size:11px;margin-top:6px">今月はこの枠 → <span class="mono teal">¥'+solved.toLocaleString("ja-JP")+'</span>'+
       ((num(amtV)>0&&parseFloat(pctV)>0)?'(両方入れると小さい方)':'')+'</div></div>';
   };
   const rr=(label,key,cur,hint)=>{
@@ -1082,12 +1077,12 @@ function viewBudget(){
   h+=row("変動消費","varc",bg["消費"],"日々の消費の上限。超えないための計器です。");
   h+=row("娯楽","amuse",bg["娯楽"],"娯楽の上限。増収しても膨らませない額。");
   h+=band("残りの配分");
-  h+='<div class="card"><div class="muted" style="font-size:10px;margin-bottom:8px">'+
+  h+='<div class="card"><div class="muted" style="font-size:11px;margin-bottom:8px">'+
     '使う枠を引いて残った分を、貯金と投資で按分します。<br>合計が100でなくても比として扱います。</div>'+
     '<div class="row" style="gap:8px">'+rr("貯金へ(%)","sink",wf.sink)+rr("投資へ(%)","invest",wf.invest)+'</div>'+
-    '<div class="muted" style="font-size:10px;margin-top:6px">今月の残り <span class="mono teal">¥'+ps.rest.toLocaleString("ja-JP")+'</span>'+
+    '<div class="muted" style="font-size:11px;margin-top:6px">今月の残り <span class="mono teal">¥'+ps.rest.toLocaleString("ja-JP")+'</span>'+
     ' → 貯金 ¥'+ps.sv.toLocaleString("ja-JP")+' / 投資 ¥'+ps.iv.toLocaleString("ja-JP")+'</div>'+
-    '<div class="muted" style="font-size:10px;margin-top:6px">貯金が目標に達したら、この比を投資側へ移していきます。</div></div>';
+    '<div class="muted" style="font-size:11px;margin-top:6px">貯金が目標に達したら、この比を投資側へ移していきます。</div></div>';
   h+='<button class="btn full sel" style="margin-top:6px" data-bu="save">保存する</button>';
   return h;
 }
@@ -1166,12 +1161,12 @@ function viewCatDrill(){
       '<span><span class="mono '+(over>0?colCls:"")+'" style="font-size:16px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span><span class="muted" style="font-size:11px"> / ¥'+cap.toLocaleString("ja-JP")+'</span></span></div>'+
       /* v3.86: 家計簿と同じ文法(残額はバー内・下段は件数のみ) */
       (over>0
-        ? '<div style="height:18px;background:'+col+';border-radius:9px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;font-weight:700;color:var(--bg)">超過 ¥'+over.toLocaleString("ja-JP")+'</span></div>'
+        ? '<div style="height:18px;background:'+col+';border-radius:9px;display:flex;align-items:center;justify-content:center"><span style="font-size:11px;font-weight:700;color:var(--bg)">超過 ¥'+over.toLocaleString("ja-JP")+'</span></div>'
         : '<div style="height:18px;background:var(--surface2);border-radius:9px;position:relative;overflow:hidden">'+
           '<div style="height:100%;width:'+pct+'%;background:'+col+'"></div>'+
           '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:9px">'+
-          '<span class="mono muted" style="font-size:10px;font-weight:700">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span></div></div>')+
-      '<div style="text-align:right;font-size:10px;margin-top:4px" class="mono muted">'+list.length+'件</div>';
+          '<span class="mono muted" style="font-size:11px;font-weight:700">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span></div></div>')+
+      '<div style="text-align:right;font-size:11px;margin-top:4px" class="mono muted">'+list.length+'件</div>';
   } else {
     h += '<div class="row between"><span style="font-size:12px;font-weight:700">合計</span><span class="mono" style="font-size:16px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span></div>';
   }
@@ -1186,18 +1181,18 @@ function viewCatDrill(){
     if(!ggroups.length){
       h += '<div class="muted" style="text-align:center;font-size:12px;padding:24px 0">この月の'+esc(cat)+'の支出はまだありません</div>';
     } else {
-      h += '<div class="muted" style="font-size:10px;margin:0 2px 6px">店をタップでジャンルを割当(全期間の記録に即反映)</div>';
+      h += '<div class="muted" style="font-size:11px;margin:0 2px 6px">店をタップでジャンルを割当(全期間の記録に即反映)</div>';
       h += '<div class="card" style="padding:2px 12px">';
       ggroups.forEach((G,gi)=>{
         const open = UI.drillOpenStore===("g:"+G.gn);
         h += '<div class="row" data-a="drillstore" data-v="g:'+esc(G.gn)+'" style="gap:8px;align-items:center;padding:11px 0;cursor:pointer'+(gi>0?';border-top:1px solid var(--line)':'')+'">'+
           '<span style="flex:none;font-size:11px;color:var(--muted);width:12px">'+(open?"▾":"▸")+'</span>'+
           '<span class="ellip" style="flex:1;font-size:13px;font-weight:600;min-width:0'+(G.gn==="未分類"?';color:var(--muted)':'')+'">'+esc(G.gn)+'</span>'+
-          '<span class="muted" style="flex:none;font-size:10px">'+G.n+'件</span>'+
+          '<span class="muted" style="flex:none;font-size:11px">'+G.n+'件</span>'+
           '<span class="mono" style="flex:none;font-size:14px;font-weight:700">¥'+G.sum.toLocaleString("ja-JP")+'</span>'+
           /* v3.64: ジャンル内枠の設定導線。未分類には枠を持たせない(店の割当が先) */
           (G.gn!=="未分類"
-            ? '<button class="navbtn" data-a="gcap" data-v="'+esc(G.gn)+'" style="flex:none;font-size:10px;padding:3px 6px;color:'+(String((S.genreCaps||{})[G.gn]||"").trim()?"var(--teal)":"var(--muted)")+'">'+
+            ? '<button class="navbtn" data-a="gcap" data-v="'+esc(G.gn)+'" style="flex:none;font-size:11px;padding:3px 6px;color:'+(String((S.genreCaps||{})[G.gn]||"").trim()?"var(--teal)":"var(--muted)")+'">'+
               (String((S.genreCaps||{})[G.gn]||"").trim() ? String((S.genreCaps||{})[G.gn]).trim().replace(/^(\d+)$/,(m)=>'¥'+num(m).toLocaleString("ja-JP")) : '枠')+'</button>'
             : '')+'</div>';
         if(open){
@@ -1205,7 +1200,7 @@ function viewCatDrill(){
             const asg = UI.drillAssign===c.ch;
             h += '<div class="row" data-a="gassign" data-v="'+esc(c.ch)+'" style="gap:8px;align-items:center;padding:6px 0 6px 20px;border-top:1px solid var(--surface2);cursor:pointer">'+
               '<span class="ellip" style="flex:1;font-size:12px;min-width:0;color:'+(asg?"var(--teal)":"var(--muted)")+'">'+esc(c.ch)+'</span>'+
-              '<span class="muted" style="flex:none;font-size:10px">'+c.n+'件</span>'+
+              '<span class="muted" style="flex:none;font-size:11px">'+c.n+'件</span>'+
               '<span class="mono" style="flex:none;font-size:12px">¥'+c.sum.toLocaleString("ja-JP")+'</span></div>';
             if(asg){
               const cur=(S.genres||{})[c.ch]||"";
@@ -1229,7 +1224,7 @@ function viewCatDrill(){
       h += '<div class="row" data-a="drillstore" data-v="'+esc(gr.k)+'" style="gap:8px;align-items:center;padding:11px 0;cursor:pointer'+(gi>0?';border-top:1px solid var(--line)':'')+'">'+
         '<span style="flex:none;font-size:11px;color:var(--muted);width:12px">'+(open?"▾":"▸")+'</span>'+
         '<span class="ellip" style="flex:1;font-size:13px;font-weight:600;min-width:0">'+esc(gr.k)+'</span>'+
-        '<span class="muted" style="flex:none;font-size:10px">'+gr.es.length+'件</span>'+
+        '<span class="muted" style="flex:none;font-size:11px">'+gr.es.length+'件</span>'+
         '<span class="mono" style="flex:none;font-size:14px;font-weight:700">¥'+gr.sum.toLocaleString("ja-JP")+'</span></div>';
       if(open){
         gr.es.forEach(e=>{
@@ -1239,7 +1234,7 @@ function viewCatDrill(){
           h += '<div class="row" data-a="drilledit" data-v="'+e.id+'" style="gap:8px;align-items:center;padding:6px 0 6px 20px;border-top:1px solid var(--surface2);cursor:pointer">'+
             '<span class="mono muted" style="flex:none;font-size:11px">'+esc((e.date||"").slice(5).replace("-","/"))+'</span>'+
             '<span class="ellip muted" style="flex:1;font-size:12px;min-width:0">'+esc(label)+'</span>'+
-            (br?'<span class="ellip muted" style="flex:none;max-width:100px;font-size:10px">'+esc(br)+'</span>':'')+
+            (br?'<span class="ellip muted" style="flex:none;max-width:100px;font-size:11px">'+esc(br)+'</span>':'')+
             '<span class="mono" style="flex:none;font-size:12px">¥'+e.amount.toLocaleString("ja-JP")+'</span></div>';
         });
       }
@@ -1344,7 +1339,7 @@ function viewMain(){
       (daidaNet!==0 ? '<div class="row between" style="border-top:1px solid var(--line);margin-top:'+(both?"11":"0")+'px;padding-top:9px;align-items:baseline">'+
         '<span class="muted" style="font-size:11px">代打報酬</span>'+
         '<span><span class="mono '+clsPM(daidaNet)+'" style="font-size:14px;font-weight:700">'+signYen(daidaNet)+'</span>'+
-        '<span class="muted" style="font-size:10px"> → 家計簿の副業へ</span></span></div>' : '')+
+        '<span class="muted" style="font-size:11px"> → 家計簿の副業へ</span></span></div>' : '')+
       '</div>';
     h += viewGameSessions();
   }
@@ -1415,12 +1410,12 @@ function viewLedger(){
          白=その行で決断に使う数字、と決めてラベルはmutedへ落とす(内枠の食費ラベルと同格になる) */
       h += '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">'+(cat==="消費"?"変動消費":"今月の"+cat)+'</span>'+
-        '<span class="mono muted" style="font-size:10px"> ¥'+spent.toLocaleString("ja-JP")+' / ¥'+cap.toLocaleString("ja-JP")+'</span></span>'+
+        '<span class="mono muted" style="font-size:11px"> ¥'+spent.toLocaleString("ja-JP")+' / ¥'+cap.toLocaleString("ja-JP")+'</span></span>'+
         /* v3.92: **金額の色はバーと連動**(ユーザー指摘)。このアプリは金に色を付ける体系(緑=プラス/赤=消費/橙=中間)
            なので、一番大きい金額だけ無彩色の白は体系外で浮く。v3.88の「数字は静かに」は色を消す口実としての
            拡大解釈だった(v3.49の規約は内訳画面で7個積み上がる密度の話で、視野に2個の予算バーとは別物)。
            超過との区別は語(残り/超過)とバーが満杯になる形が担う——色相は分類の仕事(v3.35) */
-        '<span><span class="mono muted" style="font-size:10px">'+(over>0?'超過':'残り')+'</span> '+
+        '<span><span class="mono muted" style="font-size:11px">'+(over>0?'超過':'残り')+'</span> '+
         '<span class="mono '+colCls+'" style="font-size:17px;font-weight:700">'+
         '¥'+(over>0?over:Math.max(0,cap-spent)).toLocaleString("ja-JP")+'</span>'+
         '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
@@ -1443,8 +1438,8 @@ function viewLedger(){
         h += '<div style="margin:8px 0 0 10px;padding-left:9px;border-left:2px solid var(--line)">'+
           '<div class="row between" style="align-items:baseline">'+
           '<span><span class="muted" style="font-size:11px">'+esc(gn)+'</span>'+
-          '<span class="mono muted" style="font-size:10px"> ¥'+gspent.toLocaleString("ja-JP")+' / ¥'+gcap.toLocaleString("ja-JP")+'</span></span>'+
-          '<span><span class="mono muted" style="font-size:10px">'+(gover>0?'超過':'残り')+'</span> '+
+          '<span class="mono muted" style="font-size:11px"> ¥'+gspent.toLocaleString("ja-JP")+' / ¥'+gcap.toLocaleString("ja-JP")+'</span></span>'+
+          '<span><span class="mono muted" style="font-size:11px">'+(gover>0?'超過':'残り')+'</span> '+
           /* v3.92: 内枠もバー連動。ただしバーが薄赤なので数字も同じだけ落とし、親との序列を保つ */
           '<span class="mono red" style="font-size:13px;font-weight:700'+(gover>0?'':';opacity:.55')+'">'+
           '¥'+(gover>0?gover:(gcap-gspent)).toLocaleString("ja-JP")+'</span></span></div>'+
@@ -1466,14 +1461,14 @@ function viewLedger(){
         '<span><span class="muted" style="font-size:12px;font-weight:700">固定費</span>'+
         /* v4.71: **「引落済み」の語を落とす**(ユーザー指摘: 文字が多くて煩い)。
            変動消費・娯楽と同じ `¥使った / ¥総額` に揃える。左が何の数字かは行の頭の「固定費」で足りる */
-        '<span class="mono muted" style="font-size:10px"> ¥'+fxDone.toLocaleString("ja-JP")+' / ¥'+fxAll.toLocaleString("ja-JP")+'</span></span>'+
+        '<span class="mono muted" style="font-size:11px"> ¥'+fxDone.toLocaleString("ja-JP")+' / ¥'+fxAll.toLocaleString("ja-JP")+'</span></span>'+
         /* v4.62: **「残り」と呼ばない**(ユーザー指摘)。予算の残りは「まだ使える額」だが、
            固定費のこれは「まだ引き落とされていない予定額」で意味が違う。同じ語を使うと誤読される。
            **方向が逆**——残りは減ると悪く超えられる/未引落は減ると良く超えようがない。
            v4.71: 語を **「予定」** に変更(ユーザー選択)。v4.68で明細に入れた「予定」と同じ金
            (未来日の固定費エントリ)を指すので、**同じものを2つの語で呼ばない**。
            明細の「予定」は収入も含むため金額は一致しないが、行頭の「固定費」が範囲を宣言している */
-        '<span><span class="mono muted" style="font-size:10px">'+(fxDone>=fxAll?'すべて引落済み':'予定')+'</span> '+
+        '<span><span class="mono muted" style="font-size:11px">'+(fxDone>=fxAll?'すべて引落済み':'予定')+'</span> '+
         (fxDone>=fxAll?'':'<span class="mono muted" style="font-size:17px;font-weight:700">¥'+(fxAll-fxDone).toLocaleString("ja-JP")+'</span>')+
         '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
         /* v4.71: **バーは細いまま(5px)据え置き**。変動消費・娯楽は8px、ジャンル内枠は5px。
@@ -1509,13 +1504,13 @@ function viewLedger(){
         h += '<div style="cursor:pointer" data-a="furuset">'+
           '<div class="row between" style="align-items:baseline">'+
           '<span><span class="muted" style="font-size:12px;font-weight:700">ふるさと納税</span>'+
-          '<span class="mono muted" style="font-size:10px"> ¥'+_fs98.done.toLocaleString("ja-JP")+' / ¥'+_fs98.target.toLocaleString("ja-JP")+'</span></span>'+
-          '<span><span class="mono muted" style="font-size:10px">あと</span> '+
+          '<span class="mono muted" style="font-size:11px"> ¥'+_fs98.done.toLocaleString("ja-JP")+' / ¥'+_fs98.target.toLocaleString("ja-JP")+'</span></span>'+
+          '<span><span class="mono muted" style="font-size:11px">あと</span> '+
           '<span class="mono amber" style="font-size:17px;font-weight:700">¥'+_fs98.left.toLocaleString("ja-JP")+'</span>'+
           '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
           '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+_fpct+'%;background:var(--amber)"></div></div>'+
           /* v3.99: 何から出るのかを1行で示す。貯金で足りるなら予算は絞られない */
-          '<div class="muted" style="font-size:10px;margin-top:5px">年内が期限。'+
+          '<div class="muted" style="font-size:11px;margin-top:5px">年内が期限。'+
           (_fs98.short>0
             ? '貯金で ¥'+_fs98.covered.toLocaleString("ja-JP")+' 、不足 ¥'+_fs98.short.toLocaleString("ja-JP")+' は今月の予算から確保'
             : '貯金から出せます(今月の予算は削りません)')+'</div></div>';
@@ -1539,10 +1534,10 @@ function viewLedger(){
         h += '<div style="cursor:pointer'+_sep+'" data-a="'+act+'">'+
           '<div class="row between" style="align-items:baseline">'+
           '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
-          '<span class="mono muted" style="font-size:10px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+target.toLocaleString("ja-JP")+'</span></span>'+
+          '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+target.toLocaleString("ja-JP")+'</span></span>'+
           /* v3.88: 「あと」=これから入れる額(消費の「残り」と方向が逆なので語で示す)
              v3.92: 色はバー連動=teal。全枠が連動するので「貯金だけ緑」は例外でなく規則になる */
-          '<span><span class="mono muted" style="font-size:10px">あと</span> '+
+          '<span><span class="mono muted" style="font-size:11px">あと</span> '+
           '<span class="mono teal" style="font-size:17px;font-weight:700">¥'+left2.toLocaleString("ja-JP")+'</span>'+
           '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
           '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+pct2+'%;background:var(--teal)"></div></div></div>';
@@ -1584,8 +1579,8 @@ function viewLedger(){
       return '<div style="margin-bottom:10px">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
-        '<span class="mono muted" style="font-size:10px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
-        '<span><span class="mono muted" style="font-size:10px">'+(ok?'':'あと')+'</span> '+
+        '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
+        '<span><span class="mono muted" style="font-size:11px">'+(ok?'':'あと')+'</span> '+
         '<span class="mono '+(ok?"teal":"amber")+'" style="font-size:17px;font-weight:700">'+
         (ok?'達成':'¥'+(plan-done).toLocaleString("ja-JP"))+'</span></span></div>'+
         '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div></div>';
@@ -1614,7 +1609,7 @@ function viewLedger(){
     h += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;'+(d>todayS?'opacity:.62;':'')+'" data-a="dtoggle" data-v="'+d+'">'+
       '<span class="mono muted" style="font-size:11px">'+(dOpen?'▾':'▸')+' '+d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')'+
-      '<span style="margin-left:8px;font-size:10px">'+list.length+'件</span></span>'+
+      '<span style="margin-left:8px;font-size:11px">'+list.length+'件</span></span>'+
       '<span class="mono '+clsPM(dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(dayNet)+'</span></div>'+
       (!dOpen?'':'<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
       list.map((e,i)=>{
@@ -1624,9 +1619,9 @@ function viewLedger(){
         return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(i?'border-top:1px solid var(--line);':'')+(isFuture?'opacity:.62;':'')+'" data-a="eedit" data-v="'+e.id+'">'+
         '<div style="flex:1;min-width:0"><div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
         '<span class="tag" style="border:1px solid '+cc+';color:'+cc+'">'+esc(e.category)+'</span>'+
-        (e.src==="slot"||e.src==="mahjong"?'<span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:10px">連携</span>':'')+
-        (e.src==="fixed"?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:10px">定期</span>':'')+
-        (isFuture?'<span class="tag" style="border:1px solid var(--blue);color:var(--blue);font-size:10px">予定</span>':'')+'</div>'+
+        (e.src==="slot"||e.src==="mahjong"?'<span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:11px">連携</span>':'')+
+        (e.src==="fixed"?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">定期</span>':'')+
+        (isFuture?'<span class="tag" style="border:1px solid var(--blue);color:var(--blue);font-size:11px">予定</span>':'')+'</div>'+
         entryDetailHtml(e)+'</div>'+
         '<div class="mono '+clsPM(signedAmt)+'" style="font-size:14px">'+signYen(signedAmt)+'</div></div>';
       }).join("")+'</div>')+'</div>';
@@ -1650,7 +1645,7 @@ function viewLedger(){
     h += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ftoggle">'+
       '<span class="mono muted" style="font-size:11px">'+(fOpen?'▾':'▸')+' 予定 '+span+
-      '<span style="margin-left:8px;font-size:10px">'+fCnt+'件</span></span>'+
+      '<span style="margin-left:8px;font-size:11px">'+fCnt+'件</span></span>'+
       '<span class="mono '+clsPM(fNet)+'" style="font-size:13px;font-weight:700">'+signYen(fNet)+'</span></div></div>';
     if(fOpen) futDays.forEach(x=>{ h += dayHtml(x); });
   }
@@ -1675,7 +1670,7 @@ function gameRowSlot(s, first){
     '<div style="flex:1;min-width:0">'+
     '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
     '<span class="tag" style="border:1px solid '+bc+';color:'+bc+'">'+modeShort(s.mode)+'</span>'+
-    (s.lotteryOnly?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:10px">抽選</span>':'')+
+    (s.lotteryOnly?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">抽選</span>':'')+
     ((s.partnerName||"").trim()?personTag(s.partnerName.trim()):'')+'</div>'+
     '<div class="muted ellip" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
     (machLine?'<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+esc(machLine)+'</div>':'')+
@@ -1763,7 +1758,7 @@ function mjAggHtml(A){
       return '<div style="'+(i<A.rc-1?'margin-bottom:8px':'')+'">'+
         '<div class="row between" style="font-size:11px;margin-bottom:4px;align-items:baseline">'+
         '<span class="muted">'+(i+1)+'着</span>'+
-        '<span class="mono"><span style="font-weight:700">'+cnt+'</span><span class="muted" style="font-size:10px">回 ・ '+pct+'%</span></span></div>'+
+        '<span class="mono"><span style="font-weight:700">'+cnt+'</span><span class="muted" style="font-size:11px">回 ・ '+pct+'%</span></span></div>'+
         '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">'+
         '<div style="height:100%;width:'+pct+'%;background:'+cols[i]+';border-radius:4px"></div></div></div>';
     }).join("")+'</div>'+
@@ -1930,16 +1925,16 @@ function viewTool(){
   if(fsLimit>0){
     const fsPct=Math.min(100,fsDon/fsLimit*100), fsOver=fsDon-fsLimit;
     h+='<div class="card" style="margin-top:8px;cursor:pointer" data-a="furuset">'+
-      '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">ふるさと納税 <span class="muted" style="font-size:10px;font-weight:400">'+fsY+'年枠</span></span>'+
+      '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">ふるさと納税 <span class="muted" style="font-size:11px;font-weight:400">'+fsY+'年枠</span></span>'+
       '<span><span class="mono '+(fsOver>0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+fsDon.toLocaleString("ja-JP")+'</span><span class="muted" style="font-size:11px"> / ¥'+fsLimit.toLocaleString("ja-JP")+'</span></span></div>'+
       (fsOver>0
-        ? '<div style="height:18px;background:var(--red);border-radius:9px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;font-weight:700;color:var(--bg);letter-spacing:.12em">限度額オーバー</span></div>'
+        ? '<div style="height:18px;background:var(--red);border-radius:9px;display:flex;align-items:center;justify-content:center"><span style="font-size:11px;font-weight:700;color:var(--bg);letter-spacing:.12em">限度額オーバー</span></div>'
         : '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+fsPct+'%;background:var(--teal)"></div></div>')+
-      '<div class="row between" style="font-size:10px;margin-top:5px">'+(fsOver>0?'<span class="red" style="font-weight:700">超過 ¥'+fsOver.toLocaleString("ja-JP")+'(自己負担)</span>':'<span class="muted">残り ¥'+Math.max(0,fsLimit-fsDon).toLocaleString("ja-JP")+'</span>')+'<span class="mono muted">'+Math.floor(fsPct)+'% ・ タップで限度額変更</span></div></div>';
+      '<div class="row between" style="font-size:11px;margin-top:5px">'+(fsOver>0?'<span class="red" style="font-weight:700">超過 ¥'+fsOver.toLocaleString("ja-JP")+'(自己負担)</span>':'<span class="muted">残り ¥'+Math.max(0,fsLimit-fsDon).toLocaleString("ja-JP")+'</span>')+'<span class="mono muted">'+Math.floor(fsPct)+'% ・ タップで限度額変更</span></div></div>';
   } else {
     h+='<div class="card" style="margin-top:8px;cursor:pointer" data-a="furuset">'+
       '<div class="row between" style="align-items:center"><span style="font-size:13px"><span style="font-weight:700">ふるさと納税</span> '+(fsDon>0?'<span class="mono muted" style="font-size:11px">寄付済 ¥'+fsDon.toLocaleString("ja-JP")+'</span>':'')+'</span><span class="amber" style="font-size:11px">＋ '+fsY+'年の限度額を設定</span></div>'+
-      (String(fsS.year||"")&&String(fsS.year)!==fsY&&num(fsS.limit)>0?'<div class="muted" style="font-size:10px;margin-top:4px">'+String(fsS.year)+'年の限度額 ¥'+num(fsS.limit).toLocaleString("ja-JP")+' は年替わりで失効。<br>外部シミュレーターで再計算を。</div>':'')+
+      (String(fsS.year||"")&&String(fsS.year)!==fsY&&num(fsS.limit)>0?'<div class="muted" style="font-size:11px;margin-top:4px">'+String(fsS.year)+'年の限度額 ¥'+num(fsS.limit).toLocaleString("ja-JP")+' は年替わりで失効。<br>外部シミュレーターで再計算を。</div>':'')+
       '</div>';
   }
   const lm=leakMonths().map(leakAgg);
@@ -2107,20 +2102,20 @@ function viewMonthly(){
     h+='<div class="card" style="margin-bottom:8px;padding:12px">'+
       '<div class="row between" style="align-items:baseline;margin-bottom:8px">'+
       '<span style="font-size:13px;font-weight:700">'+b.mk.slice(0,4)+'年 '+num(b.mk.slice(5))+'月'+
-        (b.partial?'<span class="muted" style="font-size:10px;font-weight:400"> 途中</span>':'')+'</span>'+
+        (b.partial?'<span class="muted" style="font-size:11px;font-weight:400"> 途中</span>':'')+'</span>'+
       '<span class="mono '+clsPM(b.net)+'" style="font-size:17px;font-weight:700">'+signYen(b.net)+'</span></div>'+
-      '<div class="row between" style="font-size:10px;margin-bottom:3px">'+
+      '<div class="row between" style="font-size:11px;margin-bottom:3px">'+
       '<span class="muted">収入 <span class="mono teal">'+yen(b.inc)+'</span></span>'+
       '<span class="muted">支出 <span class="mono red">'+yen(b.exp)+'</span></span></div>'+
       '<div class="bar" style="margin-bottom:3px"><div style="width:'+(b.inc/mx*100)+'%;background:var(--teal)"></div></div>'+
       '<div class="bar"><div style="width:'+(b.exp/mx*100)+'%;background:var(--red)"></div></div>'+
-      '<div class="row between" style="font-size:10px;margin-top:7px">'+
+      '<div class="row between" style="font-size:11px;margin-top:7px">'+
       '<span class="muted">生活費 <span class="mono">'+yen(b.live)+'</span></span>'+
       '<span class="muted">娯楽 <span class="mono">'+yen(b.fun)+'</span></span>'+
       (b.game!==0?'<span class="muted">遊技 <span class="mono '+clsPM(b.game)+'">'+signYen(b.game)+'</span></span>':'')+
       '</div></div>';
   });
-  h+='<div class="muted" style="font-size:10px;line-height:1.7;margin-top:6px">生活費=消費+承認。遊技は収支に含まれますが所持金ではなく軍資金を増減させます。</div>';
+  h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-top:6px">生活費=消費+承認。遊技は収支に含まれますが所持金ではなく軍資金を増減させます。</div>';
   return h;
 }
 function viewSummary(){
@@ -2555,8 +2550,8 @@ function viewMjTable(){
   }
   const secBar=(key,open,title,sum)=>'<div class="card" data-mt="sect" data-v="'+key+'" style="margin-bottom:10px;padding:11px 12px"><div class="row" style="gap:8px;align-items:center">'+
     '<span style="font-size:12px;font-weight:700;flex:none">'+(open?"▾":"▸")+' '+title+'</span>'+
-    (open?'<span class="muted" style="flex:1;font-size:10px;text-align:right">タップでたたむ</span>'
-         :'<span class="muted ellip" style="flex:1;font-size:10px;text-align:right;min-width:0">'+esc(sum)+'</span>')+
+    (open?'<span class="muted" style="flex:1;font-size:11px;text-align:right">タップでたたむ</span>'
+         :'<span class="muted ellip" style="flex:1;font-size:11px;text-align:right;min-width:0">'+esc(sum)+'</span>')+
     '</div></div>';
   const rpU = t.roundPay===true?100:(num(t.roundPay)||0);
   const ruleSum = (t.rule==="3"?"3麻":"4麻")
@@ -2573,10 +2568,10 @@ function viewMjTable(){
   const editing = UI.mjtEditPresets;
   if(hasPresets){
     h += '<div class="row between" style="align-items:center;margin-bottom:5px">'+
-      '<span class="muted" style="font-size:10px">保存済みルール '+(editing?"(× で削除)":"(タップで適用)")+'</span>'+
-      '<button class="chip" style="font-size:10px;padding:4px 10px'+(editing?";border-color:var(--teal);color:var(--teal)":"")+'" data-mt="editpresets">'+(editing?"完了":"編集")+'</button></div>';
+      '<span class="muted" style="font-size:11px">保存済みルール '+(editing?"(× で削除)":"(タップで適用)")+'</span>'+
+      '<button class="chip" style="font-size:11px;padding:4px 10px'+(editing?";border-color:var(--teal);color:var(--teal)":"")+'" data-mt="editpresets">'+(editing?"完了":"編集")+'</button></div>';
   }else{
-    h += '<div class="muted" style="font-size:10px;margin-bottom:5px">保存済みルール</div>';
+    h += '<div class="muted" style="font-size:11px;margin-bottom:5px">保存済みルール</div>';
   }
   h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div class="row" style="gap:6px;flex-wrap:nowrap;padding-bottom:2px">'+
     (hasPresets ? S.mjPresets.map(p=>{
@@ -2593,31 +2588,31 @@ function viewMjTable(){
     '<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">'+
     [["3","3麻"],["4","4麻"]].map(([v,l])=>'<button class="btn '+(t.rule===v?"sel":"")+'" style="flex:1;font-size:12px;padding:7px 0" data-mt="rule" data-v="'+v+'">'+l+'</button>').join("")+
     '<span class="muted" style="font-size:11px;white-space:nowrap">'+mjtSeats(t)+'人打ち</span></div>'+
-    '<div class="muted" style="font-size:10px;margin-bottom:6px;border-top:1px solid var(--line);padding-top:8px">以下は飛びボタン・計算用</div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:6px;border-top:1px solid var(--line);padding-top:8px">以下は飛びボタン・計算用</div>'+
     '<div class="row" style="gap:8px;margin-bottom:8px">'+
-    '<div style="flex:1"><div class="muted" style="font-size:10px">持ち点(配給原点)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="例 25000" value="'+esc(t.mochi||"")+'" data-mt="rd" data-v="mochi"></div>'+
-    '<div style="flex:1"><div class="muted" style="font-size:10px">返し点(基準点)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="例 30000" value="'+esc(t.kaeshi||"")+'" data-mt="rd" data-v="kaeshi"></div></div>'+
-    '<div class="muted" style="font-size:10px;margin-bottom:2px">ウマ(着順ごと・±ボタンで符号)</div><div class="row" style="gap:6px;margin-bottom:8px">'+
+    '<div style="flex:1"><div class="muted" style="font-size:11px">持ち点(配給原点)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="例 25000" value="'+esc(t.mochi||"")+'" data-mt="rd" data-v="mochi"></div>'+
+    '<div style="flex:1"><div class="muted" style="font-size:11px">返し点(基準点)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="例 30000" value="'+esc(t.kaeshi||"")+'" data-mt="rd" data-v="kaeshi"></div></div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:2px">ウマ(着順ごと・±ボタンで符号)</div><div class="row" style="gap:6px;margin-bottom:8px">'+
     [["uma1","1着"],["uma2","2着"],["uma3","3着"]].concat(mjtSeats(t)===4?[["uma4","4着"]]:[]).map(([k,l])=>{
       const neg=String(t[k]||"").startsWith("-");
-      return '<div style="flex:1;min-width:0"><div class="muted" style="font-size:10px;text-align:center;margin-bottom:2px">'+l+'</div>'+
+      return '<div style="flex:1;min-width:0"><div class="muted" style="font-size:11px;text-align:center;margin-bottom:2px">'+l+'</div>'+
         '<div class="row" style="gap:3px;align-items:center">'+
         '<button class="signbtn" style="width:28px;height:32px;border:1.5px solid '+(neg?"var(--red)":"var(--teal)")+';color:'+(neg?"var(--red)":"var(--teal)")+';background:'+(neg?"rgba(229,115,115,.1)":"rgba(45,212,191,.1)")+'" data-mt="umasign" data-v="'+k+'">'+(neg?"−":"＋")+'</button>'+
         '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(String(t[k]||"").replace("-",""))+'" data-mt="umaabs" data-v="'+k+'" style="flex:1;min-width:0"></div></div>';
     }).join("")+'</div>'+
-    '<div class="muted" style="font-size:10px;margin-bottom:2px">単価</div><div class="row" style="gap:8px;margin-bottom:8px">'+
-    '<div style="flex:1"><div class="muted" style="font-size:10px">スコア(1点=)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc(t.scoreRate)+'" data-mt="rate" data-v="scoreRate"></div>'+
-    '<div style="flex:1"><div class="muted" style="font-size:10px">チップ(1枚=)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc(t.chipRate)+'" data-mt="rate" data-v="chipRate"></div></div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:2px">単価</div><div class="row" style="gap:8px;margin-bottom:8px">'+
+    '<div style="flex:1"><div class="muted" style="font-size:11px">スコア(1点=)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc(t.scoreRate)+'" data-mt="rate" data-v="scoreRate"></div>'+
+    '<div style="flex:1"><div class="muted" style="font-size:11px">チップ(1枚=)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc(t.chipRate)+'" data-mt="rate" data-v="chipRate"></div></div>'+
     '<label class="row" style="gap:8px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" data-mt="hako" '+(t.hakoshita?"checked":"")+'><span>箱下あり(マイナス続行)</span></label>'+
     (mjtHasTobi(t)
-      ? '<div class="muted" style="font-size:10px;margin-top:6px">✓ 飛び = <span class="mono" style="color:var(--amber);font-weight:700">'+mjtTobiScore(t)+'</span> … セル選択でキーパッドに「飛び」ボタンが出ます</div>'
-      : '<div style="font-size:10px;margin-top:6px;color:var(--red)">※飛びボタン: 返し点を入力し「箱下あり」をオフに</div>')+
+      ? '<div class="muted" style="font-size:11px;margin-top:6px">✓ 飛び = <span class="mono" style="color:var(--amber);font-weight:700">'+mjtTobiScore(t)+'</span> … セル選択でキーパッドに「飛び」ボタンが出ます</div>'
+      : '<div style="font-size:11px;margin-top:6px;color:var(--red)">※飛びボタン: 返し点を入力し「箱下あり」をオフに</div>')+
     '<div style="height:1px;background:var(--line);margin:10px 0"></div>'+
-    '<div class="muted" style="font-size:10px;margin-bottom:2px">精算単位(何円単位で精算するか)</div>'+
-    '<div class="muted" style="font-size:10px;margin-bottom:6px">トップ以外を切捨・端数はトップが調整</div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:2px">精算単位(何円単位で精算するか)</div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:6px">トップ以外を切捨・端数はトップが調整</div>'+
     '<div class="row" style="gap:5px">'+
     [50,100,500,1000].map(u=>'<button class="btn '+((t.roundPay===true?100:(num(t.roundPay)||0))===u?"sel":"")+'" style="flex:1;font-size:12px;padding:8px 0" data-mt="rpay" data-v="'+u+'">'+u+'円</button>').join("")+'</div>'+
-    '<div class="muted" style="font-size:10px;margin-top:6px">未選択＝端数切捨なし・選択中を再タップで解除</div>'+
+    '<div class="muted" style="font-size:11px;margin-top:6px">未選択＝端数切捨なし・選択中を再タップで解除</div>'+
     '</div>';
   }
 
@@ -2634,10 +2629,10 @@ function viewMjTable(){
   const chipSel='outline:2px solid var(--amber);background:rgba(242,179,61,.12);';
   h += '<div class="card" style="margin-bottom:8px;padding:6px 12px">'+
     '<div class="row" style="gap:8px;align-items:center;padding:4px 0 2px">'+
-    '<span class="muted" style="flex:1;font-size:10px;text-align:center">プレイヤー</span>'+
-    '<span class="muted" style="width:62px;text-align:center;font-size:10px;flex:none">開始</span>'+
-    '<span class="muted" style="width:62px;text-align:center;font-size:10px;flex:none">終了</span>'+
-    '<span class="muted" style="width:50px;text-align:center;font-size:10px;flex:none">増減</span>'+
+    '<span class="muted" style="flex:1;font-size:11px;text-align:center">プレイヤー</span>'+
+    '<span class="muted" style="width:62px;text-align:center;font-size:11px;flex:none">開始</span>'+
+    '<span class="muted" style="width:62px;text-align:center;font-size:11px;flex:none">終了</span>'+
+    '<span class="muted" style="width:50px;text-align:center;font-size:11px;flex:none">増減</span>'+
     '<span style="width:26px;flex:none"></span></div>'+
     P.map((p,ci)=>{
       const clk=!!((t.chipLocked||[])[ci]);
@@ -2693,14 +2688,14 @@ function viewMjTable(){
       const mCol = !r||!r.m ? "var(--muted)" : "var(--amber)";
       return '<div class="row" style="gap:6px;align-items:center;padding:5px 0'+(ci?';border-top:1px solid var(--line)':'')+'">'+
         '<span class="ellip" style="flex:1;font-size:13px;min-width:0">'+esc(p||("P"+(ci+1)))+'</span>'+
-        '<button class="btn" data-mt="frelief" data-c="'+ci+'" style="flex:none;font-size:10px;padding:5px 8px;color:'+mCol+';border-color:'+mCol+'">'+mLbl+'</button>'+
+        '<button class="btn" data-mt="frelief" data-c="'+ci+'" style="flex:none;font-size:11px;padding:5px 8px;color:'+mCol+';border-color:'+mCol+'">'+mLbl+'</button>'+
         (r&&r.m==="amt"?'<input class="input sm mono r" type="number" inputmode="numeric" placeholder="免除額" value="'+esc(r.v||"")+'" data-mt="framt" data-c="'+ci+'" style="width:66px;flex:none">':'')+
-        (r&&r.m?'<button class="btn" data-mt="fby" data-c="'+ci+'" style="flex:none;font-size:10px;padding:5px 8px;color:var(--teal);border-color:var(--teal)">負担:'+(r.by!=null&&r.by!==ci&&r.by<P.length?esc(P[r.by]||("P"+(r.by+1))):"未選択")+'</button>':'')+
+        (r&&r.m?'<button class="btn" data-mt="fby" data-c="'+ci+'" style="flex:none;font-size:11px;padding:5px 8px;color:var(--teal);border-color:var(--teal)">負担:'+(r.by!=null&&r.by!==ci&&r.by<P.length?esc(P[r.by]||("P"+(r.by+1))):"未選択")+'</button>':'')+
         '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc((t.fees||[])[ci]||"")+'" data-mt="fee" data-c="'+ci+'" style="width:84px;flex:none"></div>';
     }).join("")+'</div>';
   /* 各人の経費(飲食など・店への個別分) */
   h += '<div class="card" style="margin-bottom:8px;padding:6px 12px">'+
-    '<div class="muted" style="font-size:10px;padding:2px 0 4px">経費(飲食など・各自が店へ払う分)</div>'+
+    '<div class="muted" style="font-size:11px;padding:2px 0 4px">経費(飲食など・各自が店へ払う分)</div>'+
     P.map((p,ci)=>'<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)">'+
       '<span class="ellip" style="flex:1;font-size:13px">'+esc(p||("P"+(ci+1)))+'</span>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc((t.pexp||[])[ci]||"")+'" data-mt="pexp" data-c="'+ci+'" style="width:92px"></div>').join("")+'</div>';
@@ -2798,7 +2793,7 @@ function viewMjPlay(){
       return '<th style="padding:4px 2px 7px;border-bottom:2px solid var(--line);'+stTh+'">'+
         '<div class="ellip" style="font-size:13px;font-weight:700">'+(t.meIdx===ci?'<span style="color:var(--amber)">★</span>':'')+esc(p||("P"+(ci+1)))+'</div>'+
         '<div style="font-size:18px;font-weight:800;color:'+(c.sum<0?"var(--red)":c.sum>0?"var(--teal)":"var(--text)")+'">'+fmtPt(c.sum)+'</div>'+
-        '<div class="muted" style="font-size:10px;margin-top:1px">'+rc.join("·")+'</div></th>';
+        '<div class="muted" style="font-size:11px;margin-top:1px">'+rc.join("·")+'</div></th>';
     }).join("")+'</tr></thead><tbody>';
   /* ロック済みの連続区間は折りたたむ(スクロール削減)。UI.lockedOpenで全展開 */
   const lkOpen = !!UI.lockedOpen;
@@ -2815,7 +2810,7 @@ function viewMjPlay(){
     }
     h += '<tr>'+
       (lk
-        ? '<td data-mt="unlock" data-r="'+ri+'" style="text-align:center;color:var(--muted);font-size:13px;border-bottom:1px solid var(--line)">🔒<div style="font-size:10px;line-height:1.1;margin-top:1px">'+(ri+1)+'</div></td>'
+        ? '<td data-mt="unlock" data-r="'+ri+'" style="text-align:center;color:var(--muted);font-size:13px;border-bottom:1px solid var(--line)">🔒<div style="font-size:11px;line-height:1.1;margin-top:1px">'+(ri+1)+'</div></td>'
         : '<td style="text-align:center;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)">'+(ri+1)+'</td>')+
       P.map((p,ci)=>{
         const sel = !lk && UI.mjtCell && UI.mjtCell.k==="s" && UI.mjtCell.r===ri && UI.mjtCell.c===ci;
@@ -2839,7 +2834,7 @@ function viewMjPlay(){
   h += '<div class="row" style="gap:6px;margin-top:8px">'+
     '<button class="btn" data-mt="tomid" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">途中経過を表示</button>'+
     '<button class="btn" data-mt="midshare" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">画像で共有</button></div>';
-  h += '<div class="muted" style="font-size:10px;text-align:right;margin-top:6px">ヘッダー: 上段=合計 / 下段=1着·2着·3着'+(mjtSeats(t)>3?"·4着":"")+'の回数</div>';
+  h += '<div class="muted" style="font-size:11px;text-align:right;margin-top:6px">ヘッダー: 上段=合計 / 下段=1着·2着·3着'+(mjtSeats(t)>3?"·4着":"")+'の回数</div>';
   h += '<div style="height:40px"></div>';
   return h;
 }
@@ -3171,7 +3166,7 @@ function viewAssets(){
            語と数字を分け、**数字側に固定幅を与えて右端で揃える** */
         (p.done
           ? '<span class="mono teal">達成</span>'
-          : '<span><span class="mono muted" style="font-size:10px">あと</span>'+
+          : '<span><span class="mono muted" style="font-size:11px">あと</span>'+
             '<span class="mono muted" style="display:inline-block;min-width:74px;text-align:right"> ¥'+
             p.short.toLocaleString("ja-JP")+'</span></span>')+'</div>'+
         '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:7px"><div style="height:100%;width:'+p.pct+'%;background:'+(p.done?'var(--teal)':'var(--amber)')+'"></div></div>';
@@ -3187,7 +3182,7 @@ function viewAssets(){
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     /* v4.27: バーと「残りわずか」を撤去。目安を超えた時だけ回収を促す一行を出す */
-    (bBal>ceil?'<div class="amber" style="font-size:10px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'')+'</div>';
+    (bBal>ceil?'<div class="amber" style="font-size:11px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'')+'</div>';
   /* v4.69: **銘柄数と「今月の買付 N/M銘柄」を撤去**(ユーザー指摘)。
      オルカン1本の方針(IPS)では**銘柄数は常に1になる数字**で、見ても行動が変わらない。
      ヘッダの小さいサブラベル「積立額」も外した——所持金・貯金・軍資金はどれもラベル1語で、
@@ -3207,7 +3202,7 @@ function viewAssets(){
     /* v4.64の文法: 語と数字を分け、数字側に固定幅を与えて右端で揃える */
     (nisaLeft<=0
       ? '<span class="mono teal">埋まりました</span>'
-      : '<span><span class="mono muted" style="font-size:10px">あと</span>'+
+      : '<span><span class="mono muted" style="font-size:11px">あと</span>'+
         '<span class="mono muted" style="display:inline-block;min-width:74px;text-align:right"> ¥'+nisaLeft.toLocaleString("ja-JP")+'</span></span>')+'</div>'+
     '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+nisaPct+'%;background:'+(nisaLeft<=0?'var(--teal)':'var(--amber)')+'"></div></div>'+
     '</div></div>';
@@ -3370,7 +3365,7 @@ function viewLeak(){
     if(cur.salary>0&&prev.salary>0&&dI>=30000){
       const k=Math.round(dE/dI*100);
       head='<div class="card" style="margin-bottom:12px;text-align:center;padding:14px">'+
-        '<div class="muted" style="font-size:10px">'+prev.mk.slice(5)+'月 → '+cur.mk.slice(5)+'月(増収 +¥'+dI.toLocaleString("ja-JP")+')</div>'+
+        '<div class="muted" style="font-size:11px">'+prev.mk.slice(5)+'月 → '+cur.mk.slice(5)+'月(増収 +¥'+dI.toLocaleString("ja-JP")+')</div>'+
         '<div class="mono" style="font-size:30px;font-weight:700;color:'+(k>=60?"var(--red)":k>=30?"var(--amber)":"var(--teal)")+'">漏れ '+k+'%</div>'+
         '<div class="muted" style="font-size:11px;margin-top:2px">支出の連動 '+(dE>=0?"+":"−")+'¥'+Math.abs(dE).toLocaleString("ja-JP")+' ・ 残存 '+(100-k)+'%</div></div>';
       break;
@@ -3382,10 +3377,10 @@ function viewLeak(){
   ms.forEach((m,i)=>{
     h+='<div style="padding:9px 0'+(i>0?';border-top:1px solid var(--line)':'')+'">'+
       '<div class="row between" style="font-size:12px"><span class="mono muted">'+m.mk+'</span>'+
-      '<span><span class="muted" style="font-size:10px">給与</span> <span class="mono">¥'+m.salary.toLocaleString("ja-JP")+'</span>'+
-      '  <span class="muted" style="font-size:10px">支出</span> <span class="mono">¥'+m.spend.toLocaleString("ja-JP")+'</span></span></div>'+
-      '<div class="row between" style="font-size:11px;margin-top:3px"><span><span class="muted" style="font-size:10px">遊技</span> <span class="mono '+clsPM(m.gnet)+'">'+signYen(m.gnet)+'</span></span>'+
-      '<span><span class="muted" style="font-size:10px">確保</span> <span class="mono teal">¥'+m.secured.toLocaleString("ja-JP")+'</span></span></div></div>';
+      '<span><span class="muted" style="font-size:11px">給与</span> <span class="mono">¥'+m.salary.toLocaleString("ja-JP")+'</span>'+
+      '  <span class="muted" style="font-size:11px">支出</span> <span class="mono">¥'+m.spend.toLocaleString("ja-JP")+'</span></span></div>'+
+      '<div class="row between" style="font-size:11px;margin-top:3px"><span><span class="muted" style="font-size:11px">遊技</span> <span class="mono '+clsPM(m.gnet)+'">'+signYen(m.gnet)+'</span></span>'+
+      '<span><span class="muted" style="font-size:11px">確保</span> <span class="mono teal">¥'+m.secured.toLocaleString("ja-JP")+'</span></span></div></div>';
   });
   h+='</div>';
   const posSum=ms.reduce((a,m)=>a+(m.gnet>0?m.gnet:0),0);
@@ -3397,7 +3392,7 @@ function viewLeak(){
     '<div class="row between" style="margin-bottom:5px"><span class="muted">貯金へ振替 累計</span><span class="mono teal">¥'+sweep.toLocaleString("ja-JP")+'</span></div>'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">回収率</span><span class="mono" style="font-weight:700">'+(posSum>0?Math.round(sweep/posSum*100)+"%":"—")+'</span></div>'+
     '<div class="row between"><span class="muted">軍資金へ振替(生活→遊技の逆流)</span><span class="mono '+(topup>0?"red":"muted")+'">¥'+topup.toLocaleString("ja-JP")+'</span></div></div>';
-  h+='<div class="muted" style="font-size:10px;margin-top:10px;line-height:1.6">読み方: 増収+10万・支出+4万なら漏れ40%=実効6割。<br>体感ほぼ100%だった時代から、壁と振替の配管で<br>どこまで下げたかの実測です。</div>';
+  h+='<div class="muted" style="font-size:11px;margin-top:10px;line-height:1.6">読み方: 増収+10万・支出+4万なら漏れ40%=実効6割。<br>体感ほぼ100%だった時代から、壁と振替の配管で<br>どこまで下げたかの実測です。</div>';
   return h;
 }
 function bindLeak(){
@@ -3547,29 +3542,29 @@ function viewInvest(){
         '<span class="mono">'+yen(used)+'<span class="muted"> / '+yen(cap)+'</span></span></div>'+
         '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:'+(note?'3':'9')+'px">'+
         '<div style="height:100%;width:'+p+'%;background:var(--teal)"></div></div>'+
-        (note?'<div class="muted" style="font-size:10px;margin-bottom:9px">'+note+'</div>':'');
+        (note?'<div class="muted" style="font-size:11px;margin-bottom:9px">'+note+'</div>':'');
     };
     h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
       '<div class="muted" style="font-size:12px;letter-spacing:.12em">NISA 生涯枠の残り</div>'+
       '<div class="mono teal" style="font-size:32px;font-weight:700;line-height:1.25">'+yen(rest)+'</div>'+
       '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:11px 0 6px">'+
       '<div style="height:100%;width:'+pct+'%;background:var(--teal)"></div></div>'+
-      '<div class="row between" style="font-size:10px">'+
+      '<div class="row between" style="font-size:11px">'+
       '<span class="mono muted">積立 '+yen(bk.nisa)+'</span>'+
       '<span class="muted">'+pct.toFixed(1)+'% / '+yen(L.total)+'</span></div>'+
       '<div style="text-align:left;border-top:1px solid var(--line);margin-top:12px;padding-top:10px">'+
-      '<div class="muted" style="font-size:10px;margin-bottom:6px">生涯枠の内訳　'+
+      '<div class="muted" style="font-size:11px;margin-bottom:6px">生涯枠の内訳　'+
         '<span style="opacity:.8">※枠は買った金額で数えます(値上がりは関係ありません)</span></div>'+
       /* v4.50: **つみたて枠に個別上限は無いが、生涯枠から成長に入れた分を引けば実質の上限が出る**
          (ユーザー指摘)。成長側も「1200万」と「生涯枠からつみたて分を引いた額」の小さい方が実質上限 */
       '<div class="row between" style="font-size:11px;padding:2px 0"><span class="muted">つみたて投資枠</span>'+
-        '<span><span class="mono">'+yen(bk.tsumitate)+'</span><span class="muted" style="font-size:10px"> / '+yen(tCap)+'　残り '+yen(Math.max(0,tCap-bk.tsumitate))+'</span></span></div>'+
+        '<span><span class="mono">'+yen(bk.tsumitate)+'</span><span class="muted" style="font-size:11px"> / '+yen(tCap)+'　残り '+yen(Math.max(0,tCap-bk.tsumitate))+'</span></span></div>'+
       '<div class="row between" style="font-size:11px;padding:2px 0"><span class="muted">成長投資枠</span>'+
-        '<span><span class="mono">'+yen(bk.seicho)+'</span><span class="muted" style="font-size:10px"> / '+yen(sCap)+'　残り '+yen(Math.max(0,sCap-bk.seicho))+'</span></span></div>'+
+        '<span><span class="mono">'+yen(bk.seicho)+'</span><span class="muted" style="font-size:11px"> / '+yen(sCap)+'　残り '+yen(Math.max(0,sCap-bk.seicho))+'</span></span></div>'+
       (bk.other>0?'<div class="row between" style="font-size:11px;padding:2px 0"><span class="amber">枠の指定なし</span><span class="mono amber">'+yen(bk.other)+'</span></div>':'')+
       '</div>'+
       '<div style="text-align:left;border-top:1px solid var(--line);margin-top:12px;padding-top:10px">'+
-      '<div class="muted" style="font-size:10px;margin-bottom:6px">'+new Date().getFullYear()+'年の積立</div>'+
+      '<div class="muted" style="font-size:11px;margin-bottom:6px">'+new Date().getFullYear()+'年の積立</div>'+
       row("合計", yTotal, yCap, "残り "+yen(Math.max(0,yCap-yTotal)))+
       row("つみたて投資枠", ty, YC.tsumitate, "残り "+yen(Math.max(0,YC.tsumitate-ty)))+
       row("成長投資枠", sy, YC.seicho, "残り "+yen(Math.max(0,YC.seicho-sy)))+
@@ -3578,12 +3573,12 @@ function viewInvest(){
       '<div class="row between" style="font-size:11px;padding:2px 0"><span class="muted">月平均の積立</span>'+
         '<span class="mono '+(pace.hasData?"teal":"muted")+'" style="font-weight:700">'+(pace.hasData?yen(pace.perMonth)+"/月":"—")+'</span></div>'+
       (pace.hasData
-        ? '<div class="muted" style="font-size:10px;line-height:1.7;margin-top:3px">'+
+        ? '<div class="muted" style="font-size:11px;line-height:1.7;margin-top:3px">'+
           '直近'+pace.months+'ヶ月の実測'+(pace.span<12?'(積立開始から'+pace.span+'ヶ月)':'')+'<br>'+
           (monthsLeft>0 ? ('このペースだと残り約 '+Math.floor(monthsLeft/12)+'年'+(monthsLeft%12)+'ヶ月'+
             (pace.perMonth>capPerMonth?'　<span class="amber">※年間枠の上限で頭打ち</span>':'')) : '')+
           '</div>'
-        : '<div class="muted" style="font-size:10px;margin-top:3px">買付を記録するとペースが出ます。<br>満額(月30万)でも埋めきるのに5年かかります。</div>')+
+        : '<div class="muted" style="font-size:11px;margin-top:3px">買付を記録するとペースが出ます。<br>満額(月30万)でも埋めきるのに5年かかります。</div>')+
       '</div></div>';
   }
   /* 振替ロードマップ: 貯金目標の梯子→投資スタート。欲の視線をカウントダウンへ */
@@ -3592,7 +3587,7 @@ function viewInvest(){
   const pots4i=potProgress().filter(p=>p.hasTarget);
   if(pots4i.length && pots4i.some(p=>!p.done)){
     const toStart=pots4i.reduce((a,p)=>a+p.short,0);
-    h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:10px;margin-bottom:8px">先取りロードマップ</div>';
+    h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:11px;margin-bottom:8px">先取りロードマップ</div>';
     pots4i.forEach(p=>{
       h+='<div class="row between" style="font-size:12px;margin-bottom:4px">'+
         '<span><span style="color:'+(p.done?'var(--teal)':'var(--amber)')+'">'+(p.done?'✓':'▶')+'</span> '+esc(p.name)+'</span>'+
@@ -3607,12 +3602,12 @@ function viewInvest(){
   /* 方針 */
   h+='<div class="card" style="margin-bottom:12px">';
   if(UI.invPolicyEdit){
-    h+='<div class="muted" style="font-size:10px;margin-bottom:6px">投資方針(監査資料の前文になります)</div>'+
+    h+='<div class="muted" style="font-size:11px;margin-bottom:6px">投資方針(監査資料の前文になります)</div>'+
       '<textarea class="input" id="iv-policy" rows="6" style="width:100%;font-size:13px;line-height:1.6">'+esc(inv.policy||"")+'</textarea>'+
       '<div class="row" style="gap:8px;margin-top:8px"><button class="btn" style="flex:1;padding:9px 0" data-iv="pcancel">キャンセル</button>'+
       '<button class="btn tealb" style="flex:1;padding:9px 0;font-weight:700" data-iv="psave">保存</button></div>';
   } else {
-    h+='<div class="row between" style="margin-bottom:4px"><span class="muted" style="font-size:10px">投資方針</span><button class="chip" style="font-size:10px;padding:3px 10px" data-iv="pedit">編集</button></div>'+
+    h+='<div class="row between" style="margin-bottom:4px"><span class="muted" style="font-size:11px">投資方針</span><button class="chip" style="font-size:11px;padding:3px 10px" data-iv="pedit">編集</button></div>'+
       '<div style="font-size:12px;line-height:1.7;white-space:pre-wrap">'+(inv.policy&&inv.policy.trim()?esc(inv.policy):'<span class="muted">未記入 — シナリオと出口を書いておくと、<br>暴落の夜に過去の自分が答えてくれます</span>')+'</div>';
   }
   h+='</div>';
@@ -3628,7 +3623,7 @@ function viewInvest(){
     inv.holdings.forEach((x,i)=>{
       h+='<div class="row" data-iv="open" data-v="'+x.id+'" style="gap:8px;align-items:center;padding:11px 0;cursor:pointer'+(i>0?';border-top:1px solid var(--line)':'')+'">'+
         '<div style="flex:1;min-width:0"><div class="ellip" style="font-size:13px;font-weight:600">'+esc(x.name)+'</div>'+
-        '<div class="muted" style="font-size:10px;margin-top:2px">'+(FRAME_LABEL[x.frame]||"")+' ・ '+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+'</div></div>'+
+        '<div class="muted" style="font-size:11px;margin-top:2px">'+(FRAME_LABEL[x.frame]||"")+' ・ '+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+'</div></div>'+
         '<span class="mono" style="flex:none;font-size:13px;font-weight:700">¥'+num(x.cost).toLocaleString("ja-JP")+'</span>'+
         '<span class="muted" style="flex:none">›</span></div>';
     });
@@ -3651,7 +3646,7 @@ function viewInvestDetail(){
     '<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)"><span class="muted" style="flex:1;font-size:12px">保有 / 積立額の累計</span>'+
     '<span class="mono" style="font-size:14px;font-weight:700">'+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+' ・ ¥'+num(x.cost).toLocaleString("ja-JP")+'</span></div></div>';
   /* 買付記録 */
-  h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:10px;margin-bottom:6px">買付を記録(数量と積立額に加算)</div>'+
+  h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:11px;margin-bottom:6px">買付を記録(数量と積立額に加算)</div>'+
     '<div class="row" style="gap:6px">'+
     '<input class="input sm mono" type="date" id="iv-bdate" value="'+todayStr()+'" style="width:118px;flex:none">'+
     '<input class="input sm mono r" type="number" inputmode="decimal" id="iv-bqty" placeholder="数量" style="flex:1;min-width:0">'+
@@ -3905,9 +3900,9 @@ function viewWallet(){
          残り続ける意味がない。値は編集から確認・変更できる */
 
       '<div class="row" style="gap:6px;justify-content:flex-end;margin-top:9px">'+
-      '<button class="btn" style="font-size:10px;padding:3px 12px" data-wa="wedit" data-v="'+w.id+'">編集</button>'+
-      '<button class="btn" style="font-size:10px;padding:3px 12px" data-wa="wadj" data-v="'+w.id+'">調整</button>'+
-      (wpots.length>1?'<button class="btn" style="font-size:10px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-wa="wdel" data-v="'+w.id+'">削除</button>':'')+
+      '<button class="btn" style="font-size:11px;padding:3px 12px" data-wa="wedit" data-v="'+w.id+'">編集</button>'+
+      '<button class="btn" style="font-size:11px;padding:3px 12px" data-wa="wadj" data-v="'+w.id+'">調整</button>'+
+      (wpots.length>1?'<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-wa="wdel" data-v="'+w.id+'">削除</button>':'')+
       '</div></div>';
   });
   h+='<button class="btn full" style="padding:9px 0;font-size:12px;border-style:dashed;color:var(--muted);margin-top:2px" data-wa="wadd">＋ 財布を追加</button>';
@@ -3978,7 +3973,7 @@ function viewBank(){
   h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">残高</div>'+
     '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">¥'+bal.toLocaleString("ja-JP")+'</div>'+
-    '<div class="muted" style="font-size:10px;margin-top:8px">振替目安 ¥'+ceil.toLocaleString("ja-JP")+'</div>'+
+    '<div class="muted" style="font-size:11px;margin-top:8px">振替目安 ¥'+ceil.toLocaleString("ja-JP")+'</div>'+
     '<div style="display:none">'+
       '<button data-ba="edit">編集</button><button data-ba="adjust">調整</button></div></div>';
   if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">振替目安を超えています +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
@@ -3997,7 +3992,7 @@ function viewBank(){
         '<div class="row between" style="align-items:baseline">'+
         '<span style="font-size:13px;font-weight:700">'+esc(p.name)+'</span>'+
         '<span class="mono '+(v<0?"red":v>0?"teal":"muted")+'" style="font-size:17px;font-weight:700">'+signYen(v)+'</span></div>'+
-        (v<0?'<div class="muted" style="font-size:10px;margin-top:3px">借りている状態です</div>':'')+
+        (v<0?'<div class="muted" style="font-size:11px;margin-top:3px">借りている状態です</div>':'')+
         '<div class="row" style="gap:6px;margin-top:9px">'+
         '<button class="btn" style="flex:1;font-size:11px;padding:6px 0" data-ba="bpedit" data-v="'+esc(p.id)+'">編集</button>'+
         '<button class="btn" style="flex:1;font-size:11px;padding:6px 0" data-ba="bpadj" data-v="'+esc(p.id)+'">調整</button>'+
@@ -4032,8 +4027,8 @@ function viewBank(){
         '<div class="row between" style="align-items:baseline">'+
         '<span style="font-size:13px;font-weight:700">'+m.mk.slice(0,4)+'年 '+num(m.mk.slice(5))+'月</span>'+
         '<span class="mono '+clsPM(m.net)+'" style="font-size:16px;font-weight:700">'+signYen(m.net)+'</span></div>'+
-        (parts.length?'<div class="mono" style="font-size:10px;margin-top:5px;line-height:1.8">'+parts.join('　')+'</div>':'')+
-        (overCap?'<div class="red" style="font-size:10px;margin-top:3px">振替枠 ¥'+cap.toLocaleString("ja-JP")+' を ¥'+(m.topup-cap).toLocaleString("ja-JP")+' 超過</div>':'')+
+        (parts.length?'<div class="mono" style="font-size:11px;margin-top:5px;line-height:1.8">'+parts.join('　')+'</div>':'')+
+        (overCap?'<div class="red" style="font-size:11px;margin-top:3px">振替枠 ¥'+cap.toLocaleString("ja-JP")+' を ¥'+(m.topup-cap).toLocaleString("ja-JP")+' 超過</div>':'')+
         '</div>';
     });
   }
@@ -4043,7 +4038,7 @@ function viewBank(){
     const LBL={topup:"振替(所持金から)",sweep:"振替(貯金へ)",return:"振替(所持金へ)",adjust:"補正"};
     txns.forEach(t=>{
       const amt = t.type==="topup"? num(t.amount) : t.type==="sweep"? -num(t.amount) : num(t.amount);
-      h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+'</div><div class="muted mono" style="font-size:10px">'+esc(t.date)+'</div></div>'+
+      h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+'</div><div class="muted mono" style="font-size:11px">'+esc(t.date)+'</div></div>'+
         '<div class="mono '+clsPM(amt)+'" style="font-size:14px;font-weight:700">'+signYen(amt)+'</div>'+
         '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0" data-ba="txndel" data-v="'+t.id+'">×</button></div>';
     });
@@ -4295,20 +4290,20 @@ function viewSavings(){
       '<span class="mono '+_col+'" style="font-size:18px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span></div>';
     if(pt.hasTarget){
       h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:9px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
-        '<div class="row between" style="font-size:10px;margin-top:6px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+'</span>'+
+        '<div class="row between" style="font-size:11px;margin-top:6px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+'</span>'+
         '<span><span class="mono muted">'+(pt.done?'':'あと')+'</span> <span class="mono '+(pt.done?'teal':'amber')+'" style="font-weight:700">'+(pt.done?'達成':'¥'+pt.short.toLocaleString("ja-JP"))+'</span></span></div>'+
         /* v4.47: 自動目標は**根拠と信頼度を必ず出す**。実測が何ヶ月分あるかで数字の重みが違うため */
-        (pt.auto ? '<div class="muted" style="font-size:10px;margin-top:4px">生活費 ¥'+Math.round(pt.basis).toLocaleString("ja-JP")+'/月 × '+pt.months+'ヶ月'+
+        (pt.auto ? '<div class="muted" style="font-size:11px;margin-top:4px">生活費 ¥'+Math.round(pt.basis).toLocaleString("ja-JP")+'/月 × '+pt.months+'ヶ月'+
           (pt.samples>=3 ? '　(直近3ヶ月の'+pt.stat+')'
            : pt.samples>0 ? '　<span class="amber">実測'+pt.samples+'ヶ月分のみ・暫定</span>'
                           : '　<span class="amber">実測データなし</span>')+'</div>' : '');
     } else {
-      h+='<div class="muted" style="font-size:10px;margin-top:6px">目標額 未設定</div>';
+      h+='<div class="muted" style="font-size:11px;margin-top:6px">目標額 未設定</div>';
     }
     h+='<div class="row" style="gap:6px;justify-content:flex-end;margin-top:11px">'+
-      '<button class="btn" style="font-size:10px;padding:3px 12px" data-sa="potedit" data-v="'+pt.id+'">編集</button>'+
-      '<button class="btn" style="font-size:10px;padding:3px 12px" data-sa="adjust" data-v="'+pt.id+'">調整</button>'+
-      (pots.length>1?'<button class="btn" style="font-size:10px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-sa="potdel" data-v="'+pt.id+'">削除</button>':'')+
+      '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="potedit" data-v="'+pt.id+'">編集</button>'+
+      '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="adjust" data-v="'+pt.id+'">調整</button>'+
+      (pots.length>1?'<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-sa="potdel" data-v="'+pt.id+'">削除</button>':'')+
       '</div></div>';
   });
   /* v4.07: 調整は各箱の小ボタンへ移したのでここには置かない。説明文も撤去。
@@ -4326,8 +4321,8 @@ function viewSavings(){
     txns.forEach(t=>{
       const amt = t.type==="withdraw"? -num(t.amount) : num(t.amount);
       h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+
-        (pots.length>1?' <span class="muted" style="font-size:10px;font-weight:400">'+esc(potName(txPot(t)))+'</span>':'')+
-        '</div><div class="muted mono" style="font-size:10px">'+esc(t.date)+'</div></div>'+
+        (pots.length>1?' <span class="muted" style="font-size:11px;font-weight:400">'+esc(potName(txPot(t)))+'</span>':'')+
+        '</div><div class="muted mono" style="font-size:11px">'+esc(t.date)+'</div></div>'+
         '<div class="mono '+clsPM(amt)+'" style="font-size:14px;font-weight:700">'+signYen(amt)+'</div>'+
         '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0" data-sa="txndel" data-v="'+t.id+'">×</button></div>';
     });
@@ -4410,7 +4405,7 @@ function wishPrintHtml(){
   if(active.length){
     h+='<table class="pr-tbl"><thead><tr><th>品目</th><th>見積り</th><th>状態</th><th>理由</th></tr></thead><tbody>';
     active.forEach(w=>{
-      h+='<tr><td style="text-align:left">'+esc(w.name||"")+(w.url?'<br><span style="font-size:10px;color:#06c">'+esc(w.url)+'</span>':'')+'</td>'+
+      h+='<tr><td style="text-align:left">'+esc(w.name||"")+(w.url?'<br><span style="font-size:11px;color:#06c">'+esc(w.url)+'</span>':'')+'</td>'+
         '<td>'+money(w.est)+'</td><td>'+WISH_LABEL[wishEff(w)]+(wishEff(w)==="cooldown"?" 残"+wishDaysLeft(w)+"日":"")+'</td>'+
         '<td style="text-align:left">'+esc(w.reason||"")+'</td></tr>';
     });
@@ -4436,8 +4431,8 @@ function viewWishlist(){
   const waiting=list.filter(w=>["consult","cooldown","ready"].includes(wishEff(w))).length;
   const resisted=list.filter(w=>w.status==="rejected").reduce((a,w)=>a+num(w.est),0);
   h+='<div class="card2" style="margin-bottom:12px;display:flex;justify-content:space-around;text-align:center;padding:12px">'+
-    '<div><div class="muted" style="font-size:10px">検討中</div><div class="mono" style="font-size:17px;font-weight:700">'+waiting+'件</div></div>'+
-    '<div><div class="muted" style="font-size:10px">我慢した合計</div><div class="mono teal" style="font-size:17px;font-weight:700">¥'+resisted.toLocaleString("ja-JP")+'</div></div></div>';
+    '<div><div class="muted" style="font-size:11px">検討中</div><div class="mono" style="font-size:17px;font-weight:700">'+waiting+'件</div></div>'+
+    '<div><div class="muted" style="font-size:11px">我慢した合計</div><div class="mono teal" style="font-size:17px;font-weight:700">¥'+resisted.toLocaleString("ja-JP")+'</div></div></div>';
 
   if(list.length) h+='<button class="btn tealb full" style="margin-bottom:14px;padding:11px 0;font-weight:700" data-wa="pdf">PDFで相談 / 印刷</button>';
 
@@ -4457,7 +4452,7 @@ function viewWishlist(){
       const eff=wishEff(w);
       h+='<div class="card" style="margin-bottom:10px">'+
         '<div class="row between" style="align-items:flex-start;margin-bottom:6px">'+
-        '<div style="flex:1;min-width:0"><span class="chip" style="border-color:'+WISH_COLOR[eff]+';color:'+WISH_COLOR[eff]+';font-size:10px;padding:2px 8px">'+WISH_LABEL[eff]+(eff==="cooldown"?" 残"+wishDaysLeft(w)+"日":"")+'</span>'+
+        '<div style="flex:1;min-width:0"><span class="chip" style="border-color:'+WISH_COLOR[eff]+';color:'+WISH_COLOR[eff]+';font-size:11px;padding:2px 8px">'+WISH_LABEL[eff]+(eff==="cooldown"?" 残"+wishDaysLeft(w)+"日":"")+'</span>'+
         '<div style="font-weight:700;font-size:14px;margin-top:5px" class="ellip">'+esc(w.name||"(無題)")+'</div></div>'+
         '<button class="xbtn" style="font-size:14px;flex-shrink:0" data-wa="del" data-v="'+w.id+'">×</button></div>'+
         '<div class="mono muted" style="font-size:12px;margin-bottom:4px">見積り ¥'+num(w.est).toLocaleString("ja-JP")+(w.status==="bought"&&num(w.buy)?' → 購入 ¥'+num(w.buy).toLocaleString("ja-JP"):'')+'</div>';
@@ -4465,10 +4460,10 @@ function viewWishlist(){
       if(w.reason) h+='<div class="muted" style="font-size:11px;margin-bottom:6px">'+esc(w.reason)+'</div>';
       if(eff==="consult"){
         h+='<div class="row" style="gap:8px;align-items:center;margin-top:8px">'+
-          '<span class="muted" style="font-size:10px;white-space:nowrap">寝かせ日数</span>'+
+          '<span class="muted" style="font-size:11px;white-space:nowrap">寝かせ日数</span>'+
           '<input class="input sm r mono" type="number" inputmode="numeric" placeholder="日数" value="'+esc(w.cooldownDays||"")+'" data-wd="'+w.id+'" style="width:70px">'+
           '<button class="btn" style="font-size:11px;padding:6px 12px" data-wa="startcool" data-v="'+w.id+'">寝かせ開始</button></div>'+
-          '<div class="muted" style="font-size:10px;margin-top:5px">PDFで相談→日数を入れて開始</div>';
+          '<div class="muted" style="font-size:11px;margin-top:5px">PDFで相談→日数を入れて開始</div>';
       } else if(eff==="cooldown"){
         h+='<div class="muted" style="font-size:11px;margin-top:4px">あと'+wishDaysLeft(w)+'日で承認可能</div>';
       } else if(eff==="ready"){
@@ -4538,8 +4533,8 @@ function viewFixed(){
         '<div style="text-align:right"><div class="mono '+(t.type==="income"?"teal":"red")+'" style="font-size:16px;font-weight:700">'+
         (t.type==="income"?"+":"−")+yen(num(t.amount))+'</div>'+
         '<div class="row" style="gap:6px;margin-top:5px;justify-content:flex-end">'+
-        '<button class="btn" style="font-size:10px;padding:3px 12px" data-fa="edit" data-v="'+t.id+'">編集</button>'+
-        '<button class="btn" style="font-size:10px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-fa="stop" data-v="'+t.id+'">停止</button>'+
+        '<button class="btn" style="font-size:11px;padding:3px 12px" data-fa="edit" data-v="'+t.id+'">編集</button>'+
+        '<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-fa="stop" data-v="'+t.id+'">停止</button>'+
         '</div></div></div></div>';
     });
   }
@@ -4593,7 +4588,7 @@ function viewFixed(){
         '<div class="row" style="gap:6px;margin-bottom:4px">'+
         [[false,"固定費"],[true,"変動支出"]].map(([v,l])=>
           '<button class="btn '+((!!f.varc)===v?"sel":"")+'" data-fa="fkind" data-v="'+(v?"1":"0")+'" style="flex:1;font-size:11px;padding:6px 0">'+l+'</button>').join("")+'</div>'+
-        '<div class="muted" style="font-size:10px;line-height:1.6;margin-bottom:10px">'+
+        '<div class="muted" style="font-size:11px;line-height:1.6;margin-bottom:10px">'+
         (f.varc ? '自動で計上しますが、可処分は減らさず予算の枠に乗せます。<br>定期便のように「自動で来るが削れる」支出向け。'
                 : '可処分から先に引きます。予算の枠には乗りません。<br>家賃・光熱費のように削れない支出向け。')+'</div>';
     }
@@ -4619,9 +4614,9 @@ function viewFixed(){
         (f.start
           ? (function(){ const _sd=new Date(f.start+"T00:00:00"); if(isNaN(_sd)) return '';
               const _ev=Math.max(1,num(f.every)||1);
-              return '<div class="muted" style="font-size:10px;margin:-6px 2px 12px">'+
+              return '<div class="muted" style="font-size:11px;margin:-6px 2px 12px">'+
                 _sd.getFullYear()+'/'+(_sd.getMonth()+1)+' から '+(_ev>1?_ev+'ヶ月ごと ':'毎月 ')+_sd.getDate()+' 日に計上されます</div>'; })()
-          : '<div class="muted" style="font-size:10px;margin:-6px 2px 12px">初回の引き落とし日を選ぶと、その日付から周期が決まります。</div>')+
+          : '<div class="muted" style="font-size:11px;margin:-6px 2px 12px">初回の引き落とし日を選ぶと、その日付から周期が決まります。</div>')+
 
         '<div class="fxg">'+fxAmt+fxEnd+'</div>')+
       (!isWeekly && !isDays ? '<div class="muted" style="font-size:11px;margin:0 2px 6px">引き落とし日が土日祝のとき</div>'+
@@ -4632,9 +4627,9 @@ function viewFixed(){
       '<button class="btn full" style="padding:10px 0;font-size:12px;color:var(--muted)" data-fa="fcancel">やめる</button>'+
       '</div><div style="display:none"><button data-fa="fsave">保存</button></div>'+
       (f.editId
-        ? '<div class="muted" style="font-size:10px;margin-top:8px;line-height:1.6">保存すると未来の予定分に反映されます(過去の実績は変わりません)。</div>'+
+        ? '<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.6">保存すると未来の予定分に反映されます(過去の実績は変わりません)。</div>'+
           '<button class="btn" style="width:100%;margin-top:10px;color:var(--red);border-color:var(--red);font-size:12px" data-fa="fdelete" data-v="'+f.editId+'">この固定費を完全に削除(過去含む)</button>'
-        : '<div class="muted" style="font-size:10px;margin-top:8px">登録すると今月から当年12月まで、選んだ頻度で自動計上されます。</div>')+
+        : '<div class="muted" style="font-size:11px;margin-top:8px">登録すると今月から当年12月まで、選んだ頻度で自動計上されます。</div>')+
       '</div>';
   }
   return h;
@@ -4790,7 +4785,7 @@ function viewMj(){
   h += '<div class="row" style="gap:6px;margin-bottom:6px">';
   for(let i=0;i<rc;i++){
     h += '<div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 6px;text-align:center">'+
-      '<div class="muted" style="font-size:10px;font-weight:700;margin-bottom:4px">'+(i+1)+'着</div>'+
+      '<div class="muted" style="font-size:11px;font-weight:700;margin-bottom:4px">'+(i+1)+'着</div>'+
       '<input class="input sm mono" type="number" inputmode="numeric" value="'+esc((m.ranks||[])[i]||"")+'" style="text-align:center;padding:6px 2px" data-in="mjrank" data-v="'+i+'">'+
       '<div class="row" style="gap:4px;margin-top:5px">'+
       '<button class="btn" style="flex:1;padding:4px 0;font-size:14px" data-a="rankdn" data-v="'+i+'">−</button>'+
@@ -4800,7 +4795,7 @@ function viewMj(){
   h += '<div class="muted mono" style="font-size:11px;text-align:right" id="mj-hanchan">半荘数 '+mjHanchan(m)+(mjAvgRank(m)!==null?' / 平均着順 '+mjAvgRank(m).toFixed(2):'')+'</div>';
 
   h += band("同卓者(自分以外・任意)");
-  h += '<div class="muted" style="font-size:10px;margin:0 2px 8px;line-height:1.6">最大5名。スコア表から反映した記録は自動で入ります。<br>カードに表示されます。</div>';
+  h += '<div class="muted" style="font-size:11px;margin:0 2px 8px;line-height:1.6">最大5名。スコア表から反映した記録は自動で入ります。<br>カードに表示されます。</div>';
   (m.players||[]).forEach((p,i)=>{
     h += '<div class="row" style="gap:8px;margin-bottom:6px;align-items:center">'+
       '<input class="input" placeholder="プレイヤー名" value="'+esc(p||"")+'" data-in="mjp" data-v="'+i+'" style="flex:1">'+
@@ -4811,18 +4806,18 @@ function viewMj(){
   if(isFree){
     h += band("ゲーム代(フリー・自動計算)");
     h += '<div class="grid2" style="margin-bottom:6px">'+
-      '<div><div class="muted" style="font-size:10px;margin-bottom:2px">基本ゲーム代(1半荘)</div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">基本ゲーム代(1半荘)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.baseFee)+'" data-in="mjf" data-v="baseFee"></div>'+
-      '<div><div class="muted" style="font-size:10px;margin-bottom:2px">トップ賞(1着毎)</div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">トップ賞(1着毎)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.topBonus)+'" data-in="mjf" data-v="topBonus"></div>'+
-      '<div><div class="muted" style="font-size:10px;margin-bottom:2px">ドリンク/入場(1回)</div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ドリンク/入場(1回)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.drinkFee)+'" data-in="mjf" data-v="drinkFee"></div>'+
-      '<div><div class="muted" style="font-size:10px;margin-bottom:2px">ゲーム代(自動)</div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代(自動)</div>'+
       '<div class="input sm mono r" id="mj-feeauto" style="border-style:dashed">'+"¥"+mjGameFee(m).toLocaleString("ja-JP")+'</div></div></div>';
-    h += '<div class="muted mono" style="font-size:10px" id="mj-feeformula">'+mjFeeFormula(m)+'</div>';
+    h += '<div class="muted mono" style="font-size:11px" id="mj-feeformula">'+mjFeeFormula(m)+'</div>';
   } else {
     h += band("ゲーム代(セット・手入力)");
-    h += '<div><div class="muted" style="font-size:10px;margin-bottom:2px">ゲーム代 合計(場代・トップ賞・奢り込み)</div>'+
+    h += '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代 合計(場代・トップ賞・奢り込み)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="まとめて入力" value="'+esc(m.setFee)+'" data-in="mjf" data-v="setFee"></div>';
   }
 
@@ -4850,7 +4845,7 @@ function viewMj(){
       bankPots().map(p=>{ const v=bankBalance(p.id);
         return '<button class="btn '+(cb===String(p.id)?"sel":"")+'" data-a="mjbwal" data-v="'+esc(p.id)+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
         '<span class="ellip" style="display:block">'+esc(p.name)+'</span>'+
-        '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:10px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
+        '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:11px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
   }
   h += '<input class="input" placeholder="メモ(任意)" value="'+esc(m.memo||"")+'" style="margin:14px 0" data-in="mjf" data-v="memo">';
   h += '<div style="display:none"><button data-a="mjsave">保存</button></div>';
@@ -4860,12 +4855,12 @@ function viewMj(){
 function mjSignedRow(label, val, field, rateLabel, rateVal, rateField, rateDecimal){
   const neg = String(val||"").startsWith("-");
   return '<div style="margin-bottom:8px">'+
-    '<div class="muted" style="font-size:10px;margin-bottom:2px">'+label+'</div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:2px">'+label+'</div>'+
     '<div class="row" style="gap:6px;align-items:center">'+
     '<button class="signbtn" style="width:34px;height:34px;border:1.5px solid '+(neg?"var(--red)":"var(--teal)")+';color:'+(neg?"var(--red)":"var(--teal)")+
     ';background:'+(neg?"rgba(229,115,115,.1)":"rgba(45,212,191,.1)")+'" data-a="mjsign" data-v="'+field+'">'+(neg?"−":"＋")+'</button>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(String(val||"").replace("-",""))+'" style="flex:1.3;min-width:0" data-in="mjabs" data-v="'+field+'">'+
-    '<span class="muted" style="font-size:10px;flex-shrink:0">'+rateLabel+'</span>'+
+    '<span class="muted" style="font-size:11px;flex-shrink:0">'+rateLabel+'</span>'+
     '<input class="input sm mono r" type="number" inputmode="'+(rateDecimal?"decimal":"numeric")+'"'+(rateDecimal?' step="0.1"':'')+' value="'+esc(rateVal)+'" style="flex:1;min-width:0" data-in="mjf" data-v="'+rateField+'"></div></div>';
 }
 function mjFeeFormula(m){
@@ -5406,7 +5401,7 @@ function viewEntry(){
         composerHtml='<input class="input" id="t-from" placeholder="乗車駅・停" value="'+esc(f.tfrom||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkf")+
           '<input class="input" id="t-to" placeholder="降車駅・停" value="'+esc(f.tto||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkt");
       }
-      composerHtml+='<div class="muted" style="font-size:10px;margin:0 2px 14px">保存時: 店名='+(f.tmode==="駐輪"?"場所":esc(f.tmode))+' / 品目='+(f.tmode==="駐輪"?"駐輪":"乗車→降車")+' / 分類=消費</div>';
+      composerHtml+='<div class="muted" style="font-size:11px;margin:0 2px 14px">保存時: 店名='+(f.tmode==="駐輪"?"場所":esc(f.tmode))+' / 品目='+(f.tmode==="駐輪"?"駐輪":"乗車→降車")+' / 分類=消費</div>';
     }
   }
   /* v4.36: **品目と金額を同じ行に置く**(ユーザー指摘: 1件目だけ金額が画面上端にあって戻る必要があった)。
@@ -5440,18 +5435,18 @@ function viewEntry(){
     const opt=(a,sel,act)=>'<button class="btn" data-a="'+act+'" data-v="'+a.id+'" style="width:100%;text-align:left;padding:8px 9px;margin-bottom:5px;border-radius:9px;'+
       (sel?'border-color:var(--teal);background:rgba(47,212,181,.10)':'')+'">'+
       '<div style="font-size:11px;font-weight:700;color:'+(sel?'var(--teal)':'var(--text)')+'">'+esc(a.name)+'</div>'+
-      '<div class="mono" style="font-size:10px;color:'+(sel?'var(--teal)':'var(--muted)')+'">¥'+a.bal.toLocaleString("ja-JP")+'</div></button>';
+      '<div class="mono" style="font-size:11px;color:'+(sel?'var(--teal)':'var(--muted)')+'">¥'+a.bal.toLocaleString("ja-JP")+'</div></button>';
     trHtml='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">'+
-      '<div><div class="muted" style="font-size:10px;margin-bottom:5px">振替元</div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:5px">振替元</div>'+
         accs.map(a=>opt(a,String(UI.trFrom||"")===a.id,"trfrom")).join("")+'</div>'+
-      '<div><div class="muted" style="font-size:10px;margin-bottom:5px">振替先</div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:5px">振替先</div>'+
         accs.map(a=>String(a.id)===String(UI.trFrom||"")
           ? '<div style="height:44px;margin-bottom:5px"></div>'
           : opt(a,String(UI.trTo||"")===a.id,"trto")).join("")+'</div></div>';
     const fa=accs.find(a=>a.id===String(UI.trFrom)), ta=accs.find(a=>a.id===String(UI.trTo));
     if(fa&&ta&&fa!==ta) trHtml+='<div class="teal" style="font-size:11px;margin-bottom:12px;text-align:center;font-weight:700">'+esc(fa.name)+' → '+esc(ta.name)+'</div>';
-    else trHtml+='<div class="muted" style="font-size:10px;margin-bottom:12px;text-align:center">振替元と振替先を選んでください</div>';
-    trHtml+='<div class="muted" style="font-size:10px;margin:0 2px 12px;line-height:1.7">振替は収支に含まれません。<br>財布の間で金が動いただけだからです。</div>';
+    else trHtml+='<div class="muted" style="font-size:11px;margin-bottom:12px;text-align:center">振替元と振替先を選んでください</div>';
+    trHtml+='<div class="muted" style="font-size:11px;margin:0 2px 12px;line-height:1.7">振替は収支に含まれません。<br>財布の間で金が動いただけだからです。</div>';
   }
   /* v4.14: **どの財布から出したか/入ったか**を記帳時に選ぶ(ユーザー設計)。
      財布が1つしかないときは出さない(摩擦を増やさない)。既定は先頭の財布 */
@@ -5464,7 +5459,7 @@ function viewEntry(){
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:12px">'+
       walletPots().map(w=>'<button class="btn '+(cur===String(w.id)?"sel":"")+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
         '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
-        '<span class="mono muted" style="font-size:10px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+        '<span class="mono muted" style="font-size:11px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
   }
   /* v4.35: **同じ店で複数の品目をまとめて入力**(ユーザー設計)。レシート1枚=1回の入力にする。
      保存時は**行ごとに別のエントリ**を作る(日付/分類/店/財布は共有)ので、
@@ -5477,7 +5472,7 @@ function viewEntry(){
   if(!isTr && UI.editEntryId===null){
     pasteHtml = UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px">'+
-        '<div class="muted" style="font-size:10px;line-height:1.7;margin-bottom:8px">レシートを撮ってClaudeに読ませ、返ってきた文字列をそのまま貼ります。</div>'+
+        '<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:8px">レシートを撮ってClaudeに読ませ、返ってきた文字列をそのまま貼ります。</div>'+
         '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | 宮城野通→連坊 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
@@ -5775,7 +5770,7 @@ function viewSession(){
     '<span class="muted" style="font-size:12px;width:74px">パチンコ</span>'+
     '<input class="input mono r" type="number" inputmode="numeric" placeholder="例: 250" value="'+esc(s.pExchange||"")+'" style="flex:1" data-in="pexchange">'+
     '<span class="muted" style="font-size:12px">玉=1000円</span></div>'+
-    '<div class="muted" style="font-size:10px">使う方だけ入力。前回値を記憶します。<br>貯玉プッシュのレートは管理タブのボーダー試算で設定。</div>';
+    '<div class="muted" style="font-size:11px">使う方だけ入力。前回値を記憶します。<br>貯玉プッシュのレートは管理タブのボーダー試算で設定。</div>';
   }
 
   /* ----- 代打ち: 報酬 ----- */
@@ -5791,7 +5786,7 @@ function viewSession(){
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px">'+
         walletPots().map(w=>'<button class="btn '+(cw===String(w.id)?"sel":"")+'" data-a="swal" data-v="'+w.id+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
           '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
-          '<span class="mono muted" style="font-size:10px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+          '<span class="mono muted" style="font-size:11px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
     }
   }
 
@@ -5804,7 +5799,7 @@ function viewSession(){
       bankPots().map(p=>{ const v=bankBalance(p.id);
         return '<button class="btn '+(cb===String(p.id)?"sel":"")+'" data-a="sbwal" data-v="'+esc(p.id)+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
         '<span class="ellip" style="display:block">'+esc(p.name)+'</span>'+
-        '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:10px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
+        '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:11px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
   }
   /* ----- 台データ(貯玉方式) ----- */
   if(s.mode==="nori"){
@@ -5861,7 +5856,7 @@ function sessionSummary(s){
       h += '<div class="card2" style="margin-bottom:10px"><div class="row between" style="align-items:baseline">'+
         '<span style="font-size:11px;font-weight:700">客の玉での勝敗(報告用)</span>'+
         '<span class="mono '+clsPM(dai)+'" style="font-size:16px;font-weight:700">'+signYen(dai)+'</span></div>'+
-        '<div class="muted" style="font-size:10px;margin-top:4px">この金額は家計簿には反映されません</div></div>';
+        '<div class="muted" style="font-size:11px;margin-top:4px">この金額は家計簿には反映されません</div></div>';
     }
     h += srow("報酬", num(s.fee));
     h += srow("経費(自分負担分)", -expTotal(s));
@@ -5869,15 +5864,15 @@ function sessionSummary(s){
     h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>'+
       '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">代打ち報酬(家計簿の収入へ)</span>'+
       '<span class="mono '+clsPM(fin)+'" style="font-size:20px;font-weight:700">'+signYen(fin)+'</span></div>'+
-      '<div class="muted" style="font-size:10px;margin-top:4px">労働収入なので家計簿の収入に計上(軍資金には入りません)</div>';
+      '<div class="muted" style="font-size:11px;margin-top:4px">労働収入なので家計簿の収入に計上(軍資金には入りません)</div>';
     return h;
   }
   if(s.mode==="nori"){
     const me = personSlotYen(s,"me"), pt = personSlotYen(s,"partner"), pn = esc((s.partnerName||"").trim()||"相方");
     h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
-      '<div class="card2" style="flex:1;text-align:center"><div class="muted" style="font-size:10px">自分</div>'+
+      '<div class="card2" style="flex:1;text-align:center"><div class="muted" style="font-size:11px">自分</div>'+
       '<div class="mono '+clsPM(me)+'" style="font-size:15px;font-weight:700">'+signYen(me)+'</div></div>'+
-      '<div class="card2" style="flex:1;text-align:center"><div class="muted ellip" style="font-size:10px">'+pn+'</div>'+
+      '<div class="card2" style="flex:1;text-align:center"><div class="muted ellip" style="font-size:11px">'+pn+'</div>'+
       '<div class="mono '+clsPM(pt)+'" style="font-size:15px;font-weight:700">'+signYen(pt)+'</div></div></div>';
     h += srow("2人合計", poolTotal(s));
     /* 折半調整: 自分の取り分を編集可、相方は残りを自動 */
@@ -5891,7 +5886,7 @@ function sessionSummary(s){
       '</div></div>';
     h += '<div class="row between" style="font-size:12px;margin:2px 0 4px"><span class="muted">'+esc((s.partnerName||"").trim()||"相方")+'の取り分(自動)</span>'+
       '<span class="mono '+clsPM(theirs)+'">'+signYen(theirs)+'</span></div>';
-    if(adjusted) h += '<div class="muted" style="font-size:10px;margin-bottom:2px">折半'+signYen(half)+'から調整済み(差'+signYen(mine-half)+')</div>';
+    if(adjusted) h += '<div class="muted" style="font-size:11px;margin-bottom:2px">折半'+signYen(half)+'から調整済み(差'+signYen(mine-half)+')</div>';
   }
   if(s.mode==="nori"){
     h += srow("経費(自分負担分)", -expTotal(s));
@@ -5927,17 +5922,17 @@ function viewSlotMachine(m, s){
 
   /* 貯玉方式の4項目 */
   h += '<div class="grid2" style="margin-bottom:8px">'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">開始貯玉(枚)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">開始貯玉(枚)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.startStock||"")+'" data-in="mstock" data-v="'+m.id+'|startStock"></div>'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">終了貯玉(枚)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">終了貯玉(枚)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.endStock||"")+'" data-in="mstock" data-v="'+m.id+'|endStock"></div>'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">終了時の持ち玉(枚)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">終了時の持ち玉(枚)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.holdBalls||"")+'" data-in="mstock" data-v="'+m.id+'|holdBalls"></div>'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">差枚(自動)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">差枚(自動)</div>'+
     '<div id="sabai-'+m.id+'" class="input sm mono r '+clsPM(sabai)+'" style="border-style:dashed">'+(sabai>=0?"+":"")+sabai+'</div></div></div>';
 
   /* 現金投資(複数行) */
-  h += '<div class="muted" style="font-size:10px;margin-bottom:3px">現金投資(円)</div>';
+  h += '<div class="muted" style="font-size:11px;margin-bottom:3px">現金投資(円)</div>';
   (m.cash||[]).forEach(c=>{
     h += '<div class="row" style="gap:6px;margin-bottom:5px">'+
       '<input class="input sm" placeholder="メモ(任意)" value="'+esc(c.label||"")+'" style="flex:1.3" data-in="mcash" data-v="'+m.id+'|'+c.id+'|label">'+
@@ -5951,7 +5946,7 @@ function viewSlotMachine(m, s){
     h += '<div class="row between" style="align-items:baseline;border-top:1px solid var(--line);padding-top:8px">'+
       '<span style="font-size:11px;font-weight:700">台収支</span>'+
       '<span class="mono '+clsPM(yenv)+'" style="font-size:16px;font-weight:700">'+signYen(yenv)+'</span></div>'+
-      (num(s.exchange)<=0?'<div class="red" style="font-size:10px;margin-top:4px">交換枚数を入力すると円換算されます</div>':'');
+      (num(s.exchange)<=0?'<div class="red" style="font-size:11px;margin-top:4px">交換枚数を入力すると円換算されます</div>':'');
   }
   h += '<input class="input sm" placeholder="メモ(任意)" value="'+esc(m.memo||"")+'" data-in="mmemo" data-v="'+m.id+'" style="margin-top:8px"></div>';
   return h;
@@ -5970,22 +5965,22 @@ function viewMachine(m, s){
       hits.map(x=>'<button class="chip" data-a="msug" data-v="'+m.id+'|'+esc(x.name)+'">'+esc(x.name)+'</button>').join("")+'</div>':'')+'</div>';
 
   if(m.kind==="pachi"){
-    h += '<div class="muted" style="font-size:10px;margin-bottom:8px;padding:6px 8px;border:1px dashed var(--line);border-radius:8px">回転数・ボーダーの試算は管理タブへ移動。<br>(収支の記録とは別のため)</div>';
+    h += '<div class="muted" style="font-size:11px;margin-bottom:8px;padding:6px 8px;border:1px dashed var(--line);border-radius:8px">回転数・ボーダーの試算は管理タブへ移動。<br>(収支の記録とは別のため)</div>';
   }
 
   /* 収支(貯玉方式・任意) */
   h += '<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">'+
-    '<div class="muted" style="font-size:10px;font-weight:700;margin-bottom:6px">収支(貯玉・任意)</div>'+
+    '<div class="muted" style="font-size:11px;font-weight:700;margin-bottom:6px">収支(貯玉・任意)</div>'+
     '<div class="grid2" style="margin-bottom:6px">'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">開始貯玉(玉)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">開始貯玉(玉)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.startStock||"")+'" data-in="mstock" data-v="'+m.id+'|startStock"></div>'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">終了貯玉(玉)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">終了貯玉(玉)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.endStock||"")+'" data-in="mstock" data-v="'+m.id+'|endStock"></div>'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">終了時の持ち玉(玉)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">終了時の持ち玉(玉)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.holdBalls||"")+'" data-in="mstock" data-v="'+m.id+'|holdBalls"></div>'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">差玉(自動)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">差玉(自動)</div>'+
     '<div class="input sm mono r '+clsPM(machSabai(m))+'" style="border-style:dashed">'+(machSabai(m)>=0?"+":"")+machSabai(m)+'</div></div></div>';
-  h += '<div class="muted" style="font-size:10px;margin-bottom:3px">現金投資(円)</div>';
+  h += '<div class="muted" style="font-size:11px;margin-bottom:3px">現金投資(円)</div>';
   (m.cash||[]).forEach(c=>{
     h += '<div class="row" style="gap:6px;margin-bottom:5px">'+
       '<input class="input sm" placeholder="メモ(任意)" value="'+esc(c.label||"")+'" style="flex:1.3" data-in="mcash" data-v="'+m.id+'|'+c.id+'|label">'+
@@ -5998,7 +5993,7 @@ function viewMachine(m, s){
     h += '<div class="row between" style="align-items:baseline;margin-top:8px">'+
       '<span style="font-size:11px;font-weight:700">台収支</span>'+
       '<span class="mono '+clsPM(yv)+'" style="font-size:16px;font-weight:700">'+signYen(yv)+'</span></div>'+
-      (num(s.pExchange)<=0?'<div class="red" style="font-size:10px;margin-top:4px">換金玉数(パチンコ)を入力すると円換算されます</div>':'');
+      (num(s.pExchange)<=0?'<div class="red" style="font-size:11px;margin-top:4px">換金玉数(パチンコ)を入力すると円換算されます</div>':'');
   }
   h += '</div>';
 
@@ -6046,7 +6041,7 @@ function borderPanel(m, s){
       (fnum(master.ty)>0?' / 理論TY '+fnum(master.ty)+'発':'')+'</span>'+
       (bTheory!==null?'<span class="mono">理論B '+bTheory.toFixed(2)+'</span>':'')+'</div>';
   } else {
-    h += '<div style="margin:4px 0 6px"><div class="muted" style="font-size:10px;margin-bottom:2px">理論ボーダー(回/千円)</div>'+
+    h += '<div style="margin:4px 0 6px"><div class="muted" style="font-size:11px;margin-bottom:2px">理論ボーダー(回/千円)</div>'+
       '<input class="input sm mono r" type="number" inputmode="decimal" step="0.1" value="'+esc(m.border||"")+'" data-in="mborder" data-v="'+m.id+'"></div>';
   }
   // --- 削り後ボーダー(判定基準) ---
@@ -6055,13 +6050,13 @@ function borderPanel(m, s){
       '<span class="mono amber" style="font-weight:700">'+bKezuri.toFixed(2)+' 回/250発</span></div>';
   // --- 実測(参考・較正用) ---
   if(t.avgTY!==null)
-    h += '<div style="font-size:10px;margin-bottom:4px" class="muted">参考: 実測平均出玉 '+t.payouts.length+'回 '+Math.round(t.avgTY)+'発'+
+    h += '<div style="font-size:11px;margin-bottom:4px" class="muted">参考: 実測平均出玉 '+t.payouts.length+'回 '+Math.round(t.avgTY)+'発'+
       (bEff!==null?' → 実効B '+bEff.toFixed(2):'')+'</div>';
   if(dev!==null && ab)
     h += '<div class="row between" style="align-items:baseline;border-top:1px solid rgba(242,179,61,.3);padding-top:6px;margin-top:2px">'+
       '<span style="font-size:11px;font-weight:700">ボーダー乖離</span>'+
       '<span class="mono '+clsPM(dev)+'" style="font-size:15px;font-weight:700">'+(dev>=0?"+":"−")+Math.abs(dev).toFixed(1)+'%'+
-      '<span class="muted" style="font-size:10px;font-weight:400"> ('+(t.costRate250>=ab?"+":"−")+Math.abs(t.costRate250-ab).toFixed(2)+'回)</span></span></div>';
+      '<span class="muted" style="font-size:11px;font-weight:400"> ('+(t.costRate250>=ab?"+":"−")+Math.abs(t.costRate250-ab).toFixed(2)+'回)</span></span></div>';
   // --- 時給(遊技モード別 what-if。現在の出玉効率 rate250 を各モードの単価で評価し直す) ---
   const bJudge = bKezuri!==null ? bKezuri : bTheory;
   const kachi = fnum(m.kachi);
@@ -6087,7 +6082,7 @@ function borderPanel(m, s){
       '<span'+(strong?' style="font-weight:700"':' class="muted"')+'>'+label+'</span>'+
       '<span class="mono '+clsPM(val)+'"'+(strong?' style="font-weight:700"':'')+'>'+(val>=0?"+":"−")+Math.round(Math.abs(val)).toLocaleString()+'円/時</span></div>';
     h += '<div style="border-top:1px solid rgba(242,179,61,.3);padding-top:6px;margin-top:6px">'+
-      '<div class="muted" style="font-size:10px;margin-bottom:3px">時給 — 削り後B基準 / '+esc(rphLine)+'</div>'+
+      '<div class="muted" style="font-size:11px;margin-bottom:3px">時給 — 削り後B基準 / '+esc(rphLine)+'</div>'+
       wl("持玉遊技", wMochi, true)+
       wl("貯玉遊技", wChodama, false)+
       (hasCash ? wl("現金遊技", wCash, false) : '')+'</div>';
@@ -6111,20 +6106,20 @@ function viewBorderTool(){
     (S.stores||[]).map(st=>'<button class="chip" data-a="btstore" data-v="'+st.id+'">'+esc(st.name)+'</button>').join("")+'</div>';
   h += band("貯玉プッシュ(玉/回)");
   h += '<div class="card" style="margin-bottom:12px"><div class="grid2">'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">払出(出玉計算用)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">払出(出玉計算用)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="230" value="'+esc(m.pushPayout||"")+'" data-bi="pushPayout"></div>'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">引落(コスト計算用)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">引落(コスト計算用)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="245" value="'+esc(m.pushDraw||"")+'" data-bi="pushDraw"></div></div>'+
-    '<div class="muted" style="font-size:10px;margin-top:5px">貯玉プッシュを使う時だけ入力。持ち玉(玉数)区間のみなら不要。</div></div>';
+    '<div class="muted" style="font-size:11px;margin-top:5px">貯玉プッシュを使う時だけ入力。持ち玉(玉数)区間のみなら不要。</div></div>';
 
   /* 機種名 */
   h += band("機種");
   const pachiList = (S.mdb||[]).filter(x=>x.kind==="pachi" && (x.name||"").trim());
-  h += '<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:10px;margin-bottom:2px">機種名</div>'+
+  h += '<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:11px;margin-bottom:2px">機種名</div>'+
     '<input class="input sm" placeholder="機種名(下から選択 or 手入力)" value="'+esc(m.name||"")+'" data-bi="name">'+
-    (master ? '<div class="mono teal" style="font-size:10px;margin-top:4px">✓ 登録あり: 1/'+fnum(master.denom)+(fnum(master.ty)>0?' / 理論TY '+fnum(master.ty)+'発':'')+'</div>'
-      : (m.name?'<div class="muted" style="font-size:10px;margin-top:4px">未登録 — 下でボーダーを手入力できます</div>':''))+
-    (pachiList.length ? '<div style="margin-top:8px"><div class="muted" style="font-size:10px;margin-bottom:4px">登録機種から選ぶ</div><div class="row" style="flex-wrap:wrap;gap:6px">'+
+    (master ? '<div class="mono teal" style="font-size:11px;margin-top:4px">✓ 登録あり: 1/'+fnum(master.denom)+(fnum(master.ty)>0?' / 理論TY '+fnum(master.ty)+'発':'')+'</div>'
+      : (m.name?'<div class="muted" style="font-size:11px;margin-top:4px">未登録 — 下でボーダーを手入力できます</div>':''))+
+    (pachiList.length ? '<div style="margin-top:8px"><div class="muted" style="font-size:11px;margin-bottom:4px">登録機種から選ぶ</div><div class="row" style="flex-wrap:wrap;gap:6px">'+
       pachiList.map(x=>'<button class="chip'+((m.name||"").trim()===(x.name||"").trim()?' sel':'')+'" data-a="btpick" data-v="'+x.id+'">'+esc(x.name)+'</button>').join("")+'</div></div>' : '')+
     '</div>';
 
@@ -6133,43 +6128,43 @@ function viewBorderTool(){
   h += '<div class="card" style="margin-bottom:12px"><div class="row" style="gap:8px;align-items:center">'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="5" value="'+esc(m.kezuri||"")+'" style="width:84px" data-bi="kezuri">'+
     '<span class="muted" style="font-size:12px">% 理論を下回る分</span></div>'+
-    '<div class="muted" style="font-size:10px;margin-top:5px;line-height:1.6">釘の削りで出玉が理論に届かない分。<br>この分だけ厳しくした<b>削り後ボーダー</b>で判定します。<br>例: 5%=出玉が理論の95%。0なら理論ボーダー基準。<br>店・釘に合わせて調整。前回値を記憶します。</div></div>';
+    '<div class="muted" style="font-size:11px;margin-top:5px;line-height:1.6">釘の削りで出玉が理論に届かない分。<br>この分だけ厳しくした<b>削り後ボーダー</b>で判定します。<br>例: 5%=出玉が理論の95%。0なら理論ボーダー基準。<br>店・釘に合わせて調整。前回値を記憶します。</div></div>';
 
   /* 時給の設定 */
   h += band("時給の設定");
   const _hm = ts => { const d=new Date(ts); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
   h += '<div class="card" style="margin-bottom:12px"><div class="grid2">'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">換金率(1000円=◯玉)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">換金率(1000円=◯玉)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="250" value="'+esc(m.kachi||"")+'" data-bi="kachi"></div>'+
-    '<div><div class="muted" style="font-size:10px;margin-bottom:2px">現金貸出(1000円=◯玉)</div>'+
+    '<div><div class="muted" style="font-size:11px;margin-bottom:2px">現金貸出(1000円=◯玉)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="250" value="'+esc(m.genkin||"")+'" data-bi="genkin"></div></div>'+
-    '<div style="margin-top:6px"><div class="muted" style="font-size:10px;margin-bottom:2px">回転数/時(仮定値・実測が出るまで使用)</div>'+
+    '<div style="margin-top:6px"><div class="muted" style="font-size:11px;margin-bottom:2px">回転数/時(仮定値・実測が出るまで使用)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="750" value="'+esc(m.rph||"")+'" style="width:130px" data-bi="rph"></div>'+
     '<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px">'+
       '<div class="row between" style="align-items:center;margin-bottom:6px">'+
-        '<div class="row" style="gap:8px;align-items:center"><span class="muted" style="font-size:10px">開始</span>'+
+        '<div class="row" style="gap:8px;align-items:center"><span class="muted" style="font-size:11px">開始</span>'+
           '<span class="mono" style="font-size:13px;font-weight:700" id="bt-started">'+(m.startedAt?_hm(m.startedAt):"—")+'</span>'+
           '<input class="input sm mono r" type="time" value="'+(m.startedAt?_hm(m.startedAt):"")+'" style="width:104px;padding:4px 6px" data-bstart></div>'+
-        '<button class="chip" data-a="startnow" style="font-size:10px">今にリセット</button></div>'+
-      '<div class="row" style="gap:8px;align-items:center"><span class="muted" style="font-size:10px;width:28px">休憩</span>'+
+        '<button class="chip" data-a="startnow" style="font-size:11px">今にリセット</button></div>'+
+      '<div class="row" style="gap:8px;align-items:center"><span class="muted" style="font-size:11px;width:28px">休憩</span>'+
         '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(m.breakMin||"")+'" style="width:80px" data-bi="breakMin">'+
         '<span class="muted" style="font-size:11px">分(昼休憩など経過から除く)</span></div></div>'+
-    '<div class="muted" style="font-size:10px;margin-top:8px;line-height:1.6">換金率=出玉の価値(等価4円なら250玉)。<br>現金貸出=貸出で削る店の実玉数。<br>開始時刻は初回区間の入力で自動記録。ズレたら修正可。<br>前回値を記憶(開始・休憩はクリアで初期化)。</div></div>';
+    '<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.6">換金率=出玉の価値(等価4円なら250玉)。<br>現金貸出=貸出で削る店の実玉数。<br>開始時刻は初回区間の入力で自動記録。ズレたら修正可。<br>前回値を記憶(開始・休憩はクリアで初期化)。</div></div>';
 
   /* 通常時区間(貯玉プッシュ一本化) */
   h += band("通常時 区間");
-  h += '<div class="muted" style="font-size:10px;margin-bottom:8px;line-height:1.6">貯玉プッシュ区間: 残プッシュを入力。<br>持ち玉区間: <b>残プッシュを空</b>にして残玉に持ち玉。<br>現金区間: <b>現金投資(円)</b>を入力。</div>';
+  h += '<div class="muted" style="font-size:11px;margin-bottom:8px;line-height:1.6">貯玉プッシュ区間: 残プッシュを入力。<br>持ち玉区間: <b>残プッシュを空</b>にして残玉に持ち玉。<br>現金区間: <b>現金投資(円)</b>を入力。</div>';
   h += '<div style="margin-bottom:8px">';
   const segFields = [["rpStart","開始 残プッシュ"],["rpEnd","終了 残プッシュ"],["sb","開始 残玉"],["eb","当たり時 残玉"],["ss","開始 回転数"],["es","当たり時 回転数"],["cash","現金投資(円)"]];
   (m.segments||[]).forEach((g,gi)=>{
     h += '<div class="card2" style="margin-bottom:6px"><div class="row between" style="margin-bottom:6px">'+
-      '<span class="muted" style="font-size:10px;font-weight:700">区間'+(gi+1)+'</span>'+
-      '<div class="row" style="gap:8px"><span class="mono muted" style="font-size:10px" id="segs-'+g.id+'">'+segStat(g,rates)+'</span>'+
+      '<span class="muted" style="font-size:11px;font-weight:700">区間'+(gi+1)+'</span>'+
+      '<div class="row" style="gap:8px"><span class="mono muted" style="font-size:11px" id="segs-'+g.id+'">'+segStat(g,rates)+'</span>'+
       '<button class="xbtn" style="font-size:14px" data-a="btgdel" data-v="'+g.id+'">×</button></div></div>'+
       '<div class="grid2">'+segFields.map(([k,label])=>
-        '<div><div class="muted" style="font-size:10px;margin-bottom:2px">'+label+'</div>'+
+        '<div><div class="muted" style="font-size:11px;margin-bottom:2px">'+label+'</div>'+
         '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(g[k]||"")+'" data-bseg="'+g.id+'|'+k+'"></div>').join("")+'</div>'+
-      '<div class="mono muted" style="font-size:10px;margin-top:5px" id="segf-'+g.id+'">'+segFormula(g,rates)+'</div></div>';
+      '<div class="mono muted" style="font-size:11px;margin-top:5px" id="segf-'+g.id+'">'+segFormula(g,rates)+'</div></div>';
   });
   h += '<button class="btn dash full" style="margin-bottom:6px" data-a="btgadd">＋ 区間を追加(着席時/当たり後の再開時/現金追加時)</button>';
   h += '<div id="bt-panel">'+borderPanel(m, rates)+'</div>';
@@ -6485,9 +6480,9 @@ function viewStores(){
   (S.stores||[]).forEach(st=>{
     h += '<div class="card" style="margin-bottom:8px"><div class="row between" style="align-items:center">'+
       '<div style="min-width:0;flex:1"><div style="font-size:14px;font-weight:700" class="ellip">'+esc(st.name)+'</div>'+
-      '<div class="muted" style="font-size:10px;margin-top:3px;line-height:1.5">S換金 '+(st.slotEx||"—")+'枚 ・ P換金 '+(st.pachiEx||"—")+'玉/貸出 '+(st.pachiGenkin||"—")+'玉/貯玉 '+(st.pachiPay||"—")+'-'+(st.pachiDraw||"—")+'</div></div>'+
-      '<div class="row" style="gap:6px;flex-shrink:0;margin-left:8px"><button class="btn" style="font-size:10px;padding:3px 12px" data-a="stedit" data-v="'+st.id+'">編集</button>'+
-      '<button class="btn" style="font-size:10px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-a="stdel" data-v="'+st.id+'">削除</button></div></div></div>';
+      '<div class="muted" style="font-size:11px;margin-top:3px;line-height:1.5">S換金 '+(st.slotEx||"—")+'枚 ・ P換金 '+(st.pachiEx||"—")+'玉/貸出 '+(st.pachiGenkin||"—")+'玉/貯玉 '+(st.pachiPay||"—")+'-'+(st.pachiDraw||"—")+'</div></div>'+
+      '<div class="row" style="gap:6px;flex-shrink:0;margin-left:8px"><button class="btn" style="font-size:11px;padding:3px 12px" data-a="stedit" data-v="'+st.id+'">編集</button>'+
+      '<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-a="stdel" data-v="'+st.id+'">削除</button></div></div></div>';
   });
   h += band(f?(f.editId?"店舗を編集":"新しい店舗"):"追加");
   if(!f){
@@ -6505,9 +6500,9 @@ function viewStores(){
       '<div class="row" style="gap:8px;align-items:center;margin-bottom:10px"><span class="muted" style="font-size:11px;width:58px">現金貸出</span>'+
       '<input class="input mono r" type="number" inputmode="numeric" placeholder="250" value="'+esc(f.pachiGenkin||"")+'" style="flex:1" data-sf="pachiGenkin"><span class="muted" style="font-size:11px">玉=1000円</span></div>'+
       '<div class="grid2">'+
-      '<div><div class="muted" style="font-size:10px;margin-bottom:2px">貯玉払出(玉/回)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="230" value="'+esc(f.pachiPay||"")+'" data-sf="pachiPay"></div>'+
-      '<div><div class="muted" style="font-size:10px;margin-bottom:2px">貯玉引落(玉/回)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="245" value="'+esc(f.pachiDraw||"")+'" data-sf="pachiDraw"></div></div>'+
-      '<div class="muted" style="font-size:10px;margin-top:6px;line-height:1.6">換金率=出玉の価値。現金貸出=貸出で削られた実玉数。<br>貯玉払出/引落=貯玉プッシュ1回あたりの玉数。<br>使う項目だけ入れればOK。</div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">貯玉払出(玉/回)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="230" value="'+esc(f.pachiPay||"")+'" data-sf="pachiPay"></div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">貯玉引落(玉/回)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="245" value="'+esc(f.pachiDraw||"")+'" data-sf="pachiDraw"></div></div>'+
+      '<div class="muted" style="font-size:11px;margin-top:6px;line-height:1.6">換金率=出玉の価値。現金貸出=貸出で削られた実玉数。<br>貯玉払出/引落=貯玉プッシュ1回あたりの玉数。<br>使う項目だけ入れればOK。</div>'+
       '<div class="row" style="gap:8px;margin-top:12px">'+
       '<button class="btn full" style="padding:10px 0;font-size:12px;color:var(--muted)" data-a="stcancel">やめる</button>'+
       '</div><div style="display:none"><button data-a="stsave">保存</button></div></div>';
@@ -6550,9 +6545,9 @@ function viewMdb(){
       '<input class="input" id="f-name" placeholder="機種名" value="'+esc(f.name)+'" style="margin-bottom:10px">';
     if(f.kind==="pachi"){
       h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
-        '<div style="flex:1"><div class="muted" style="font-size:10px;margin-bottom:3px">大当たり確率 分母(低確率)</div>'+
+        '<div style="flex:1"><div class="muted" style="font-size:11px;margin-bottom:3px">大当たり確率 分母(低確率)</div>'+
         '<input class="input mono r" type="number" inputmode="decimal" step="0.1" id="f-denom" placeholder="例: 319.7" value="'+esc(f.denom)+'"></div>'+
-        '<div style="flex:1"><div class="muted" style="font-size:10px;margin-bottom:3px">理論TY(増加玉・連チャン込)</div>'+
+        '<div style="flex:1"><div class="muted" style="font-size:11px;margin-bottom:3px">理論TY(増加玉・連チャン込)</div>'+
         '<input class="input mono r" type="number" inputmode="numeric" id="f-ty" placeholder="例: 4500" value="'+esc(f.ty)+'"></div></div>'+
         '<div class="mono amber" style="font-size:12px;margin-bottom:10px" id="f-border">'+mdbBorderLine(f)+'</div>';
     }
