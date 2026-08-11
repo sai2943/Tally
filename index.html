@@ -44,7 +44,17 @@
      navbarはmain画面(常にダーク)でのみ表示されるため色は固定値でよい */
   #navbar::before{content:""; position:absolute; left:0; right:0; top:-24px; height:24px;
     background:linear-gradient(rgba(11,31,30,0), var(--bg)); pointer-events:none;}
-  .mono{font-family:ui-monospace,'SF Mono',Menlo,monospace; font-variant-numeric:tabular-nums;}
+  /* v4.73: **金額の書体を等幅からシステム書体へ**(ユーザー判断)。
+     金額はこのアプリで一番読む対象なのに、**一番細い書体で一番小さいサイズ**に置かれていた
+     (mono 135箇所のうち66%が11px以下)。SF Monoはコード用で12〜14px以上を想定した設計であり、
+     10〜11pxの小サイズはSF Pro Textの領分(iOSの本文書体は光学サイズが小サイズ用に別途調整されている)。
+     **桁揃えは tabular-nums が担うので等幅である必要はない**——v4.64で作った右端揃えの文法は保たれる。
+     字送りに依存した箇所は無いことを確認済み(padStartは全て日付/時刻の"0"埋めで空白揃えではない)。
+     クラス名は .mono のまま(135箇所+ウィジェット側の参照があるため)。意味は「等幅」ではなく
+     **「桁が揃う数字」**に読み替える。
+     戻すときはこの1行を ui-monospace,'SF Mono',Menlo,monospace に戻すだけでよい */
+  .mono{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,'Hiragino Sans',sans-serif;
+    font-variant-numeric:tabular-nums; -webkit-font-feature-settings:"tnum" 1; font-feature-settings:"tnum" 1;}
   .muted{color:var(--muted);}
   .teal{color:var(--teal);} .red{color:var(--red);} .amber{color:var(--amber);}
   .band{display:flex; align-items:center; gap:8px; margin:20px 0 10px;}
@@ -217,7 +227,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.72 (localStorage保存・完全オフライン)
+   Tally 4.73 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -779,7 +789,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.72";
+const APP_VERSION = "4.73";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
