@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.70 (localStorage保存・完全オフライン)
+   Tally 4.71 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.70";
+const APP_VERSION = "4.71";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1448,12 +1448,21 @@ function viewLedger(){
       h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="fixed">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">固定費</span>'+
-        '<span class="mono muted" style="font-size:10px"> 引落済み ¥'+fxDone.toLocaleString("ja-JP")+' / ¥'+fxAll.toLocaleString("ja-JP")+'</span></span>'+
+        /* v4.71: **「引落済み」の語を落とす**(ユーザー指摘: 文字が多くて煩い)。
+           変動消費・娯楽と同じ `¥使った / ¥総額` に揃える。左が何の数字かは行の頭の「固定費」で足りる */
+        '<span class="mono muted" style="font-size:10px"> ¥'+fxDone.toLocaleString("ja-JP")+' / ¥'+fxAll.toLocaleString("ja-JP")+'</span></span>'+
         /* v4.62: **「残り」と呼ばない**(ユーザー指摘)。予算の残りは「まだ使える額」だが、
-           固定費のこれは「まだ引き落とされていない予定額」で意味が違う。同じ語を使うと誤読される */
-        '<span><span class="mono muted" style="font-size:10px">'+(fxDone>=fxAll?'すべて引落済み':'未引落')+'</span> '+
+           固定費のこれは「まだ引き落とされていない予定額」で意味が違う。同じ語を使うと誤読される。
+           **方向が逆**——残りは減ると悪く超えられる/未引落は減ると良く超えようがない。
+           v4.71: 語を **「予定」** に変更(ユーザー選択)。v4.68で明細に入れた「予定」と同じ金
+           (未来日の固定費エントリ)を指すので、**同じものを2つの語で呼ばない**。
+           明細の「予定」は収入も含むため金額は一致しないが、行頭の「固定費」が範囲を宣言している */
+        '<span><span class="mono muted" style="font-size:10px">'+(fxDone>=fxAll?'すべて引落済み':'予定')+'</span> '+
         (fxDone>=fxAll?'':'<span class="mono muted" style="font-size:17px;font-weight:700">¥'+(fxAll-fxDone).toLocaleString("ja-JP")+'</span>')+
         '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
+        /* v4.71: **バーは細いまま(5px)据え置き**。変動消費・娯楽は8px、ジャンル内枠は5px。
+           固定費は上限ではなく確定した予定なので、**予算バーと同じ太さにしない**ことが
+           「これは予算ではない」の視覚的な宣言になっている(灰色と併せて)。太さを揃えると逆に誤読を招く */
         '<div class="bar"><div style="width:'+fp+'%;background:var(--muted)"></div></div></div>';
     }
   }
