@@ -211,7 +211,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.69 (localStorage保存・完全オフライン)
+   Tally 4.70 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -773,7 +773,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.69";
+const APP_VERSION = "4.70";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5437,7 +5437,7 @@ function viewEntry(){
        押す位置が毎回ずれる。auto-fitなので財布が増減しても等幅のまま折り返す */
     walHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+(f.type==="income"?"どの財布に入る":"どの財布から出す")+'</div>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:12px">'+
-      walletPots().map(w=>'<button class="btn '+(cur===String(w.id)?"sel":"")+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
+      walletPots().map(w=>'<button class="btn '+(cur===String(w.id)?"sel":"")+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
         '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
         '<span class="mono muted" style="font-size:9px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
   }
@@ -5482,14 +5482,19 @@ function viewEntry(){
     '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="width:100%;margin-bottom:12px">'+
     '<div class="row" style="gap:8px;margin-bottom:12px">'+
     TYPES.map(([v,l])=>
-      '<button class="btn '+(f.type===v?"sel":"")+'" style="flex:1" data-a="etype" data-v="'+v+'">'+l+'</button>').join("")+'</div>'+
+      /* v4.70: **選択の段は3行とも44pxに揃える**(ユーザー指摘: 支出収入振替の箱と消費・ソニー銀行の箱で高さが違う)。
+         原因は行ごとに padding をその場で決めていたこと——種別は .btn の既定(9px)、分類は12px、
+         財布は6px+2行。**中身の行数もフォントも違うので、paddingを合わせても高さは揃わない**。
+         min-height で外側の寸法を直接決める(box-sizing:border-boxなので枠込み44px)。
+         44pxにしたのは**iOSの最小タップ領域**で、毎回押す選択ボタンが下回らない値だから */
+      '<button class="btn '+(f.type===v?"sel":"")+'" style="flex:1;min-height:44px" data-a="etype" data-v="'+v+'">'+l+'</button>').join("")+'</div>'+
     ((isTr || f.tmode) ? '<input class="input mono r" type="number" inputmode="numeric" id="e-amount" placeholder="金額" value="'+esc(f.amount)+'" style="width:100%;margin-bottom:12px">' : '')+
     (isTr ? trHtml
       : f.type==="expense"
       ? ((f.tmode && UI.editEntryId===null) ? '' :
         '<div class="muted" style="font-size:11px;margin:0 2px 6px">支出の分類</div>'+
         '<div class="row" style="gap:8px;margin-bottom:12px">'+
-        EXPENSE_CATS.map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="flex:1;padding:12px 2px;font-size:13px" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>')
+        EXPENSE_CATS.map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="flex:1;padding:2px;font-size:13px;min-height:44px" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>')
       : '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
         INCOME_CATS.map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>'+
         /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
