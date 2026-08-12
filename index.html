@@ -44,6 +44,22 @@
      navbarはmain画面(常にダーク)でのみ表示されるため色は固定値でよい */
   #navbar::before{content:""; position:absolute; left:0; right:0; top:-24px; height:24px;
     background:linear-gradient(rgba(11,31,30,0), var(--bg)); pointer-events:none;}
+  /* v4.78: **上端のフェード帯**(下のv3.28と対称)。
+     `viewport-fit=cover` + `black-translucent` なので**Webビューはステータスバーの下まで伸びている**。
+     #appは画面最上部から始まるスクロール領域で、padding-topが初期位置を押し下げているだけなので、
+     **スクロールすると本文が時刻・電池の裏へ潜って読めなくなる**(ボーダー試算で実際に発生)。
+     下端はタブピルに激突しないようフェードで溶かしているのに、**上端だけ処置が無かった**。
+     position:fixed なので#appのスクロールに乗らない。safe-area分は不透明、そこから10pxで透明へ。
+     透明側は bg同色のalpha0(Safariの transparent = 黒混ざりを回避。v3.28と同じ理由)。
+     z-index:50 は #updatebar(9999)・toast(60)より下——**警告は帯の上に出る**べきだから。
+     **mjplay/mjsheetは除外**: あの2画面は先に同じ問題に当たっており、
+     `env(safe-area-inset-top)`の高さの不透明なキャップ行をstickyで置いて既に塞いでいる。
+     加えて mjsheet は sheet-light(白基調)で --bg が変わるため、帯の透明側の色が合わない */
+  body::before{content:""; position:fixed; left:0; right:0; top:0; z-index:50;
+    height:calc(env(safe-area-inset-top, 0px) + 10px);
+    background:linear-gradient(var(--bg) env(safe-area-inset-top, 0px), rgba(11,31,30,0));
+    pointer-events:none;}
+  body.nopad-top::before{ display:none; }
   /* v4.73→v4.74: **等幅へ戻した**(ユーザー判断)。SF Pro Textに替えると小サイズは読みやすくなったが、
      **数字と日本語が同じ書体族になり「変動消費 ¥22,742 / ¥28,339」が一続きの文字列に見える**。
      等幅は雰囲気の話だと思っていたが、**書体の違いが「ここから数字」という区切りとして機能していた**。
@@ -183,6 +199,7 @@
     #app{ overflow:visible !important; height:auto !important; }
     body > *:not(#print-area){ display:none !important; }
     body::after{ display:none !important; }
+    body::before{ display:none !important; }   /* v4.78: 上端フェード帯を紙に刷らない */
     #print-area{ display:block !important; background:#fff !important; color:#000 !important; }
     #print-area *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
     .pr-break{ page-break-before:always; break-before:page; }
@@ -222,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.77 (localStorage保存・完全オフライン)
+   Tally 4.78 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -784,7 +801,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.77";
+const APP_VERSION = "4.78";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
