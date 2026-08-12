@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.78 (localStorage保存・完全オフライン)
+   Tally 4.79 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -325,8 +325,15 @@ function fixedOccurrences(tpl){
     let d = tpl.start ? new Date(tpl.start+"T00:00:00") : new Date(floor);
     if(d < floor) d = new Date(floor);
     while(d <= yEnd){ if(days.includes(d.getDay())) out.push(new Date(d)); d = new Date(d.getTime()+86400000); }
-  } else if(freq==="weekly" || freq==="biweekly"){
-    const step = (freq==="weekly"?7:14) * 86400000;
+  } else if(freq==="weekly" || freq==="biweekly" || freq==="daily"){
+    /* v4.79: **週単位・日単位を「起点日+周期」で統一**(ユーザー依頼)。
+       背景: コンタクトの定期便が**30日ごと**に発送される。月単位で登録すると毎月ズレていく——
+       月は28〜31日で長さが違うので、**日数で回る契約を月単位で近似すると必ず崩れる**。
+       日本にはサマータイムが無いのでミリ秒加算で厳密(旧来のweekly/biweeklyもこの方式)。
+       biweeklyは旧データ用に残す(= weekly every:2 と同義) */
+    const unit = (freq==="daily") ? 1 : 7;
+    const ev   = (freq==="biweekly") ? 2 : Math.max(1, num(tpl.every)||1);
+    const step = unit * ev * 86400000;
     let d = tpl.start ? new Date(tpl.start+"T00:00:00") : new Date(y, now.getMonth(), now.getDate());
     while(d < floor) d = new Date(d.getTime()+step);   // 起点を今月まで進める
     while(d <= yEnd){ out.push(new Date(d)); d = new Date(d.getTime()+step); }
@@ -422,8 +429,12 @@ function ensureFixedEntries(){
 }
 function fixedSchedLabel(t){
   const freq = t.freq || "monthly";
-  if(freq==="weekly")   return "毎週("+(t.start||"").slice(5).replace("-","/")+"〜)";
-  if(freq==="biweekly") return "2週ごと("+(t.start||"").slice(5).replace("-","/")+"〜)";
+  if(freq==="weekly" || freq==="biweekly" || freq==="daily"){
+    const ev=(freq==="biweekly")?2:Math.max(1,num(t.every)||1);
+    const u=(freq==="daily")?"日":"週";
+    const head=(ev>1)?(ev+u+"ごと"):((freq==="daily")?"毎日":"毎週");
+    return head+"("+(t.start||"").slice(5).replace("-","/")+"〜)";
+  }
   if(freq==="days") return "毎週 "+((t.days||[]).slice().sort().map(d=>"日月火水木金土"[d]).join("·"))+(t.end?"(〜"+t.end.slice(5).replace("-","/")+")":"");
   if(freq==="bimonthly")return "2ヶ月ごと "+num(t.day)+"日";
   const ev=Math.max(1,num(t.every)||1);
@@ -801,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.78";
+const APP_VERSION = "4.79";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2087,8 +2098,11 @@ function summaryText(){
 }
 function fixedFreqLabel(t){
   const f=t.freq||"monthly";
-  if(f==="weekly") return "毎週";
-  if(f==="biweekly") return "2週ごと";
+  if(f==="weekly" || f==="biweekly" || f==="daily"){
+    const ev=(f==="biweekly")?2:Math.max(1,num(t.every)||1);
+    const u=(f==="daily")?"日":"週";
+    return (ev>1)?(ev+u+"ごと"):((f==="daily")?"毎日":"毎週");
+  }
   if(f==="days") return "指定日";
   const ev=num(t.every)||1;
   return (ev>1?(ev+"ヶ月ごと "):"毎月 ")+(t.day||"?")+"日";
@@ -4618,11 +4632,16 @@ function viewFixed(){
     }
     /* 頻度 */
     const freq = f.freq || "monthly";
+    /* v4.79: 「毎週」「2週」を**週単位**に統合し、空いた枠に**日単位**を入れた。
+       旧データ(biweekly/bimonthly)は統合先が選択されているように見せる */
+    const freqSel = (freq==="biweekly") ? "weekly" : (freq==="bimonthly") ? "monthly" : freq;
     h += '<div class="muted" style="font-size:11px;margin:0 2px 6px">頻度</div>'+
       '<div class="row" style="gap:6px;margin-bottom:10px">'+
-      [["monthly","月ごと"],["weekly","毎週"],["biweekly","2週"],["days","曜日指定"]].map(([v,l])=>
-        '<button class="btn '+(freq===v?"sel":"")+'" style="flex:1;padding:9px 1px;font-size:12px" data-fa="ffreq" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
-    const isWeekly = (freq==="weekly"||freq==="biweekly");
+      [["monthly","月単位"],["weekly","週単位"],["daily","日単位"],["days","曜日指定"]].map(([v,l])=>
+        '<button class="btn '+(freqSel===v?"sel":"")+'" style="flex:1;padding:9px 1px;font-size:12px" data-fa="ffreq" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
+    /* 起点日+周期で回る型(月末や曜日に紐づかない) */
+    const isStep = (freq==="weekly"||freq==="biweekly"||freq==="daily");
+    const isWeekly = isStep;
     const isDays = (freq==="days");
     h += (isDays ? '<div class="muted" style="font-size:11px;margin:0 2px 6px">発生する曜日(複数選択)</div>'+
       '<div class="row" style="gap:4px;margin-bottom:10px">'+
@@ -4656,10 +4675,41 @@ function viewFixed(){
         walletPots().map(w=>'<button class="btn '+(cw===String(w.id)?"sel":"")+'" data-fa="fwal" data-v="'+w.id+'" style="font-size:11px;padding:6px 11px">'+esc(w.name)+'</button>').join("")+'</div>';
     }
     h += fxKind + fxWal;
-    h += ((isWeekly||isDays)
-      ? '<div class="fxg"><div><div class="fxl">'+(isDays?"開始日":"起点日("+(freq==="weekly"?"毎週":"2週ごと")+")")+'</div>'+
+    /* v4.79: **年内に何回計上されるかを出す**。日単位は周期の入れ間違い(1日ごと=毎日)が
+       静かに大量生成につながるので、回数を見せて気づけるようにする */
+    let stepNote='';
+    if(isStep){
+      const evN  = (freq==="biweekly")?2:Math.max(1,num(f.every)||1);
+      const stepD= ((freq==="daily")?1:7)*evN;
+      const u    = (freq==="daily")?"日":"週";
+      const sd   = f.start ? new Date(f.start+"T00:00:00") : null;
+      if(sd && !isNaN(sd)){
+        const _n=new Date(), _y=_n.getFullYear();
+        let last=new Date(_y,11,31);
+        if(f.end){ const e=new Date(f.end+"T00:00:00"); if(!isNaN(e)&&e<last) last=e; }
+        const floor=new Date(_y,_n.getMonth(),1);
+        let d=new Date(sd), cnt=0;
+        while(d<floor) d=new Date(d.getTime()+stepD*86400000);
+        while(d<=last && cnt<400){ cnt++; d=new Date(d.getTime()+stepD*86400000); }
+        stepNote='<div class="muted" style="font-size:11px;margin:-6px 2px 12px">'+
+          sd.getFullYear()+'/'+(sd.getMonth()+1)+'/'+sd.getDate()+' から '+
+          ((evN>1)?(evN+u+'ごと'):((freq==="daily")?'毎日':'毎週'))+'に計上されます'+
+          ' <span class="mono">(年内 '+cnt+' 回)</span></div>';
+      } else {
+        stepNote='<div class="muted" style="font-size:11px;margin:-6px 2px 12px">起点日を選ぶと、そこから周期が決まります。</div>';
+      }
+    }
+    h += (isDays
+      ? '<div class="fxg"><div><div class="fxl">開始日</div>'+
         '<input class="input mono" type="date" id="fx-start" value="'+esc(f.start||todayStr())+'"></div>'+fxEnd+'</div>'+
         '<div class="fxg">'+fxAmt+'</div>'
+      : isStep
+      ? '<div class="fxg"><div><div class="fxl">起点日</div>'+
+        '<input class="input mono" type="date" id="fx-start" value="'+esc(f.start||todayStr())+'"></div>'+
+        '<div><div class="fxl">周期('+((freq==="daily")?"日":"週")+'ごと)</div>'+
+        '<input class="input mono r" type="number" inputmode="numeric" id="fx-every" placeholder="'+((freq==="daily")?"30":"1")+'" value="'+esc(f.every||"")+'"></div></div>'+
+        stepNote+
+        '<div class="fxg">'+fxAmt+fxEnd+'</div>'
       : '<div class="fxg"><div><div class="fxl">初回の引き落とし日</div>'+
         /* v3.78: 数値(1-31)ではなく**日付**で受ける(ユーザー設計)。日付から「毎月何日か」と「いつから始まるか」の
            両方が決まるため翌月開始のサブスクに対応でき、0815のような誤入力も構造的に消える。旧データ(dayのみ)は従来通り */
@@ -4701,7 +4751,11 @@ function bindFixed(){
     /* v3.70【バグ修正】fx-everyのバインド漏れ。周期に2を入れてもf.everyが更新されず、
        頻度ボタンや休日設定のタップで再描画が走った瞬間に入力が消えて毎月に戻っていた
        (水道を隔月にしたのに毎月計上される事象の原因)。fx-endも同様に補強 */
-    const ev=document.getElementById("fx-every"); if(ev) ev.oninput=e=>f.every=e.target.value;
+    /* v4.79: onchange(離脱時)で再描画し、「年内 N 回」の目安を更新する。
+       oninputで再描画すると入力中にフォーカスが飛ぶので、値の保持はoninput・再描画はonchangeに分ける */
+    const ev=document.getElementById("fx-every");
+    if(ev){ ev.oninput=e=>f.every=e.target.value;
+            ev.onchange=e=>{ f.every=e.target.value; render(); }; }
     const en=document.getElementById("fx-end"); if(en) en.onchange=e=>f.end=e.target.value;
     const st=document.getElementById("fx-start"); if(st) st.onchange=e=>f.start=e.target.value;
     const a=document.getElementById("fx-amount"); if(a) a.oninput=e=>f.amount=e.target.value;
@@ -4744,7 +4798,7 @@ function bindFixed(){
       else if(a==="fkind"){ f.varc=(String(v)==="1"); render(); }
       else if(a==="fwal"){ f.wal=String(v); render(); }
       else if(a==="fcat"){ f.category=v; render(); }
-      else if(a==="ffreq"){ f.freq=v; if((v==="weekly"||v==="biweekly")&&!f.start) f.start=todayStr(); render(); }
+      else if(a==="ffreq"){ f.freq=v; if((v==="weekly"||v==="daily"||v==="biweekly")&&!f.start) f.start=todayStr(); render(); }
       else if(a==="fshift"){ f.holidayShift=v; render(); }
       else if(a==="edit"){
         const t=(S.fixed||[]).find(x=>String(x.id)===String(v));
@@ -4778,7 +4832,7 @@ function bindFixed(){
         if(!name){ alert("店名または品目を入力してください。"); return; }
         if(num(f.amount)<=0){ alert("金額を入力してください。"); return; }
         const freq = f.freq || "monthly";
-        const isW = (freq==="weekly"||freq==="biweekly");
+        const isW = (freq==="weekly"||freq==="biweekly"||freq==="daily");
         const isD = (freq==="days");
         if(isW && !f.start){ alert("起点日を選んでください。"); return; }
         if(isD && !(Array.isArray(f.days)&&f.days.length)){ alert("発生する曜日を選んでください。"); return; }
@@ -4786,7 +4840,10 @@ function bindFixed(){
         const endEl = document.getElementById("fx-end");
         const endV = endEl ? endEl.value : (f.end||"");
         const evEl = document.getElementById("fx-every");
-        let every = num(evEl ? evEl.value : (f.every||"")); if(every<1) every=1; if(every>12) every=12;
+        let every = num(evEl ? evEl.value : (f.every||"")); if(every<1) every=1;
+        /* v4.79: 上限は単位ごと。日単位を無制限にすると年内の生成数が跳ねる */
+        const evMax = (freq==="daily") ? 365 : (freq==="weekly"||freq==="biweekly") ? 52 : 12;
+        if(every>evMax) every=evMax;
         let day = num(f.day);
         /* v3.78: 月次は日付入力から日を導出する */
         if(!isW && !isD && f.start){ const _s=new Date(f.start+"T00:00:00"); if(!isNaN(_s)) day=_s.getDate(); }
@@ -4795,7 +4852,8 @@ function bindFixed(){
           day:(isW||isD)?"":String(day), start:f.start||"", amount:String(num(f.amount)),
           holidayShift: (isW||isD) ? "none" : (f.holidayShift||"none"),
           days: isD ? f.days.slice().sort() : undefined, end: endV||"",
-          every: (freq==="monthly" && every>1) ? every : undefined,
+          /* v4.79: 周期は月・週・日で共通。曜日指定だけは周期を持たない */
+          every: ((freq==="monthly"||freq==="weekly"||freq==="daily") && every>1) ? every : undefined,
           wal: String(f.wal || walletPots()[0].id)};   /* v4.16: どの財布から出るか */
         if(f.editId){
           updateFixed(Object.assign({id:f.editId}, base));
