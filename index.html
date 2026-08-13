@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.82 (localStorage保存・完全オフライン)
+   Tally 4.83 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.82";
+const APP_VERSION = "4.83";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1615,11 +1615,17 @@ function viewLedger(){
       return '<div style="margin-bottom:10px">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
-        '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span>'+
-        (over>0 ? '<span class="mono teal" style="font-size:11px"> +¥'+over.toLocaleString("ja-JP")+'</span>' : '')+'</span>'+
+        '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
         '<span><span class="mono muted" style="font-size:11px">'+(ok?'':'あと')+'</span> '+
         '<span class="mono '+(ok?"teal":"amber")+'" style="font-size:17px;font-weight:700">'+
-        (ok?'達成':'¥'+(plan-done).toLocaleString("ja-JP"))+'</span></span></div>'+
+        (ok?'達成':'¥'+(plan-done).toLocaleString("ja-JP"))+'</span>'+
+        /* v4.82b: **超過は「達成」の隣に置く**(ユーザー指摘: 見づらい・ダサい)。
+           左に置くと `¥166,694 / ¥123,915 +¥42,779` と数字が3つ並び、
+           **予算カードの文法(左に2つ・右に語+数字)から外れて読めなくなっていた**。
+           色はmuted——tealが画面の両端に2つあると主役が割れる。
+           隣接させれば色で結ぶ必要がなく、**状態(達成)→詳細(超過額)**の順で読める */
+        (over>0 ? '<span class="mono muted" style="font-size:11px"> +¥'+over.toLocaleString("ja-JP")+'</span>' : '')+
+        '</span></div>'+
         '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div></div>';
     };
     const _h1=_row("貯金へ", _p.sv, _d.sv), _h2=_row("投資へ", _p.iv, _d.iv);
