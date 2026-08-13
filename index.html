@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.81 (localStorage保存・完全オフライン)
+   Tally 4.82 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.81";
+const APP_VERSION = "4.82";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1606,10 +1606,17 @@ function viewLedger(){
     const _row=(nm,plan,done)=>{
       if(plan<=0) return "";
       const ok=done>=plan, pc=Math.min(100, plan>0?done/plan*100:0);
+      /* v4.82: **超過額を出す**(ユーザー要望)。v4.81で承認が振替目標を下げるようになったので、
+         既に振り替えたあとに承認を記帳すると超過が出る。**貯金から戻すべき額**がこれ。
+         **警告ではないのでtealにする**——達成と同じ色にすることで「達成していて、その分がこれ」と読める。
+         琥珀や赤にすると「まずいこと」に見えるが、超過は事実であって問題ではない。
+         置き場所は**左の数字群の後ろ**: 実績/目標と並ぶ事実の一部で、右の「達成」は状態を表す語のまま残す */
+      const over = Math.max(0, done - plan);
       return '<div style="margin-bottom:10px">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
-        '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
+        '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span>'+
+        (over>0 ? '<span class="mono teal" style="font-size:11px"> +¥'+over.toLocaleString("ja-JP")+'</span>' : '')+'</span>'+
         '<span><span class="mono muted" style="font-size:11px">'+(ok?'':'あと')+'</span> '+
         '<span class="mono '+(ok?"teal":"amber")+'" style="font-size:17px;font-weight:700">'+
         (ok?'達成':'¥'+(plan-done).toLocaleString("ja-JP"))+'</span></span></div>'+
