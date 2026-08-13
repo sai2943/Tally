@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.79 (localStorage保存・完全オフライン)
+   Tally 4.80 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.79";
+const APP_VERSION = "4.80";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1153,8 +1153,8 @@ function viewCatDrill(){
   const pct = cap>0 ? Math.min(100, spent/cap*100) : 0;
   const over = spent - cap;
   if(UI.drillMode==null) UI.drillMode="chain";
-  /* チェーン名の導出: 最初の空白(半角/全角)より前。空白なしは全体を1店として扱う */
-  const chainKey = n => { const m=n.split(/[\s\u3000]+/).filter(Boolean); return m.length>1 ? m[0] : n; };
+  /* v4.80: 判定は chainKeyOf に一本化(以前はここに同じ規則の写しがあり、2つの実装がズレうる状態だった) */
+  const chainKey = chainKeyOf;
   const g = {};
   list.forEach(e=>{
     const ex=(e.store||"").trim()||"店名未入力";
@@ -5269,7 +5269,24 @@ function entryItemHints(){
 }
 /* 店文脈つき品目ヒント: 店名があれば「その店(チェーン単位)で過去に買った品目」だけを頻度順で。
    未知の店なら空(的外れな全体人気を出さない)。店名が空なら従来の全体人気順。 */
-function chainKeyOf(n){ const t=String(n||"").trim(); const m=t.split(/[\s\u3000]+/).filter(Boolean); return m.length>1 ? m[0] : t; }
+/* v4.80: **空白があるだけでチェーン扱いしない**(ユーザー指摘: 美容室のような単独店が分割される)。
+   旧: 最初の空白より前をチェーン名 → `Uta hair care【ウタ】` が チェーン「Uta」+支店「hair care【ウタ】」になっていた。
+   実データでも3件誤爆していた: `ebook japan`→「ebook」/ `So-net 光`→「So-net」/
+   `日清食品グループ　オンラインストア`→「日清食品グループ」。
+   新: **空白の後ろが支店らしい語で終わるときだけ**分割する。日本の小売は支店名がほぼ例外なく
+   「〜店」で終わるので、これで実在の店名すべてが正しく判定できる(現行14件で検証済み)。
+   **データが増えても判定が変わらない**のが肝——「同じ先頭語の店が2つ以上あればチェーン」という
+   案も考えたが、2店目が現れた瞬間にキーが変わり、**チェーン名で引くジャンル辞書(S.genres)の
+   割り当てが静かに失われる**ので採らなかった。
+   判定を外した場合は内訳ドリルの「店ごと」に切り替えれば見られる(退避路がある)。
+   ここが唯一の定義。以前は内訳ドリル側に同じ規則の写しがあり、**2つの実装がズレうる状態**だった */
+const CHAIN_BRANCH_RE = /(?:店|営業所|支社|工場|校|園|館)$/;
+function chainKeyOf(n){
+  const t=String(n||"").trim();
+  const m=t.split(/[\s\u3000]+/).filter(Boolean);
+  if(m.length<=1) return t;
+  return CHAIN_BRANCH_RE.test(m.slice(1).join(" ")) ? m[0] : t;
+}
 function entryItemHintsFor(store){
   const st=String(store||"").trim();
   if(!st) return entryItemHints();
