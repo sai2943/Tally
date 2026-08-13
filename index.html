@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.83 (localStorage保存・完全オフライン)
+   Tally 4.84 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.83";
+const APP_VERSION = "4.84";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1605,7 +1605,8 @@ function viewLedger(){
     const _show = !_isFutM && !_nagging && (!_isCurM || mainIncomeLanded(mk));
     const _row=(nm,plan,done)=>{
       if(plan<=0) return "";
-      const ok=done>=plan, pc=Math.min(100, plan>0?done/plan*100:0);
+      /* v4.84: 純額なので done は負になりうる。バーの幅を下限0で止める */
+      const ok=done>=plan, pc=Math.max(0, Math.min(100, plan>0?done/plan*100:0));
       /* v4.82: **超過額を出す**(ユーザー要望)。v4.81で承認が振替目標を下げるようになったので、
          既に振り替えたあとに承認を記帳すると超過が出る。**貯金から戻すべき額**がこれ。
          **警告ではないのでtealにする**——達成と同じ色にすることで「達成していて、その分がこれ」と読める。
@@ -3417,7 +3418,19 @@ function securedSplit(mk){
   let sv=0, iv=0;
   ((S.invest||{}).holdings||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"").startsWith(mk)) iv+=num(b.amount); }));
   (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"").startsWith(mk)&&num(t.amount)>0) iv+=num(t.amount); });
-  (((S.savings||{}).txns)||[]).forEach(t=>{ if(t.type==="deposit"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
+  /* v4.84: **引き出しを差し引いた純額**にする(ユーザー指摘: 貯金を戻したのに超過が消えない)。
+     v4.81で承認が振替目標を下げるようにしたので、**目標と実績が同じ額だけ動く**——
+       ふるさと納税を貯金から使う: 承認で目標が¥60,000下がり、引き出しで実績も¥60,000下がる → **達成のまま**
+       クレカの戻し:               承認で目標が下がり、引き出しで実績も下がる → 超過が消えてちょうど達成
+     **対称に動くので、用途を記録する必要がない**(引き出しに理由フィールドを足す案は不要になった)。
+     箱同士の移動はv4.57でadjustにしてあるので影響しない。
+     ズレるのは**貯金→軍資金**だけ: 承認が立たないので目標は下がらず実績だけ減って未達になる。
+     これは「貯金を取り崩した」という事実そのものなので、見えて困る情報ではない(意図的にこのまま) */
+  (((S.savings||{}).txns)||[]).forEach(t=>{
+    if(!(t.date||"").startsWith(mk)) return;
+    if(t.type==="deposit")  sv+=num(t.amount);
+    if(t.type==="withdraw") sv-=num(t.amount);
+  });
   (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
   return {sv:sv, iv:iv};
 }
