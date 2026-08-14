@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.86 (localStorage保存・完全オフライン)
+   Tally 4.87 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.86";
+const APP_VERSION = "4.87";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4348,14 +4348,26 @@ function potTarget(p){
     return {v: Math.round(lc.avg*m), auto:true, months:m, basis:lc.avg, n:lc.mks.length, stat:lc.stat}; }
   return {v: num(p&&p.target)||0, auto:false, n:0};
 }
+/* v4.87: **その箱から払った額は「達成済み」として数える**(ユーザー指摘: 貯金から使うと目標が遠のいて見える)。
+   例) 目標¥80,000・貯めた¥40,000・うち¥23,920をホテルに払った → 残高¥16,080。
+     旧: あと = 80,000 − 16,080 = **¥63,920**(払ったのに遠のく)
+     新: あと = 80,000 − 23,920 − 16,080 = **¥40,000**(払う前と同じ)
+   **旅行代を払うのは目標の後退ではなく前進**なので、バーも50%のまま動かないのが正しい。
+   「目標額そのものを減らす」案もあったが、それだとバーが50%→29%に**後退**してしまう。
+   数えるのは`svPot`で箱に紐づいた支出だけ——**財布へ戻しただけの引き出しは達成ではない** */
+function potUsed(potId){
+  return (S.entries||[]).filter(e=>e.type==="expense" && String(e.svPot||"")===String(potId))
+    .reduce((a,e)=>a+num(e.amount),0);
+}
 function potProgress(){
   return savingsPots().map(p=>{
     const bal=savingsBalance(p.id), t=potTarget(p), tgt=t.v;
-    return {id:String(p.id), name:p.name, bal:bal, target:tgt,
+    const used=potUsed(p.id), got=bal+used;
+    return {id:String(p.id), name:p.name, bal:bal, target:tgt, used:used,
             auto:t.auto, months:t.months, basis:t.basis, samples:t.n, stat:t.stat,
-            pct: tgt>0 ? Math.min(100, bal/tgt*100) : 0,
-            short: tgt>0 ? Math.max(0, tgt-bal) : 0,
-            done: tgt>0 && bal>=tgt, hasTarget: tgt>0};
+            pct: tgt>0 ? Math.min(100, got/tgt*100) : 0,
+            short: tgt>0 ? Math.max(0, tgt-got) : 0,
+            done: tgt>0 && got>=tgt, hasTarget: tgt>0};
   });
 }
 function potsShortfall(){ return potProgress().reduce((a,p)=>a+p.short,0); }
@@ -4402,7 +4414,10 @@ function viewSavings(){
       '<span class="mono '+_col+'" style="font-size:18px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span></div>';
     if(pt.hasTarget){
       h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:9px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
-        '<div class="row between" style="font-size:11px;margin-top:6px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+'</span>'+
+        /* v4.87: 使った分を添える。これが無いと「目標¥80,000・残高¥16,080・あと¥40,000」の
+           算数が合わずに見える(16,080 + 23,920 + 40,000 = 80,000) */
+        '<div class="row between" style="font-size:11px;margin-top:6px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+
+        (pt.used>0 ? ' <span class="mono">(使用 ¥'+pt.used.toLocaleString("ja-JP")+')</span>' : '')+'</span>'+
         '<span><span class="mono muted">'+(pt.done?'':'あと')+'</span> <span class="mono '+(pt.done?'teal':'amber')+'" style="font-weight:700">'+(pt.done?'達成':'¥'+pt.short.toLocaleString("ja-JP"))+'</span></span></div>'+
         /* v4.47: 自動目標は**根拠と信頼度を必ず出す**。実測が何ヶ月分あるかで数字の重みが違うため */
         (pt.auto ? '<div class="muted" style="font-size:11px;margin-top:4px">生活費 ¥'+Math.round(pt.basis).toLocaleString("ja-JP")+'/月 × '+pt.months+'ヶ月'+
@@ -5676,7 +5691,15 @@ function viewEntry(){
     svHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">貯金から出す<span style="font-size:11px">(任意)</span></div>'+
       '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
       savingsPots().map(p=>'<button class="chip'+(cp===String(p.id)?" sel":"")+'" data-a="espot" data-v="'+p.id+'" style="font-size:11px">'+
-        esc(p.name)+' <span class="mono muted">¥'+savingsBalance(p.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+        esc(p.name)+' <span class="mono muted">¥'+savingsBalance(p.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>'+
+      /* v4.87: **所持金が動かないことを明示する**(ユーザー指摘: 視覚的にソニー銀行も減るように見える)。
+         財布と箱の両方が選択状態になるので、両方から出ていくように見えてしまう。
+         実際は箱→財布の補填と支出が相殺して**財布は増減ゼロ**。
+         財布の行は「経由するだけ」になるが、ラベルを変えると振替との区別が付かなくなるので、
+         **1行の説明で済ませる**(選んだときだけ出す=常設しない) */
+      (cp ? '<div class="muted" style="font-size:11px;margin:-6px 2px 12px">'+
+        esc((savingsPots().find(x=>String(x.id)===cp)||{}).name||"貯金")+'の箱だけが減ります。'+
+        '<span class="teal">所持金は動きません</span>(補填と支出で相殺)。</div>' : '');
   }
   /* v4.35: **同じ店で複数の品目をまとめて入力**(ユーザー設計)。レシート1枚=1回の入力にする。
      保存時は**行ごとに別のエントリ**を作る(日付/分類/店/財布は共有)ので、
