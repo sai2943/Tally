@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.87 (localStorage保存・完全オフライン)
+   Tally 4.88 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.87";
+const APP_VERSION = "4.88";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4367,7 +4367,13 @@ function potProgress(){
             auto:t.auto, months:t.months, basis:t.basis, samples:t.n, stat:t.stat,
             pct: tgt>0 ? Math.min(100, got/tgt*100) : 0,
             short: tgt>0 ? Math.max(0, tgt-got) : 0,
-            done: tgt>0 && got>=tgt, hasTarget: tgt>0};
+            done: tgt>0 && got>=tgt, hasTarget: tgt>0,
+            /* v4.88: **完了 = 使い切った箱**(ユーザー要望: 達成済みは貯金欄から消えてほしい)。
+               条件を「達成」にしないのは**生活防衛資金で壊れる**から——あれは目標に届いても
+               消えてはいけない常設の備えで、残高が見えなくなったら困る。
+               `残高0 かつ 目標到達` なら役目を終えた箱(旅行・ふるさと納税など)。
+               **明細を取り消せば紐づく引き出しも消えて残高が戻る**(v4.85)ので、自動で復活する */
+            finished: tgt>0 && got>=tgt && bal<=0 && used>0};
   });
 }
 function potsShortfall(){ return potProgress().reduce((a,p)=>a+p.short,0); }
@@ -4401,7 +4407,17 @@ function viewSavings(){
 
   /* ---- 箱: 残高 + 目標 + 進捗 ---- */
   h+=band("箱");
-  pots.forEach(pt=>{
+  /* v4.88: **完了した箱は畳む**。消さずに畳むのはv4.68(明細の予定)と同じ語彙——
+     間違って完了した場合に開いて確かめられる必要があるため。
+     復活の手当ては不要: 明細を取り消せば残高が戻り、自動でこちらへ出てくる */
+  const _fin = pots.filter(p=>p.finished), _act = pots.filter(p=>!p.finished);
+  if(_fin.length){
+    const _fu = _fin.reduce((a,p)=>a+p.used,0);
+    h+='<div class="row between" style="padding:9px 12px;margin-bottom:8px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-sa="svdone">'+
+      '<span class="mono muted" style="font-size:11px">'+(UI.svDoneOpen?'▾':'▸')+' 完了 '+_fin.length+'件</span>'+
+      '<span class="mono muted" style="font-size:11px">¥'+_fu.toLocaleString("ja-JP")+' 使用</span></div>';
+  }
+  (UI.svDoneOpen ? _act.concat(_fin) : _act).forEach(pt=>{
     /* v4.04: 「既定」の特別扱いを撤去。どの箱も対等で、2つ以上あればどれでも消せる。
        v4.07: 操作は**固定費と同じ「編集/調整」の小ボタン方式**に統一(ユーザー指摘)。
        カード全面タップをやめたので、何が押せるのかが見て分かる */
@@ -4461,6 +4477,8 @@ function bindSavings(){
     const a=el.dataset.sa, v=el.dataset.v, sv=S.savings;
     el.onclick=(ev)=>{
       if(a==="back"){ UI.screen="main"; render(); return; }
+      /* v4.88: 完了した箱の開閉。既定は畳んだまま(UI.svDoneOpenの未定義=false) */
+      if(a==="svdone"){ UI.svDoneOpen=!UI.svDoneOpen; render(); return; }
       /* v4.07: 箱の行から呼ばれるので、どの箱かはdata-vで確定している(選ばせる必要がない) */
       if(a==="adjust"){
         const pid = v || savingsPots()[0].id;
