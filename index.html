@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.89 (localStorage保存・完全オフライン)
+   Tally 4.90 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.89";
+const APP_VERSION = "4.90";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4382,7 +4382,12 @@ function potProgress(){
                目標を実績に書き換える案もあったが、**¥5,000浮いたという情報が消える**ので採らない。
                `bal<=0 && used>0` を共通の条件に置くのが肝——**closedでも入金し直せば自動で戻る**
                (金が入った箱を隠さない) */
-            finished: bal<=0 && used>0 && ((tgt>0 && got>=tgt) || !!p.closed)};
+            /* v4.90: **本人の宣言(closed)は使用の有無を問わない**(ユーザー要望: 1ステップにしたい・多用する)。
+               消費の積立にも使う想定なので、「一度も使わずに畳む」場合もある。
+               自動の完了(目標到達で使い切った)だけ`used>0`を要る——使ってもいない箱を
+               勝手に畳むと、貯め終えた瞬間に消えて驚くため。
+               `bal<=0`は両方に効かせる: **金が入っている箱は絶対に隠さない** */
+            finished: bal<=0 && (!!p.closed || (tgt>0 && got>=tgt && used>0))};
   });
 }
 function potsShortfall(){ return potProgress().reduce((a,p)=>a+p.short,0); }
@@ -4456,7 +4461,9 @@ function viewSavings(){
       /* v4.89: **完了の宣言**。目標を下回って終わった箱を畳めるようにする。
          出すのは「空になっていて、かつ実際に使った」箱だけ——まだ使っていない箱を
          完了にしても意味がなく、押し間違いの余地だけが増える。取り消せる(戻す)ので確認は挟まない */
-      (!pt.finished && pt.bal<=0 && pt.used>0
+      /* v4.90: **残高があっても押せる**(ユーザー要望: 1ステップに)。
+         残っていれば押した流れで移し先を選ばせる。旅行の終わりに1回押すだけで済む */
+      (!pt.finished
         ? '<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--teal)" data-sa="svclose" data-v="'+pt.id+'">完了</button>' : '')+
       (pt.closed
         ? '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="svreopen" data-v="'+pt.id+'">戻す</button>' : '')+
@@ -4499,8 +4506,18 @@ function bindSavings(){
          (押した瞬間に消えると、どこへ行ったか分からない) */
       if(a==="svclose"||a==="svreopen"){
         const _p=((sv||{}).pots||[]).find(x=>String(x.id)===String(v)); if(!_p) return;
-        if(a==="svclose"){ _p.closed=true; UI.svDoneOpen=true; } else { delete _p.closed; }
-        save(); render(); return;
+        if(a==="svreopen"){ delete _p.closed; save(); render(); return; }
+        /* v4.90: **残っていれば押した流れで移し先を選ばせる**(ユーザー要望: 1ステップに)。
+           先に`closed`を立ててから振替画面へ送る——**途中でやめても矛盾しない**のが肝で、
+           `finished`は`bal<=0`も要求するので、金が残ったままなら箱は畳まれず一覧に残る。
+           そのとき「戻す」で宣言を取り消せる。移し終われば次の描画で自動的に畳まれる */
+        const _bal = savingsBalance(_p.id);
+        if(_bal>0){
+          if(!confirm(_p.name+"を完了にします。\n\n残っている ¥"+_bal.toLocaleString("ja-JP")+" の移し先を選びます。")) return;
+          _p.closed=true; UI.svDoneOpen=true; save();
+          openTransfer(_p.id, "", "savings", _bal); return;
+        }
+        _p.closed=true; UI.svDoneOpen=true; save(); render(); return;
       }
       /* v4.07: 箱の行から呼ばれるので、どの箱かはdata-vで確定している(選ばせる必要がない) */
       if(a==="adjust"){
