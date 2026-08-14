@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.84 (localStorage保存・完全オフライン)
+   Tally 4.85 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.84";
+const APP_VERSION = "4.85";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1311,7 +1311,7 @@ function bindCatDrill(){
       else if(a==="drilledit"){
         const e=S.entries.find(x=>String(x.id)===String(v)); if(!e) return;
         UI.editEntryId=e.id;
-        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||""};
+        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:e.svPot||""};
         UI.entryReturn="catdrill";
         UI.screen="entry"; render();
       }
@@ -5266,7 +5266,7 @@ function bindMain(){
           if(s){ UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.tab="games"; UI.screen="mahjong-edit"; render(); return; }
         }
         UI.editEntryId=e.id;
-        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||""};
+        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:e.svPot||""};
         UI.screen="entry"; render();
       }
       else if(a==="sedit"){
@@ -5323,6 +5323,29 @@ function entryItemHints(){
    判定を外した場合は内訳ドリルの「店ごと」に切り替えれば見られる(退避路がある)。
    ここが唯一の定義。以前は内訳ドリル側に同じ規則の写しがあり、**2つの実装がズレうる状態**だった */
 const CHAIN_BRANCH_RE = /(?:店|営業所|支社|工場|校|園|館)$/;
+/* v4.85: 支出に紐づく「貯金の箱からの引き出し」を同期する(ユーザー指摘: 大阪旅行の貯金から払ったのに選べない)。
+   **エントリと1対1**で持ち、`svTx`にtxnのidを控える。データの形は変えない——
+   `wal`は従来どおり財布のidのままで、引き出しのtxnを別に立てて紐づけるだけ。
+   引き出し先の財布は**その支出の財布と同じ**にするので、**財布別の残高は増減ゼロで相殺**される。
+   箱の指定が外れたら引き出しも消す(取り消せないと箱が減りっぱなしになる)。
+   v4.84の対称性はそのまま効く: 承認で振替目標が下がり、この引き出しで実績も下がる */
+function entrySvSync(ent, potId, amt, date, wal){
+  const sv = S.savings = S.savings || {}; sv.txns = sv.txns || [];
+  const i = (ent.svTx!=null) ? sv.txns.findIndex(t=>String(t.id)===String(ent.svTx)) : -1;
+  if(!potId){
+    if(i>=0) sv.txns.splice(i,1);
+    delete ent.svTx; delete ent.svPot; return;
+  }
+  const body = {type:"withdraw", date:date, amount:String(amt), potId:String(potId), walId:String(wal)};
+  if(i>=0) Object.assign(sv.txns[i], body);
+  else { const nid=uid(); sv.txns.push(Object.assign({id:nid}, body)); ent.svTx=nid; }
+  ent.svPot = String(potId);
+}
+/* 削除時: エントリに紐づく引き出しも消す(残すと箱が減ったままになる) */
+function entrySvDrop(ent){
+  if(!ent || ent.svTx==null) return;
+  const sv=S.savings||{}; sv.txns=(sv.txns||[]).filter(t=>String(t.id)!==String(ent.svTx));
+}
 function chainKeyOf(n){
   const t=String(n||"").trim();
   const m=t.split(/[\s\u3000]+/).filter(Boolean);
@@ -5634,6 +5657,23 @@ function viewEntry(){
         '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
         '<span class="mono muted" style="font-size:11px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
   }
+  /* v4.85: **貯金の箱から払えるようにする**(ユーザー指摘: 大阪旅行の貯金から払ったのに選べない)。
+     これは手間の話ではなく**正確さの話**——忘れると箱が満額のまま残り、
+     「大阪旅行に¥100,000貯まっている」と出るのに実際は使い済み、という状態になる。
+     実体は2段階(箱→財布 の引き出し + その財布からの支出)で、v4.84までも手作業では可能だった。
+     ここではその2段階を**1タップに畳む**だけで、データの形は変えない——
+     `wal`は従来どおり財布のidのまま、引き出しのtxnを別に作って`svTx`で紐づける。
+     引き出し先の財布は**その支出の財布と同じ**にするので、財布別の残高は増減ゼロで正しく相殺される。
+     v4.84の対称性もそのまま効く(承認で目標が下がり、引き出しで実績も下がる)。
+     支出のときだけ出す(収入を貯金から「補填」する意味がない)。箱が無ければ出さない */
+  let svHtml="";
+  if(!isTr && f.type==="expense" && savingsPots().length){
+    const cp=String(f.svPot||"");
+    svHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">貯金から出す<span style="font-size:11px">(任意)</span></div>'+
+      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
+      savingsPots().map(p=>'<button class="chip'+(cp===String(p.id)?" sel":"")+'" data-a="espot" data-v="'+p.id+'" style="font-size:11px">'+
+        esc(p.name)+' <span class="mono muted">¥'+savingsBalance(p.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+  }
   /* v4.35: **同じ店で複数の品目をまとめて入力**(ユーザー設計)。レシート1枚=1回の入力にする。
      保存時は**行ごとに別のエントリ**を作る(日付/分類/店/財布は共有)ので、
      ジャンル分析や内訳ドリルなど下流は一切変更なしで動く。
@@ -5693,7 +5733,7 @@ function viewEntry(){
         /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
            日付はフォームの値を引き継ぐ */
         (UI.editEntryId===null?'<button class="btn full" style="margin-bottom:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''))+
-    (isTr ? '' : walHtml + pasteHtml + transHtml + (composerHtml || (fieldsHtml + extraHtml))) +
+    (isTr ? '' : walHtml + svHtml + pasteHtml + transHtml + (composerHtml || (fieldsHtml + extraHtml))) +
     /* v4.40: 保存は下バー(display:noneの担い手経由)、削除はヘッダ右端。
        固定費への登録は稀なので、ボタンの箱を持たない**テキストリンク**で本文の末尾に置く */
     (UI.editEntryId!==null?'<div style="text-align:center;margin-top:18px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-a="tofixed">この内容で固定費に登録</button></div>':'')+
@@ -5722,6 +5762,8 @@ function bindEntry(){
       if(a==="back"){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }
       else if(a==="etype"){ f.type=v; if(v!=="transfer") f.category = v==="expense"?"消費":"給与"; render(); }
       else if(a==="ewal"){ f.wal=String(v); render(); }
+      /* v4.85: 貯金の箱の選択。**同じ箱をもう一度押すと解除**(任意の指定なので取り消せる必要がある) */
+      else if(a==="espot"){ f.svPot = (String(f.svPot||"")===String(v)) ? "" : String(v); render(); }
       /* v4.66: **まずクリップボードから直接読む**(ユーザー要望: ワンタッチにしたい)。
          iOSは読み取りに「ペースト」の確認を挟むので、実質2タップで取り込みまで終わる。
          読めない/中身が書式でない場合は従来どおり貼り付け欄を開く——**黙って失敗させない**。
@@ -5803,6 +5845,7 @@ function bindEntry(){
           const tpl = (S.fixed||[]).find(t=>String(t.id)===String(ent.fixedId));
           if(tpl){ const occ=fixedOccKey(ent); tpl.skips = tpl.skips || []; if(!tpl.skips.includes(occ)) tpl.skips.push(occ); }
         }
+        entrySvDrop(ent);   /* v4.85: 紐づく貯金の引き出しも消す(残すと箱が減ったままになる) */
         S.entries = S.entries.filter(x=>x.id!==UI.editEntryId);
         save(); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
       }
@@ -5856,18 +5899,38 @@ function bindEntry(){
         const store=(f.store||"").trim(), item=(f.item||"").trim();
         const memo=[store,item].filter(Boolean).join(" ");
         const wal = String(f.wal || walletPots()[0].id);   /* v4.14: どの財布から出たか */
+        /* v4.85: 貯金の箱からの補填。支出のときだけ。残高を超える指定は止める(箱がマイナスになる) */
+        const svPot = (f.type==="expense") ? String(f.svPot||"") : "";
+        if(svPot){
+          const bal = savingsBalance(svPot);
+          const prev = (UI.editEntryId!==null) ? (S.entries.find(x=>x.id===UI.editEntryId)||{}) : {};
+          const back = (String(prev.svPot||"")===svPot) ? num(prev.amount) : 0;   /* 編集時は自分の分を戻して判定 */
+          const need = amt + (f.extra||[]).reduce((a2,x)=>a2+num(x.amount),0);
+          if(need - back > bal){
+            const pn=(savingsPots().find(p=>String(p.id)===svPot)||{}).name||"貯金";
+            if(!confirm(pn+"の残高 ¥"+bal.toLocaleString("ja-JP")+" を超えます。\n\n必要 ¥"+need.toLocaleString("ja-JP")+"\n\n続けますか?")) return;
+          }
+        }
         if(UI.editEntryId!==null){
           S.entries = S.entries.map(x=>x.id===UI.editEntryId ?
             Object.assign({},x,{date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal}) : x);
+          const _e = S.entries.find(x=>x.id===UI.editEntryId);
+          if(_e) entrySvSync(_e, svPot, amt, f.date, wal);
         } else {
-          S.entries.push({id:uid(),date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal});
+          const _new = {id:uid(),date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal};
+          S.entries.push(_new);
+          entrySvSync(_new, svPot, amt, f.date, wal);
           /* v4.35: 追加行は**同じ日付/分類/店/財布で別エントリ**にする。
              1行にまとめないのは、品目ごとの分析(ジャンル・内訳ドリル)を壊さないため */
           (f.extra||[]).forEach(x=>{
             const xa=num(x.amount), xi=(x.item||"").trim();
             if(xa<=0) return;
-            S.entries.push({id:uid(),date:f.date,type:f.type,category:f.category,amount:xa,
-              store:store, item:xi, memo:[store,xi].filter(Boolean).join(" "), wal:wal});
+            /* v4.85: 追加行も同じ箱から出す。**行ごとに別の引き出し**を立てる——
+               1本にまとめると、あとで1行だけ消したときに箱が戻らない */
+            const _x = {id:uid(),date:f.date,type:f.type,category:f.category,amount:xa,
+              store:store, item:xi, memo:[store,xi].filter(Boolean).join(" "), wal:wal};
+            S.entries.push(_x);
+            entrySvSync(_x, svPot, xa, f.date, wal);
           });
         }
         save(); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
