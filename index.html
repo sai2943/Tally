@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.90 (localStorage保存・完全オフライン)
+   Tally 4.91 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.90";
+const APP_VERSION = "4.91";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4229,6 +4229,23 @@ function savingsPots(){
   const p=((S.savings||{}).pots)||[];
   return p.length ? p : [{id:MAIN_POT, name:"貯金"}];
 }
+/* v4.91: **箱の並び替え**(ユーザー要望: その時によって優先順位が変わる箱がある)。
+   入れ替えるのは**同じグループの隣**だけ——通常の箱は通常の箱と、完了した箱は完了した箱と。
+   畳まれて見えていない箱と入れ替わると、**押した結果が画面から消えて何が起きたか分からない**。
+   **残高は1円も動かない**: 並び順は表示だけの話で、取引はv4.04の移行でpotIdを全件持っている
+   (`txPot`の「potId無し=先頭の箱」という暗黙の規則は既に消えているので、先頭が変わっても安全) */
+function potMove(id, dir){
+  const arr=((S.savings||{}).pots)||[]; if(arr.length<2) return false;
+  const me=arr.findIndex(p=>String(p.id)===String(id)); if(me<0) return false;
+  const prog=potProgress();
+  const fin=p=>!!((prog.find(x=>x.id===String(p.id))||{}).finished);
+  const grp=fin(arr[me]);
+  let j=-1;
+  for(let k=me+dir; k>=0 && k<arr.length; k+=dir){ if(fin(arr[k])===grp){ j=k; break; } }
+  if(j<0) return false;
+  const t=arr[me]; arr[me]=arr[j]; arr[j]=t;
+  return true;
+}
 function potName(id){ const p=savingsPots().find(x=>String(x.id)===String(id)); return p?p.name:"貯金"; }
 function txPot(t){ return String(t.potId || (savingsPots()[0]||{id:MAIN_POT}).id); }
 /* v4.04: potId無しのtxnはapplyDataで先頭の箱へ書き込み済み。ここのフォールバックは
@@ -4457,7 +4474,15 @@ function viewSavings(){
     } else {
       h+='<div class="muted" style="font-size:11px;margin-top:6px">目標額 未設定</div>';
     }
-    h+='<div class="row" style="gap:6px;justify-content:flex-end;margin-top:11px">'+
+    /* v4.91: 並び替えは**左端**に置く(右の 完了/編集/調整/削除 とは種類が違う操作なので離す)。
+       箱が2つ以上のときだけ出す(削除と同じ条件)。行は左右2群に分ける */
+    const _mv = (pots.length>1)
+      ? '<span class="row" style="gap:6px">'+
+        '<button class="btn" style="font-size:12px;padding:3px 10px" data-sa="potup" data-v="'+pt.id+'">↑</button>'+
+        '<button class="btn" style="font-size:12px;padding:3px 10px" data-sa="potdown" data-v="'+pt.id+'">↓</button></span>'
+      : '<span></span>';
+    h+='<div class="row between" style="gap:6px;align-items:center;margin-top:11px">'+_mv+
+      '<span class="row" style="gap:6px;justify-content:flex-end">'+
       /* v4.89: **完了の宣言**。目標を下回って終わった箱を畳めるようにする。
          出すのは「空になっていて、かつ実際に使った」箱だけ——まだ使っていない箱を
          完了にしても意味がなく、押し間違いの余地だけが増える。取り消せる(戻す)ので確認は挟まない */
@@ -4470,7 +4495,7 @@ function viewSavings(){
       '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="potedit" data-v="'+pt.id+'">編集</button>'+
       '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="adjust" data-v="'+pt.id+'">調整</button>'+
       (pots.length>1?'<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-sa="potdel" data-v="'+pt.id+'">削除</button>':'')+
-      '</div></div>';
+      '</span></div></div>';
   });
   /* v4.07: 調整は各箱の小ボタンへ移したのでここには置かない。説明文も撤去。
      振替は**箱の操作を一通り見せた後**に置く方が動線として自然(ユーザー指摘) */
@@ -4502,6 +4527,8 @@ function bindSavings(){
       if(a==="back"){ UI.screen="main"; render(); return; }
       /* v4.88: 完了した箱の開閉。既定は畳んだまま(UI.svDoneOpenの未定義=false) */
       if(a==="svdone"){ UI.svDoneOpen=!UI.svDoneOpen; render(); return; }
+      /* v4.91: 箱の並び替え。**残高は動かない**(並び順は表示だけの話) */
+      if(a==="potup"||a==="potdown"){ if(potMove(v, a==="potup"?-1:1)){ save(); render(); } return; }
       /* v4.89: 完了の宣言と取り消し。**押した箱を開いた状態にして**、畳まれた先が見えるようにする
          (押した瞬間に消えると、どこへ行ったか分からない) */
       if(a==="svclose"||a==="svreopen"){
