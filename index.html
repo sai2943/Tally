@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.95 (localStorage保存・完全オフライン)
+   Tally 4.96 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.95";
+const APP_VERSION = "4.96";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4477,13 +4477,17 @@ function viewSavings(){
     const _col = !pt.hasTarget ? 'muted' : pt.done ? 'teal' : 'amber';
     h+='<div class="card" style="margin-bottom:8px;padding:12px">'+
       '<div class="row between" style="align-items:baseline">'+
-      '<span class="muted" style="font-size:12px;font-weight:700">'+esc(pt.name)+'</span>'+
+      /* v4.96: **直したい所を直接押す**(ユーザー指摘: 特定の部分だけ直したい時がほとんどなのに、
+         編集を押すと名前→目標と順に聞かれる)。名前をタップ=名前だけ、目標の行をタップ=目標だけ。
+         結果として「編集」ボタンが不要になり、ボタンが1つ減った。
+         初回登録は「箱を追加」が名前→目標と続けて聞くので、そちらは今までどおり */
+      '<span class="muted" style="font-size:12px;font-weight:700;cursor:pointer" data-sa="potname" data-v="'+pt.id+'">'+esc(pt.name)+'</span>'+
       '<span class="mono '+_col+'" style="font-size:18px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span></div>';
     if(pt.hasTarget){
       h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:9px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
         /* v4.87: 使った分を添える。これが無いと「目標¥80,000・残高¥16,080・あと¥40,000」の
            算数が合わずに見える(16,080 + 23,920 + 40,000 = 80,000) */
-        '<div class="row between" style="font-size:11px;margin-top:6px"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+
+        '<div class="row between" style="font-size:11px;margin-top:6px;cursor:pointer" data-sa="pottgt" data-v="'+pt.id+'"><span class="muted">目標 ¥'+pt.target.toLocaleString("ja-JP")+
         (pt.used>0 ? ' <span class="mono">(使用 ¥'+pt.used.toLocaleString("ja-JP")+')</span>' : '')+'</span>'+
         '<span><span class="mono muted">'+(pt.done?'':'あと')+'</span> <span class="mono '+(pt.done?'teal':'amber')+'" style="font-weight:700">'+(pt.done?'達成':'¥'+pt.short.toLocaleString("ja-JP"))+'</span></span></div>'+
         /* v4.47: 自動目標は**根拠と信頼度を必ず出す**。実測が何ヶ月分あるかで数字の重みが違うため */
@@ -4492,7 +4496,7 @@ function viewSavings(){
            : pt.samples>0 ? '　<span class="amber">実測'+pt.samples+'ヶ月分のみ・暫定</span>'
                           : '　<span class="amber">実測データなし</span>')+'</div>' : '');
     } else {
-      h+='<div class="muted" style="font-size:11px;margin-top:6px">目標額 未設定</div>';
+      h+='<div class="muted" style="font-size:11px;margin-top:6px;cursor:pointer" data-sa="pottgt" data-v="'+pt.id+'">目標額 未設定</div>';
     }
     /* v4.91: 並び替えは**左端**に置く(右の 完了/編集/調整/削除 とは種類が違う操作なので離す)。
        箱が2つ以上のときだけ出す(削除と同じ条件)。行は左右2群に分ける */
@@ -4512,7 +4516,7 @@ function viewSavings(){
         ? '<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--teal)" data-sa="svclose" data-v="'+pt.id+'">完了</button>' : '')+
       (pt.closed
         ? '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="svreopen" data-v="'+pt.id+'">戻す</button>' : '')+
-      '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="potedit" data-v="'+pt.id+'">編集</button>'+
+
       '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="adjust" data-v="'+pt.id+'">調整</button>'+
       (pots.length>1?'<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-sa="potdel" data-v="'+pt.id+'">削除</button>':'')+
       '</span></div></div>';
@@ -4578,10 +4582,14 @@ function bindSavings(){
         const tg=prompt(POT_TARGET_ASK,""); if(tg===null)return;
         const _np={id:uid(), name:name.trim()}; applyPotTarget(_np, tg);
         (sv.pots=sv.pots||[]).push(_np); save(); render(); return; }
-      if(a==="potedit"){ const pt=(sv.pots||[]).find(x=>String(x.id)===String(v)); if(!pt)return;
+      /* v4.96: **名前と目標を別々に直せる**(ユーザー指摘: 特定の部分だけ直したい時がほとんど)。
+         旧「編集」は名前→目標と順に聞いたので、名前を変えたいだけでも目標のプロンプトを通らされた。
+         カード上の名前と目標の行をそれぞれ押せるようにして、**押した所だけを聞く** */
+      if(a==="potname"){ const pt=(sv.pots||[]).find(x=>String(x.id)===String(v)); if(!pt)return;
         const name=prompt("箱の名前:",pt.name||""); if(name===null)return;
-        if(name.trim()) pt.name=name.trim();
-        const tg=prompt(POT_TARGET_ASK, potTargetText(pt)); if(tg===null){ save(); render(); return; }
+        if(name.trim()){ pt.name=name.trim(); save(); render(); } return; }
+      if(a==="pottgt"){ const pt=(sv.pots||[]).find(x=>String(x.id)===String(v)); if(!pt)return;
+        const tg=prompt(POT_TARGET_ASK, potTargetText(pt)); if(tg===null)return;
         applyPotTarget(pt, tg); save(); render(); return; }
       /* v4.04: どの箱も削除できる(最後の1つを除く)。**残高と履歴の引き取り先はユーザーが選ぶ**——
          勝手に特定の箱へ寄せると、目的の違う金が混ざって箱を分けた意味が消える */
