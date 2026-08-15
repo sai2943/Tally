@@ -102,6 +102,10 @@
   .btn.danger{border-color:var(--red); color:var(--red);}
   .btn.tealb{border-color:var(--teal); color:var(--teal);}
   .btn.sel{border-color:var(--amber); color:var(--amber); background:rgba(242,179,61,.12); font-weight:600;}
+  /* v4.94: 貯金の箱の選択。**形は財布と同じ**(ユーザー指摘)だが色は琥珀でなく teal——
+     財布と箱は種類が違うので、一目で見分けが付く必要がある。
+     chipの選択色と同じなので新しい語彙ではない(chipからbtnへ形だけ移した) */
+  .btn.selt{border-color:var(--teal); color:var(--teal); background:rgba(45,212,191,.12); font-weight:600;}
   .btn.dash{border-style:dashed; font-size:12px;}
   .btn.full{width:100%;}
   .chip{padding:4px 10px; border-radius:12px; font-size:11px; border:1px solid var(--line);
@@ -239,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.93 (localStorage保存・完全オフライン)
+   Tally 4.94 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.93";
+const APP_VERSION = "4.94";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5791,11 +5795,16 @@ function viewEntry(){
     const cp=String(f.svPot||"");
     /* v4.93: 見出しは状態で言い分ける。補填ONのときは財布の節が消えるので、
        ここが唯一の「出所」になる——「(任意)」のままだと出所が無いように読める */
+    /* v4.94: **財布と同じ箱の形にする**(ユーザー指摘)。名前と残高を積んだ等幅グリッドで、
+       auto-fitなので**箱が増えれば自動で2段になる**(財布と同じ仕組み・v4.38)。
+       チップ2行より1行に収まって短い。「(任意)」は外した——出ている以上、
+       選ばない選択肢は自明で、**語だけ増えて何も伝えていなかった** */
     svHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+
-      (_svDrawOn ? 'どこから出す' : '貯金から出す<span style="font-size:11px">(任意)</span>')+'</div>'+
-      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
-      savingsPots().map(p=>'<button class="chip'+(cp===String(p.id)?" sel":"")+'" data-a="espot" data-v="'+p.id+'" style="font-size:11px">'+
-        esc(p.name)+' <span class="mono muted">¥'+savingsBalance(p.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>'+
+      (_svDrawOn ? 'どこから出す' : '貯金から出す')+'</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:12px">'+
+      savingsPots().map(p=>'<button class="btn'+(cp===String(p.id)?" selt":"")+'" data-a="espot" data-v="'+p.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
+        '<span class="ellip" style="display:block">'+esc(p.name)+'</span>'+
+        '<span class="mono muted" style="font-size:11px;display:block">¥'+savingsBalance(p.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>'+
       /* v4.87: **所持金が動かないことを明示する**(ユーザー指摘: 視覚的にソニー銀行も減るように見える)。
          財布と箱の両方が選択状態になるので、両方から出ていくように見えてしまう。
          実際は箱→財布の補填と支出が相殺して**財布は増減ゼロ**。
