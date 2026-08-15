@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.94 (localStorage保存・完全オフライン)
+   Tally 4.95 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.94";
+const APP_VERSION = "4.95";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4238,6 +4238,22 @@ function savingsPots(){
    畳まれて見えていない箱と入れ替わると、**押した結果が画面から消えて何が起きたか分からない**。
    **残高は1円も動かない**: 並び順は表示だけの話で、取引はv4.04の移行でpotIdを全件持っている
    (`txPot`の「potId無し=先頭の箱」という暗黙の規則は既に消えているので、先頭が変わっても安全) */
+/* v4.95: **目標の入力を1つに畳む**(ユーザー指摘: 生活防衛資金以外には要らない機能なのに毎回聞かれる)。
+   旧: 名前 → 何ヶ月分 → 目標額 の**3回**。**名前を変えたいだけでも3回**聞かれ、しかも
+   「何ヶ月分」は生活防衛資金でしか使わないのに常に出ていた。
+   生活費連動そのものは残す価値がある(家計方針で 生活防衛資金 = 生活費×6 と決めている)ので、
+   **消すのではなく書き方で選べるようにする**: 数字=固定額 / 「6ヶ月」=生活費連動 / 空欄=目標なし。
+   これは予算の "70000|50%" と同じ発想——**1つの欄に書き方で意味を持たせる**(入口を増やさない) */
+const POT_TARGET_ASK = "目標額(円)\n\n生活費に連動させるなら「6ヶ月」のように書く\n(生活費=消費+承認。娯楽と遊技は含みません)\n\n空欄なら目標なし";
+/* 現在の設定を、そのまま書き戻せる形で返す(編集時の初期値) */
+function potTargetText(p){
+  return (num(p.auto)>0) ? (num(p.auto)+"ヶ月") : (p.target||"");
+}
+function applyPotTarget(p, txt){
+  const m=/^\s*(\d+)\s*(?:ヶ月|ヵ月|カ月|か月|ケ月|个月|ヶ|м|m)\s*$/i.exec(String(txt||""));
+  if(m && num(m[1])>0){ p.auto=String(num(m[1])); p.target=""; return; }
+  p.auto=""; p.target=(num(txt)>0?String(num(txt)):"");
+}
 function potMove(id, dir){
   const arr=((S.savings||{}).pots)||[]; if(arr.length<2) return false;
   const me=arr.findIndex(p=>String(p.id)===String(id)); if(me<0) return false;
@@ -4559,20 +4575,14 @@ function bindSavings(){
       }
       /* --- 箱 --- */
       if(a==="potadd"){ const name=prompt("箱の名前(例: ふるさと納税):",""); if(name===null||!name.trim())return;
-        const tg=prompt("目標額(円・空欄なら目標なし):",""); if(tg===null)return;
-        (sv.pots=sv.pots||[]).push({id:uid(), name:name.trim(), target:(num(tg)>0?String(num(tg)):"")}); save(); render(); return; }
+        const tg=prompt(POT_TARGET_ASK,""); if(tg===null)return;
+        const _np={id:uid(), name:name.trim()}; applyPotTarget(_np, tg);
+        (sv.pots=sv.pots||[]).push(_np); save(); render(); return; }
       if(a==="potedit"){ const pt=(sv.pots||[]).find(x=>String(x.id)===String(v)); if(!pt)return;
         const name=prompt("箱の名前:",pt.name||""); if(name===null)return;
         if(name.trim()) pt.name=name.trim();
-        /* v4.47: 生活防衛資金のように**目標が生活費に連動して動く**箱を作れるようにする。
-           0を入れれば従来どおりの固定額 */
-        const au=prompt("生活費の何ヶ月分を目標にしますか\n(6 なら生活費6ヶ月分。目標を固定額にするなら 0)\n\n生活費=消費+承認。娯楽と遊技は含みません。",
-          pt.auto||"0"); if(au===null){ save(); render(); return; }
-        if(num(au)>0){ pt.auto=String(num(au)); pt.target=""; save(); render(); return; }
-        pt.auto="";
-        const tg=prompt("目標額(円・0か空欄で目標なし):", pt.target||"");  if(tg===null){ save(); render(); return; }
-        pt.target=(num(tg)>0?String(num(tg)):"");
-        save(); render(); return; }
+        const tg=prompt(POT_TARGET_ASK, potTargetText(pt)); if(tg===null){ save(); render(); return; }
+        applyPotTarget(pt, tg); save(); render(); return; }
       /* v4.04: どの箱も削除できる(最後の1つを除く)。**残高と履歴の引き取り先はユーザーが選ぶ**——
          勝手に特定の箱へ寄せると、目的の違う金が混ざって箱を分けた意味が消える */
       if(a==="potdel"){ if(ev&&ev.stopPropagation) ev.stopPropagation();
