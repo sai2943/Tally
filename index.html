@@ -239,7 +239,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.92 (localStorage保存・完全オフライン)
+   Tally 4.93 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -812,7 +812,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.92";
+const APP_VERSION = "4.93";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5761,8 +5761,13 @@ function viewEntry(){
   }
   /* v4.14: **どの財布から出したか/入ったか**を記帳時に選ぶ(ユーザー設計)。
      財布が1つしかないときは出さない(摩擦を増やさない)。既定は先頭の財布 */
+  /* v4.93: **箱から補填するときは財布の節を出さない**(ユーザー指摘: 選択されて見えるのはおかしい)。
+     補填ONなら引き出しと支出が相殺して**その財布の残高は1円も動かない**——
+     選ぶ意味が無いのに選択状態で出ていると、そこから出ていくように読める。
+     内部的には引き出し先として財布が要るが、どれでも結果が同じなので既定のままでよい */
+  const _svDrawOn = (!isTr && f.type==="expense" && String(f.svPot||"") && f.svDraw!==false && savingsPots().length);
   let walHtml="";
-  if(!isTr && walletPots().length>1){
+  if(!isTr && !_svDrawOn && walletPots().length>1){
     const cur=String(f.wal||walletPots()[0].id);
     /* v4.38: **等幅のグリッド**にする(ユーザー指摘)。名前の長さでボタンの大きさが変わると
        押す位置が毎回ずれる。auto-fitなので財布が増減しても等幅のまま折り返す */
@@ -5784,7 +5789,10 @@ function viewEntry(){
   let svHtml="";
   if(!isTr && f.type==="expense" && savingsPots().length){
     const cp=String(f.svPot||"");
-    svHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">貯金から出す<span style="font-size:11px">(任意)</span></div>'+
+    /* v4.93: 見出しは状態で言い分ける。補填ONのときは財布の節が消えるので、
+       ここが唯一の「出所」になる——「(任意)」のままだと出所が無いように読める */
+    svHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+
+      (_svDrawOn ? 'どこから出す' : '貯金から出す<span style="font-size:11px">(任意)</span>')+'</div>'+
       '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
       savingsPots().map(p=>'<button class="chip'+(cp===String(p.id)?" sel":"")+'" data-a="espot" data-v="'+p.id+'" style="font-size:11px">'+
         esc(p.name)+' <span class="mono muted">¥'+savingsBalance(p.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>'+
@@ -5797,13 +5805,17 @@ function viewEntry(){
          既定はON(箱を選ぶ=箱から出す、が普通のため)。OFFにすると**紐づけだけ**残り、
          所持金は動かず進捗にだけ数える。説明文も状態に合わせて変える——
          **どちらの状態でも「金がどう動くか」が1行で読める**ようにするのが肝 */
-      (cp ? '<div class="row" style="gap:6px;margin:-6px 2px 6px">'+
-        '<button class="chip'+(f.svDraw===false?"":" sel")+'" data-a="espdraw" style="font-size:11px">箱から補填する</button></div>'+
-        '<div class="muted" style="font-size:11px;margin:0 2px 12px">'+
-        (f.svDraw===false
-          ? '所持金から出ます。<span class="teal">'+esc((savingsPots().find(x=>String(x.id)===cp)||{}).name||"貯金")+'の進捗にだけ数えます</span>(箱は減りません)。'
-          : esc((savingsPots().find(x=>String(x.id)===cp)||{}).name||"貯金")+'の箱だけが減ります。<span class="teal">所持金は動きません</span>(補填と支出で相殺)。')+
-        '</div>' : '');
+      /* v4.93: **トグルのチップを廃し、説明文の末尾に切替リンクを置く**(ユーザー指摘: ごちゃごちゃしている)。
+         チップ2行+トグル1行+説明2行の5行あった。**行動を語で書く**(「箱から補填する」という
+         状態名ではなく「財布から出す →」という次の動作)ので、押すと何が起きるかが読める */
+      (cp ? (()=>{ const _pn=esc((savingsPots().find(x=>String(x.id)===cp)||{}).name||"貯金");
+        const _sw='<span class="teal" data-a="espdraw" style="cursor:pointer;white-space:nowrap">'+
+          (f.svDraw===false?'箱から出す':'財布から出す')+' →</span>';
+        return '<div class="muted" style="font-size:11px;margin:-6px 2px 12px;line-height:1.7">'+
+          (f.svDraw===false
+            ? '所持金から出ます。'+_pn+'の進捗に数えます。'
+            : _pn+'の箱から出ます。所持金は動きません。')+
+          ' '+_sw+'</div>'; })() : '');
   }
   /* v4.35: **同じ店で複数の品目をまとめて入力**(ユーザー設計)。レシート1枚=1回の入力にする。
      保存時は**行ごとに別のエントリ**を作る(日付/分類/店/財布は共有)ので、
