@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.97 (localStorage保存・完全オフライン)
+   Tally 4.98 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.97";
+const APP_VERSION = "4.98";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -871,6 +871,9 @@ function subnavExtra(sc){
   if(sc==="fixed"  && UI.fixForm)   return [["[data-fa='fsave']", UI.fixForm.editId?'保存する':'登録する', SV]];
   if(sc==="stores" && UI.storeForm) return [["[data-a='stsave']", UI.storeForm.editId?'更新する':'追加する', SV]];
   if(sc==="mdb"    && UI.mdbForm)   return [["[data-a='fsave']",'保存する',SV]];
+  /* v4.98: 予算の設定も下バーへ(ユーザー要望)。**v4.43の規則の適用漏れ**で、
+     ここだけ本文の一番下まで探しに行く形が残っていた */
+  if(sc==="budget") return [["[data-bu='save']",'保存する',SV]];
   if(sc==="entry"){
     const f=UI.entryForm||{};
     const lb = f.type==="transfer" ? "振り替える" : (UI.editEntryId!==null ? "更新する" : "記録する");
@@ -1117,7 +1120,7 @@ function viewBudget(){
     '<div class="muted" style="font-size:11px;margin-top:6px">今月の残り <span class="mono teal">¥'+ps.rest.toLocaleString("ja-JP")+'</span>'+
     ' → 貯金 ¥'+ps.sv.toLocaleString("ja-JP")+' / 投資 ¥'+ps.iv.toLocaleString("ja-JP")+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:6px">貯金が目標に達したら、この比を投資側へ移していきます。</div></div>';
-  h+='<button class="btn full sel" style="margin-top:6px" data-bu="save">保存する</button>';
+  h+='<button class="btn full sel" style="margin-top:6px;display:none" data-bu="save">保存する</button>';
   return h;
 }
 function bindBudget(){
