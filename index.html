@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.01 (localStorage保存・完全オフライン)
+   Tally 5.02 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.01";
+const APP_VERSION = "5.02";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1474,24 +1474,24 @@ function viewLedger(){
         /* v5.00: **内枠の残りは親の残りを超えられない**(ユーザー指摘のバグ)。
            食費の枠¥35,000に対し使ったのが¥16,400でも、**変動消費の残りが¥10,668なら
            実際に使えるのは¥10,668**。枠だけ見て「残り¥18,600」と出していたのは嘘だった。
-           親と同じ`min`の考え方(nowCapsが月枠と所持金の小さい方を採るのと同型)。
-           **超過の判定は内枠そのもので行う**——親が尽きただけで「食費が超過」とは言わない */
-        const gover=gspent-gcap;
-        const gleftRaw=Math.max(0, gcap-gspent);
-        const gleft=Math.min(gleftRaw, Math.max(0, cap-spent));   /* 親の残りで頭打ち */
-        const gcapped=(gover<=0 && gleft<gleftRaw);               /* 親の残りに縛られている */
-        const gpct=Math.min(100,gspent/gcap*100);
+           v5.02: **注記ではなく分母を絞る**(ユーザー指摘: 注記が折り返して行が壊れた／分母を弄ればよい)。
+           **親は既に同じことをしている**——所持金に縛られると`変動消費 ¥89,332 / ¥100,000`の分母が
+           `使った額 + 所持金×割合`に差し替わる(nowCapsの`bound`)。内枠だけ違うやり方をしていた。
+           `食費 ¥16,400 / ¥27,068`(=使った額+親の残り)になり、**注記が要らなくなる**。
+           予算を増やせば次の描画で自動的に戻る(毎回計算しているので回復の処理も要らない)。
+           **超過の判定は内枠そのもの(gcapRaw)で行う**——親が尽きただけで「食費が超過」とは言わない */
+        const gcapRaw=gcap;
+        const gover=gspent-gcapRaw;
+        const gcapEff=Math.min(gcapRaw, gspent+Math.max(0, cap-spent));   /* 親の残りで頭打ちにした実効枠 */
+        const gpct=Math.min(100,gspent/(gcapEff||1)*100);
         h += '<div style="margin:8px 0 0 10px;padding-left:9px;border-left:2px solid var(--line)">'+
           '<div class="row between" style="align-items:baseline">'+
           '<span><span class="muted" style="font-size:11px">'+esc(gn)+'</span>'+
-          '<span class="mono muted" style="font-size:11px"> ¥'+gspent.toLocaleString("ja-JP")+' / ¥'+gcap.toLocaleString("ja-JP")+'</span></span>'+
+          '<span class="mono muted" style="font-size:11px"> ¥'+gspent.toLocaleString("ja-JP")+' / ¥'+gcapEff.toLocaleString("ja-JP")+'</span></span>'+
           '<span><span class="mono muted" style="font-size:11px">'+(gover>0?'超過':'残り')+'</span> '+
           /* v3.92: 内枠もバー連動。ただしバーが薄赤なので数字も同じだけ落とし、親との序列を保つ */
           '<span class="mono red" style="font-size:13px;font-weight:700'+(gover>0?'':';opacity:.55')+'">'+
-          '¥'+(gover>0?gover:gleft).toLocaleString("ja-JP")+'</span></span>'+
-          /* v5.00: 親に縛られていることを明示する。数字だけ小さくなると理由が分からない */
-          (gcapped ? '<span class="mono muted" style="font-size:11px;margin-left:5px">変動消費の残りまで</span>' : '')+
-          '</div>'+
+          '¥'+(gover>0?gover:(gcapEff-gspent)).toLocaleString("ja-JP")+'</span></span></div>'+
           '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:var(--red)'+(gover>0?'':';opacity:.45')+'"></div></div></div>';
       });
     }
