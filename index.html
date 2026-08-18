@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.03 (localStorage保存・完全オフライン)
+   Tally 5.04 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.03";
+const APP_VERSION = "5.04";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1658,7 +1658,11 @@ function viewLedger(){
            **マイナスの箱(引き出しが上回った)は帯に描けない**ので、帯からは外して凡例に赤で出す。
            割合の分母は**プラスの合計**——マイナスを混ぜると帯と割合が食い違う */
         (bd && bd.length>1
-          ? (()=>{ const COLS=["var(--teal)","var(--amber)","var(--red)","#7FB3D5","#B39DDB","#80CBC4"];
+          ? (()=>{ /* v5.04: **tealの濃淡に統一**(ユーザー指摘: 赤が多いのは視覚的に微妙)。
+              貯金画面が同じ「箱ごとの構成」で既にこの判断をしていた——**箱は数も名前も変わるので
+              色で識別しない**。しかも赤はこのアプリで「超過・マイナス」を意味する色(v3.92)なので、
+              ただの分類色に使うと警告に見える。所持金の財布は固定メンバーなので多色のままでよい */
+              const COLS=["var(--teal)","rgba(47,212,181,.72)","rgba(47,212,181,.50)","rgba(47,212,181,.34)","rgba(47,212,181,.22)","rgba(47,212,181,.14)"];
               const pos=bd.reduce((a2,x)=>a2+Math.max(0,x.v),0);
               return '<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface2);margin-top:8px">'+
                 bd.map((x,i)=>{ const pc=pos>0?Math.max(0,x.v)/pos*100:0;
@@ -3526,6 +3530,10 @@ function securedSplit(mk){
     const pid=txPot(t);
     if(t.type==="deposit"){  sv+=num(t.amount); byPot[pid]=(byPot[pid]||0)+num(t.amount); }
     if(t.type==="withdraw" && !_svLink.has(String(t.id))){ sv-=num(t.amount); byPot[pid]=(byPot[pid]||0)-num(t.amount); }
+    /* v5.04: **箱同士の移動は内訳にだけ反映する**(総額は動かない)。
+       `mv`の印がある対だけを見るので、**手動の「調整」は入らない**——
+       あれは打ち消す相手がいないので、入れると内訳の合計が総額と合わなくなる */
+    if(t.type==="adjust" && t.mv) byPot[pid]=(byPot[pid]||0)+num(t.amount);
   });
   (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
   return {sv:sv, iv:iv, byPot:byPot};
@@ -4430,9 +4438,14 @@ function doTransfer(from, to, amt, date){
     bk.txns.push({id:uid(),date:d,type:"topup",amount:String(amt),walId:w0,bwal:bwOf(to)});
   }
   else if(isPot(from) && isPot(to)){
-    /* 箱同士は外部と出入りしないので両側adjust(depositとwithdrawだと所持金が二重に動く) */
-    sv.txns.push({id:uid(),date:d,type:"adjust",amount:String(-amt),potId:from});
-    sv.txns.push({id:uid(),date:d,type:"adjust",amount:String(amt),potId:to});
+    /* 箱同士は外部と出入りしないので両側adjust(depositとwithdrawだと所持金が二重に動く)。
+       v5.04: **`mv:1`の印を付ける**(ユーザー指摘: 引越し→ふるさと納税の¥2,000が振替の内訳に出ない)。
+       内訳は「今月この箱にいくら入ったか」なので、箱同士の移動も反映すべき。
+       ただし**手動の「調整」も同じadjust**なので、区別なく入れると
+       「内訳の合計 = 総額」が崩れる(調整は打ち消す相手がいない)。
+       **必ず打ち消し合う対で作られるこの2件にだけ印を付ける**ので、合計は変わらない */
+    sv.txns.push({id:uid(),date:d,type:"adjust",amount:String(-amt),potId:from,mv:1});
+    sv.txns.push({id:uid(),date:d,type:"adjust",amount:String(amt),potId:to,mv:1});
   }
   else if(isW(from) && isW(to)){
     /* v4.14: 財布同士(現金→PayPayのチャージなど)。所持金の総額は動かないので両側adjust */
