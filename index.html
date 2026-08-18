@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.98 (localStorage保存・完全オフライン)
+   Tally 4.99 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.98";
+const APP_VERSION = "4.99";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3337,8 +3337,14 @@ function preSplit(mk){
      **動く理由が「枠外の支出を自分で承認したから」なので、動いて正しい**。
      既に振り替えたあとに承認が増えれば超過表示になり、貯金から戻すべき額がそのまま読める */
   const _NETp=["slot","mahjong"];   /* isNetEntryは他関数のローカル。ここはdisposableBaseと同じ書き方に揃える */
+  /* v4.99: **箱に紐づいた承認は目標を減らさない**(ユーザー指摘: 振替の表記が意味不明になった)。
+     v4.81で「承認は残余から出る」としたが、**箱があるものは話が違う**——
+     箱の金は**先月までのフローで貯めた分**であって今月の残余ではない。
+     それを今月の目標から引くと二重に取ることになり、目標が異常に低く出ていた(実測 ¥16,018)。
+     **箱があるものは箱が面倒を見る。箱が無い承認だけがフローから出る**(6月分のクレカ等)。
+     v4.81の意図(箱の無い承認で財布のバッファが静かに薄くなる)はそのまま守られる */
   const _apr=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="expense"
-    &&e.category==="承認"&&!_NETp.includes(e.src)).reduce((a,e)=>a+e.amount,0);
+    &&e.category==="承認"&&!_NETp.includes(e.src)&&!String(e.svPot||"")).reduce((a,e)=>a+e.amount,0);
   const rest = Math.max(0, base - amuse - varc - _apr);
   const rs=Math.max(0, parseFloat(String(wf.sink||"").replace("%",""))||0);
   const ri=Math.max(0, parseFloat(String(wf.invest||"").replace("%",""))||0);
@@ -3433,10 +3439,14 @@ function securedSplit(mk){
      箱同士の移動はv4.57でadjustにしてあるので影響しない。
      ズレるのは**貯金→軍資金**だけ: 承認が立たないので目標は下がらず実績だけ減って未達になる。
      これは「貯金を取り崩した」という事実そのものなので、見えて困る情報ではない(意図的にこのまま) */
+  /* v4.99: **箱の目的の支出に紐づく引き出しは実績を減らさない**(目標側と対称)。
+     あれは「今月の振替を取り消した」のではなく、**先月までに貯めた金を使った**だけ。
+     v4.84で純額にしたのは「財布へ戻した分」を捉えるためで、箱からの支払いは別の話だった */
+  const _svLink=new Set((S.entries||[]).filter(e=>e.svTx!=null).map(e=>String(e.svTx)));
   (((S.savings||{}).txns)||[]).forEach(t=>{
     if(!(t.date||"").startsWith(mk)) return;
     if(t.type==="deposit")  sv+=num(t.amount);
-    if(t.type==="withdraw") sv-=num(t.amount);
+    if(t.type==="withdraw" && !_svLink.has(String(t.id))) sv-=num(t.amount);
   });
   (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
   return {sv:sv, iv:iv};
