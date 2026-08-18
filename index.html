@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.00 (localStorage保存・完全オフライン)
+   Tally 5.01 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.00";
+const APP_VERSION = "5.01";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1622,7 +1622,7 @@ function viewLedger(){
     const _remain = Math.max(0,_p.sv-_d.sv) + Math.max(0,_p.iv-_d.iv);
     const _nagging = _isCurM && mainIncomeLanded(mk) && _remain > 0;   /* 催促カードが出ている状態 */
     const _show = !_isFutM && !_nagging && (!_isCurM || mainIncomeLanded(mk));
-    const _row=(nm,plan,done)=>{
+    const _row=(nm,plan,done,bd)=>{
       if(plan<=0) return "";
       /* v4.84: 純額なので done は負になりうる。バーの幅を下限0で止める */
       const ok=done>=plan, pc=Math.max(0, Math.min(100, plan>0?done/plan*100:0));
@@ -1646,9 +1646,24 @@ function viewLedger(){
            隣接させれば色で結ぶ必要がなく、**状態(達成)→詳細(超過額)**の順で読める */
         (over>0 ? '<span class="mono muted" style="font-size:11px"> +¥'+over.toLocaleString("ja-JP")+'</span>' : '')+
         '</span></div>'+
+        /* v5.01: **箱ごとの内訳**(ユーザー要望: 何に振り替えたか分からなくなる)。
+           所持金カードの財布別・予算カードの食費と同じ「親の下に細く並べる」形。
+           **箱が2つ以上動いた月だけ出す**——1つなら総額と同じ数字が並ぶだけで、
+           v5.00で「1件だけの店はまとめない」としたのと同じ理由。
+           **0の箱は出さない**(今月動いていない箱は情報にならない)。
+           並びは箱の順(v4.91でユーザーが優先順位として並べたもの)を尊重する */
+        (bd && bd.length>1
+          ? '<div style="margin:6px 0 0 10px;padding-left:9px;border-left:2px solid var(--line)">'+
+            bd.map(x=>'<div class="row between" style="font-size:11px;margin-top:3px">'+
+              '<span class="muted ellip" style="min-width:0">'+esc(x.name)+'</span>'+
+              '<span class="mono '+(x.v<0?'red':'muted')+'">'+(x.v<0?'−':'')+'¥'+Math.abs(x.v).toLocaleString("ja-JP")+'</span></div>').join("")+
+            '</div>'
+          : '')+
         '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div></div>';
     };
-    const _h1=_row("貯金へ", _p.sv, _d.sv), _h2=_row("投資へ", _p.iv, _d.iv);
+    const _h1=_row("貯金へ", _p.sv, _d.sv,
+      /* v5.01: 箱ごとの内訳。0の箱は落とし、並びは箱の順(v4.91の優先順位)を尊重する */
+      savingsPots().map(p=>({name:p.name, v:num((_d.byPot||{})[String(p.id)]||0)})).filter(x=>x.v!==0)), _h2=_row("投資へ", _p.iv, _d.iv);
     if(_show && (_h1||_h2)){
       h += band("今月の振替");
       h += '<div class="card" style="margin-bottom:14px">'+_h1+_h2+'</div>';
@@ -3484,13 +3499,18 @@ function securedSplit(mk){
      あれは「今月の振替を取り消した」のではなく、**先月までに貯めた金を使った**だけ。
      v4.84で純額にしたのは「財布へ戻した分」を捉えるためで、箱からの支払いは別の話だった */
   const _svLink=new Set((S.entries||[]).filter(e=>e.svTx!=null).map(e=>String(e.svTx)));
+  /* v5.01: **箱ごとの内訳も同時に出す**(ユーザー要望: 何に振り替えたか分からなくなる)。
+     **合計と同じループで積む**のが肝——別に数え直すと、条件が食い違ったときに
+     内訳の合計が総額と合わなくなる。合わない内訳は無いより悪い */
+  const byPot={};
   (((S.savings||{}).txns)||[]).forEach(t=>{
     if(!(t.date||"").startsWith(mk)) return;
-    if(t.type==="deposit")  sv+=num(t.amount);
-    if(t.type==="withdraw" && !_svLink.has(String(t.id))) sv-=num(t.amount);
+    const pid=txPot(t);
+    if(t.type==="deposit"){  sv+=num(t.amount); byPot[pid]=(byPot[pid]||0)+num(t.amount); }
+    if(t.type==="withdraw" && !_svLink.has(String(t.id))){ sv-=num(t.amount); byPot[pid]=(byPot[pid]||0)-num(t.amount); }
   });
   (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
-  return {sv:sv, iv:iv};
+  return {sv:sv, iv:iv, byPot:byPot};
 }
 function leakAgg(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
