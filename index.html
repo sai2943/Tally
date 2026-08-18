@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.02 (localStorage保存・完全オフライン)
+   Tally 5.03 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.02";
+const APP_VERSION = "5.03";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1652,14 +1652,32 @@ function viewLedger(){
            v5.00で「1件だけの店はまとめない」としたのと同じ理由。
            **0の箱は出さない**(今月動いていない箱は情報にならない)。
            並びは箱の順(v4.91でユーザーが優先順位として並べたもの)を尊重する */
+        /* v5.03: **進捗バーではなく構成比のバー**(ユーザー指摘: 所持金のグラフみたいな感じでいい)。
+           進捗は `¥150,424 / ¥150,168 達成 +¥256` で既に読めるので、バーが同じことを繰り返していた。
+           所持金カードと**同じ語彙**(色つきの帯+凡例に金額と割合)に揃えると情報が増える。
+           **マイナスの箱(引き出しが上回った)は帯に描けない**ので、帯からは外して凡例に赤で出す。
+           割合の分母は**プラスの合計**——マイナスを混ぜると帯と割合が食い違う */
         (bd && bd.length>1
-          ? '<div style="margin:6px 0 0 10px;padding-left:9px;border-left:2px solid var(--line)">'+
-            bd.map(x=>'<div class="row between" style="font-size:11px;margin-top:3px">'+
-              '<span class="muted ellip" style="min-width:0">'+esc(x.name)+'</span>'+
-              '<span class="mono '+(x.v<0?'red':'muted')+'">'+(x.v<0?'−':'')+'¥'+Math.abs(x.v).toLocaleString("ja-JP")+'</span></div>').join("")+
-            '</div>'
+          ? (()=>{ const COLS=["var(--teal)","var(--amber)","var(--red)","#7FB3D5","#B39DDB","#80CBC4"];
+              const pos=bd.reduce((a2,x)=>a2+Math.max(0,x.v),0);
+              return '<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface2);margin-top:8px">'+
+                bd.map((x,i)=>{ const pc=pos>0?Math.max(0,x.v)/pos*100:0;
+                  return pc>0?'<div style="width:'+pc+'%;background:'+COLS[i%COLS.length]+'"></div>':''; }).join("")+
+                '</div><div style="margin-top:8px">'+
+                bd.map((x,i)=>'<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
+                  '<span class="ellip" style="min-width:0"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+
+                  (x.v>0?COLS[i%COLS.length]:'var(--line)')+';margin-right:6px"></span>'+esc(x.name)+'</span>'+
+                  '<span><span class="mono '+(x.v<0?'red':'muted')+'">'+(x.v<0?'−':'')+'¥'+Math.abs(x.v).toLocaleString("ja-JP")+'</span>'+
+                  /* 割合の幅を固定(桁数の違いで金額の右端がずれる=v4.63) */
+                  '<span class="mono muted" style="display:inline-block;width:38px;text-align:right">'+
+                  (x.v>0&&pos>0?Math.round(x.v/pos*100)+'%':'')+'</span></span></div>').join("")+
+                '</div>'; })()
           : '')+
-        '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div></div>';
+        /* v5.03: **内訳の帯を出す行では進捗バーを出さない**。
+           進捗は数字(実績/目標・達成/あと)で読めるので、帯と併記すると
+           「2本のバーがそれぞれ何を表すのか」が読み取れなくなる */
+        ((bd && bd.length>1) ? '' :
+          '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div>')+'</div>';
     };
     const _h1=_row("貯金へ", _p.sv, _d.sv,
       /* v5.01: 箱ごとの内訳。0の箱は落とし、並びは箱の順(v4.91の優先順位)を尊重する */
