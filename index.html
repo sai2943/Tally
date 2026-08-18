@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 4.99 (localStorage保存・完全オフライン)
+   Tally 5.00 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -816,7 +816,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "4.99";
+const APP_VERSION = "5.00";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1471,7 +1471,16 @@ function viewLedger(){
         const gIsPct=genreCapIsPct(gcaps[gn]);
         const gspent=me.filter(e=>e.type==="expense"&&e.category==="消費"&&e.fixedId==null&&!isNetEntry(e)
           &&((S.genres||{})[chainKeyOf(e.store)]||"未分類")===gn).reduce((a,e)=>a+e.amount,0);
-        const gpct=Math.min(100,gspent/gcap*100), gover=gspent-gcap;
+        /* v5.00: **内枠の残りは親の残りを超えられない**(ユーザー指摘のバグ)。
+           食費の枠¥35,000に対し使ったのが¥16,400でも、**変動消費の残りが¥10,668なら
+           実際に使えるのは¥10,668**。枠だけ見て「残り¥18,600」と出していたのは嘘だった。
+           親と同じ`min`の考え方(nowCapsが月枠と所持金の小さい方を採るのと同型)。
+           **超過の判定は内枠そのもので行う**——親が尽きただけで「食費が超過」とは言わない */
+        const gover=gspent-gcap;
+        const gleftRaw=Math.max(0, gcap-gspent);
+        const gleft=Math.min(gleftRaw, Math.max(0, cap-spent));   /* 親の残りで頭打ち */
+        const gcapped=(gover<=0 && gleft<gleftRaw);               /* 親の残りに縛られている */
+        const gpct=Math.min(100,gspent/gcap*100);
         h += '<div style="margin:8px 0 0 10px;padding-left:9px;border-left:2px solid var(--line)">'+
           '<div class="row between" style="align-items:baseline">'+
           '<span><span class="muted" style="font-size:11px">'+esc(gn)+'</span>'+
@@ -1479,7 +1488,10 @@ function viewLedger(){
           '<span><span class="mono muted" style="font-size:11px">'+(gover>0?'超過':'残り')+'</span> '+
           /* v3.92: 内枠もバー連動。ただしバーが薄赤なので数字も同じだけ落とし、親との序列を保つ */
           '<span class="mono red" style="font-size:13px;font-weight:700'+(gover>0?'':';opacity:.55')+'">'+
-          '¥'+(gover>0?gover:(gcap-gspent)).toLocaleString("ja-JP")+'</span></span></div>'+
+          '¥'+(gover>0?gover:gleft).toLocaleString("ja-JP")+'</span></span>'+
+          /* v5.00: 親に縛られていることを明示する。数字だけ小さくなると理由が分からない */
+          (gcapped ? '<span class="mono muted" style="font-size:11px;margin-left:5px">変動消費の残りまで</span>' : '')+
+          '</div>'+
           '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+gpct+'%;background:var(--red)'+(gover>0?'':';opacity:.45')+'"></div></div></div>';
       });
     }
@@ -1663,19 +1675,48 @@ function viewLedger(){
       '<span style="margin-left:8px;font-size:11px">'+list.length+'件</span></span>'+
       '<span class="mono '+clsPM(dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(dayNet)+'</span></div>'+
       (!dOpen?'':'<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
-      list.map((e,i)=>{
-        const signedAmt = e.type==="income" ? e.amount : -e.amount;
-        const isFuture = e.date > todayS;
-        const cc = e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
-        return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(i?'border-top:1px solid var(--line);':'')+(isFuture?'opacity:.62;':'')+'" data-a="eedit" data-v="'+e.id+'">'+
-        '<div style="flex:1;min-width:0"><div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
-        '<span class="tag" style="border:1px solid '+cc+';color:'+cc+'">'+esc(e.category)+'</span>'+
-        (e.src==="slot"||e.src==="mahjong"?'<span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:11px">連携</span>':'')+
-        (e.src==="fixed"?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">定期</span>':'')+
-        (isFuture?'<span class="tag" style="border:1px solid var(--blue);color:var(--blue);font-size:11px">予定</span>':'')+'</div>'+
-        entryDetailHtml(e)+'</div>'+
-        '<div class="mono '+clsPM(signedAmt)+'" style="font-size:14px">'+signYen(signedAmt)+'</div></div>';
-      }).join("")+'</div>')+'</div>';
+      (()=>{
+        /* v5.00: **同じ店は1行にまとめ、タップで品目を出す**(ユーザー要望)。
+           1日24件のうち同じ通販が6件、というのが普通に起きる。**店が読めれば内訳は要らない日が多い**。
+           畳む語彙はv3.46(日別)・v4.68(予定)と同じで、新しい概念を増やしていない。
+           **1件しかない店はまとめない**——畳んでも減らないうえ、開く手間だけ増える。
+           店名の無い記録も個別のまま(まとめると「店名なし」という架空の店ができる)。
+           鍵は`日付#並び順`にする——**店名に区切り文字が入っても壊れない** */
+        const groups=[], idxOf={};
+        list.forEach(e=>{
+          const st=String(e.store||"").trim();
+          const k = st ? ("s:"+st) : ("e:"+e.id);   /* 店名なしは1件ずつ */
+          if(idxOf[k]==null){ idxOf[k]=groups.length; groups.push({store:st, items:[]}); }
+          groups[idxOf[k]].items.push(e);
+        });
+        let row=0;
+        const entryRow=(e)=>{
+          const signedAmt = e.type==="income" ? e.amount : -e.amount;
+          const isFuture = e.date > todayS;
+          const cc = e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
+          const sep = row++ ? 'border-top:1px solid var(--line);' : '';
+          return '<div class="row" style="padding:10px 14px;cursor:pointer;'+sep+(isFuture?'opacity:.62;':'')+'" data-a="eedit" data-v="'+e.id+'">'+
+          '<div style="flex:1;min-width:0"><div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
+          '<span class="tag" style="border:1px solid '+cc+';color:'+cc+'">'+esc(e.category)+'</span>'+
+          (e.src==="slot"||e.src==="mahjong"?'<span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:11px">連携</span>':'')+
+          (e.src==="fixed"?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">定期</span>':'')+
+          (isFuture?'<span class="tag" style="border:1px solid var(--blue);color:var(--blue);font-size:11px">予定</span>':'')+'</div>'+
+          entryDetailHtml(e)+'</div>'+
+          '<div class="mono '+clsPM(signedAmt)+'" style="font-size:14px">'+signYen(signedAmt)+'</div></div>';
+        };
+        return groups.map((g,gi)=>{
+          if(g.items.length<2) return entryRow(g.items[0]);
+          const key=d+"#"+gi, open=!!(UI.stOpen&&UI.stOpen[key]);
+          const net=dayNetOf(g.items);
+          const sep = row++ ? 'border-top:1px solid var(--line);' : '';
+          return '<div class="row between" style="padding:10px 14px;cursor:pointer;'+sep+'" data-a="stoggle" data-v="'+esc(key)+'">'+
+            '<span class="ellip" style="flex:1;min-width:0"><span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+'</span> '+
+            '<span style="font-size:12px">'+esc(g.store)+'</span>'+
+            '<span class="mono muted" style="font-size:11px;margin-left:6px">'+g.items.length+'件</span></span>'+
+            '<span class="mono '+clsPM(net)+'" style="font-size:14px">'+signYen(net)+'</span></div>'+
+            (open ? g.items.map(entryRow).join("") : '');
+        }).join("");
+      })()+'</div>')+'</div>';
     return h;
   };
   /* v4.68: **未来は1行に畳む**(ユーザー指摘: 今日の日付に辿り着くのも一苦労)。
@@ -5401,6 +5442,8 @@ function bindMain(){
       else if(a==="dtoggle"){ const d=el.dataset.v; UI.dayOpen=UI.dayOpen||{}; const cur=(UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayStr()); UI.dayOpen[d]=!cur; render(); }
       /* v4.68: 明細の「予定」バー。既定は畳んだまま(UI.futOpenの未定義=false) */
       else if(a==="ftoggle"){ UI.futOpen=!UI.futOpen; render(); }
+      /* v5.00: 明細の店まとめの開閉。鍵は`日付#並び順`なので店名に何が入っても壊れない */
+      else if(a==="stoggle"){ UI.stOpen=UI.stOpen||{}; UI.stOpen[v]=!UI.stOpen[v]; render(); }
       else if(a==="eedit"){
         const e = S.entries.find(x=>String(x.id)===String(v));
         if(!e) return;
