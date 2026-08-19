@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.12 (localStorage保存・完全オフライン)
+   Tally 5.13 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.12";
+const APP_VERSION = "5.13";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1192,9 +1192,14 @@ function svMoves(mk){
   });
   (S.entries||[]).forEach(e=>{
     if(!(e.date||"").startsWith(mk) || e.type!=="expense") return;
-    if(!String(e.svPot||"") || e.svTx!=null) return;
+    if(!String(e.svPot||"")) return;
     if(["slot","mahjong"].indexOf(e.src)>=0) return;
-    push(e.svPot,"spend",[e.store,(e.item!=null?e.item:e.memo)].filter(Boolean).join(" ")||"支出",e.amount,e.date);
+    const label=[e.store,(e.item!=null?e.item:e.memo)].filter(Boolean).join(" ")||"支出";
+    /* v5.13: **箱から払った分も出す**(ユーザー要望)。ただし`kind:"paid"`として
+       **合計には足さない**——足すと「箱を進めた額」の意味が壊れる(あれは先月までに貯めた金)。
+       画面では区切って下に置き、合計と混ざらないようにする */
+    if(e.svTx!=null) push(e.svPot,"paid",label,-e.amount,e.date);
+    else             push(e.svPot,"spend",label,e.amount,e.date);
   });
   return rows;
 }
@@ -1206,23 +1211,37 @@ function viewSvDrill(){
   h+='<div class="card" style="margin-bottom:14px"><div class="row between" style="align-items:baseline">'+
     '<span class="muted" style="font-size:12px">'+mk.replace("-","年 ")+'月</span>'+
     '<span class="mono teal" style="font-size:20px;font-weight:700">'+signYen(d.sv)+'</span></div>'+
-    '<div class="muted" style="font-size:11px;margin-top:6px;line-height:1.7">'+
-    '**箱の残り目標をいくら減らしたか**。振替も、箱に紐づけた支出も同じだけ進めます。'+
-    '<br>箱から払った分は先月までに貯めた金なので進みません。</div></div>';
+    '</div>';   /* v5.13: 説明文は撤去(ユーザー指摘: 金額だけで充分)。
+       ついでにHTMLで効かない`**`がそのまま出ていた事故も消える */
   h+=band("箱ごと");
   const pots=savingsPots().filter(p2=>rows[String(p2.id)]&&rows[String(p2.id)].length);
+  /* 箱から払っただけの月もあるので、合計が0でもカードは出す(残高は動いている) */
   if(!pots.length) h+='<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月はまだ動きがありません。</div>';
+  const rowHtml=x=>'<div class="row between" style="font-size:11px;padding:3px 0">'+
+    '<span class="ellip muted" style="min-width:0">'+
+    '<span class="mono" style="margin-right:6px">'+esc(x.date.slice(5).replace("-","/"))+'</span>'+
+    esc(x.label)+(x.kind!=="xfer"?' <span class="mono" style="font-size:11px">(支出)</span>':'')+'</span>'+
+    '<span class="mono '+clsPM(x.amt)+'">'+signYen(x.amt)+'</span></div>';
   pots.forEach(p2=>{
-    const list=rows[String(p2.id)], sum=list.reduce((a,x)=>a+x.amt,0);
+    const all=rows[String(p2.id)];
+    const list=all.filter(x=>x.kind!=="paid"), paid=all.filter(x=>x.kind==="paid");
+    const sum=list.reduce((a,x)=>a+x.amt,0), paidSum=paid.reduce((a,x)=>a+x.amt,0);
     h+='<div class="card" style="margin-bottom:10px">'+
       '<div class="row between" style="align-items:baseline;margin-bottom:8px">'+
       '<span class="ellip" style="font-size:13px;font-weight:700">'+esc(p2.name)+'</span>'+
       '<span class="mono '+clsPM(sum)+'" style="font-size:16px;font-weight:700">'+signYen(sum)+'</span></div>'+
-      list.map(x=>'<div class="row between" style="font-size:11px;padding:3px 0">'+
-        '<span class="ellip muted" style="min-width:0">'+
-        '<span class="mono" style="margin-right:6px">'+esc(x.date.slice(5).replace("-","/"))+'</span>'+
-        esc(x.label)+(x.kind==="spend"?' <span class="mono" style="font-size:11px">(支出)</span>':'')+'</span>'+
-        '<span class="mono '+clsPM(x.amt)+'">'+signYen(x.amt)+'</span></div>').join("")+
+      list.map(rowHtml).join("")+
+      /* v5.13: **箱から払った分は区切って下に置く**(ユーザー要望)。
+         上の合計には入らない——あれは「箱を進めた額」で、箱からの支払いは
+         先月までに貯めた金を使っただけなので進捗を動かさない。
+         **同じカードに置くが線で分ける**ことで、合計と混ざらずに残高の動きが追える */
+      (paid.length
+        ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">'+
+          '<div class="row between" style="font-size:11px;margin-bottom:2px">'+
+          '<span class="muted">箱から支払い</span>'+
+          '<span class="mono '+clsPM(paidSum)+'">'+signYen(paidSum)+'</span></div>'+
+          paid.map(rowHtml).join("")+'</div>'
+        : '')+
       '</div>';
   });
   return h;
