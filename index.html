@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.10 (localStorage保存・完全オフライン)
+   Tally 5.12 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.10";
+const APP_VERSION = "5.12";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1013,6 +1013,7 @@ function _renderScreen(app){
   if(UI.screen==="budget"){ app.innerHTML = viewBudget(); bindBudget(); return; }
   if(UI.screen==="wallet"){ app.innerHTML = viewWallet(); bindWallet(); return; }
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
+  if(UI.screen==="svdrill"){ app.innerHTML = viewSvDrill(); bindSvDrill(); return; }
   /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う */
   if(UI.screen==="monthly"){ app.innerHTML = viewMonthly(); bindMain(); return; }
   if(UI.screen==="summary"){ app.innerHTML = viewSummary(); bindMain(); return; }
@@ -1167,6 +1168,68 @@ function bindBudget(){
         save(); UI.budForm=null; UI.screen="main"; render();
       }
     };
+  });
+}
+/* v5.11: **貯金の内訳画面**(ユーザー設計: どの箱にいくら振り替えたか、あるいは進めた支出を出す)。
+   予算カードの「貯金」の行から開く。`securedSplit`と**同じ規則で組み立てる**ので合計は必ず一致する:
+     ・入金(deposit)          → 進む
+     ・目的外の引き出し(withdraw) → 戻る(箱の支払いに紐づくものは除く=進捗は動かない)
+     ・箱同士の移動(adjust mv)  → 片方が減り片方が増える
+     ・箱に紐づけた財布払い     → 進む
+   **手段(振替/支出)を箱の中に並べる**——箱ごとの合計は貯金画面の進捗と突き合わせられる */
+function svMoves(mk){
+  const link=new Set((S.entries||[]).filter(e=>e.svTx!=null).map(e=>String(e.svTx)));
+  const rows={};
+  const push=(pid,kind,label,amt,date)=>{
+    const k=String(pid); (rows[k]=rows[k]||[]).push({kind:kind,label:label,amt:amt,date:date});
+  };
+  (((S.savings||{}).txns)||[]).forEach(t=>{
+    if(!(t.date||"").startsWith(mk)) return;
+    const pid=txPot(t);
+    if(t.type==="deposit")  push(pid,"xfer","振替(所持金から)",num(t.amount),t.date);
+    else if(t.type==="withdraw" && !link.has(String(t.id))) push(pid,"xfer","振替(所持金へ)",-num(t.amount),t.date);
+    else if(t.type==="adjust" && t.mv) push(pid,"xfer",num(t.amount)>=0?"振替(他の箱から)":"振替(他の箱へ)",num(t.amount),t.date);
+  });
+  (S.entries||[]).forEach(e=>{
+    if(!(e.date||"").startsWith(mk) || e.type!=="expense") return;
+    if(!String(e.svPot||"") || e.svTx!=null) return;
+    if(["slot","mahjong"].indexOf(e.src)>=0) return;
+    push(e.svPot,"spend",[e.store,(e.item!=null?e.item:e.memo)].filter(Boolean).join(" ")||"支出",e.amount,e.date);
+  });
+  return rows;
+}
+function viewSvDrill(){
+  const mk=UI.month||todayStr().slice(0,7);
+  const d=securedSplit(mk), rows=svMoves(mk), p=preSplit(mk);
+  let h='<div class="hdr"><button class="navbtn" data-sd="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">貯金の内訳</div><div style="width:44px"></div></div>';
+  h+='<div class="card" style="margin-bottom:14px"><div class="row between" style="align-items:baseline">'+
+    '<span class="muted" style="font-size:12px">'+mk.replace("-","年 ")+'月</span>'+
+    '<span class="mono teal" style="font-size:20px;font-weight:700">'+signYen(d.sv)+'</span></div>'+
+    '<div class="muted" style="font-size:11px;margin-top:6px;line-height:1.7">'+
+    '**箱の残り目標をいくら減らしたか**。振替も、箱に紐づけた支出も同じだけ進めます。'+
+    '<br>箱から払った分は先月までに貯めた金なので進みません。</div></div>';
+  h+=band("箱ごと");
+  const pots=savingsPots().filter(p2=>rows[String(p2.id)]&&rows[String(p2.id)].length);
+  if(!pots.length) h+='<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月はまだ動きがありません。</div>';
+  pots.forEach(p2=>{
+    const list=rows[String(p2.id)], sum=list.reduce((a,x)=>a+x.amt,0);
+    h+='<div class="card" style="margin-bottom:10px">'+
+      '<div class="row between" style="align-items:baseline;margin-bottom:8px">'+
+      '<span class="ellip" style="font-size:13px;font-weight:700">'+esc(p2.name)+'</span>'+
+      '<span class="mono '+clsPM(sum)+'" style="font-size:16px;font-weight:700">'+signYen(sum)+'</span></div>'+
+      list.map(x=>'<div class="row between" style="font-size:11px;padding:3px 0">'+
+        '<span class="ellip muted" style="min-width:0">'+
+        '<span class="mono" style="margin-right:6px">'+esc(x.date.slice(5).replace("-","/"))+'</span>'+
+        esc(x.label)+(x.kind==="spend"?' <span class="mono" style="font-size:11px">(支出)</span>':'')+'</span>'+
+        '<span class="mono '+clsPM(x.amt)+'">'+signYen(x.amt)+'</span></div>').join("")+
+      '</div>';
+  });
+  return h;
+}
+function bindSvDrill(){
+  document.querySelectorAll("[data-sd]").forEach(el=>{
+    el.onclick=()=>{ if(el.dataset.sd==="back"){ UI.screen="main"; render(); } };
   });
 }
 function viewCatDrill(){
@@ -1547,33 +1610,29 @@ function viewLedger(){
         '<div class="bar"><div style="width:'+fp+'%;background:var(--muted)"></div></div></div>';
     }
   }
-  /* v5.08: **承認の行**(ユーザー要望: 常時知りたい)。
-     承認は「予算の上限対象外」なので**枠を持たない**。だから固定費と同じ文法にする——
-     灰色 + 細いバー(5px)が「これは予算ではない」の視覚的な宣言(v4.71)。
-     予算枠のある変動消費・娯楽(8px・分類色)とは太さも色も変えて、**同じ行に見せない**。
-     **今月の承認が0なら出さない**(0は情報にならない)。遊技は軍資金の世界なので除く。
-     ここに置く理由: 承認はフローから出た分が**貯金の目標を静かに下げる**(v5.07)。
-     目標が低い理由を追える場所が要る——それが無くて「本当はもっと目標が高いのか」と迷わせた */
+  /* v5.11: **承認の行を「貯金」に差し替える**(ユーザー設計)。
+     予算カードが**可処分の行き先を全部並べる**形になる——消費・娯楽・固定費・貯金。
+     ウォーターフォールそのもの。おかげで「今月の積立」のカードを丸ごと畳める。
+     承認を残さないのは、**財布から払って箱に紐づけた分が貯金の行にも出る**ため——
+     両方置くと同じ金が二重に見える(ユーザー指摘)。
+     ここの「貯金」は**振替と箱を進めた支出の両方**。中身はタップで開く(v5.11の内訳画面)。
+     方向が逆(消費は残りが多いと良い/貯金は足りないと催促)なので語で分ける:
+     未達=あと / 達成=達成 + 超過額。これはv4.82で振替カードに入れた文法をそのまま持ってくる */
   {
-    const _apAll=me.filter(e=>e.type==="expense"&&e.category==="承認"&&!isNetEntry(e))
-      .reduce((a,e)=>a+e.amount,0);
-    const _apDone=me.filter(e=>e.type==="expense"&&e.category==="承認"&&!isNetEntry(e)&&e.date<=todayS)
-      .reduce((a,e)=>a+e.amount,0);
-    if(_apAll>0){
-      const _ap=Math.min(100, _apAll>0?_apDone/_apAll*100:0);
-      /* v5.09: **中身を開けるようにする**(ユーザー指摘: 承認の金額がよく分からない)。
-         変動消費・娯楽には内訳ドリルへの`›`があるのに、承認だけ数字を置いて開けなかった。
-         **確かめられない数字を置かない**——このアプリでずっと避けてきた形。
-         既にある`catdrill`(分類ごとの内訳)にそのまま繋ぐので、新しい画面は作らない */
-      h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="catdrill" data-v="承認">'+
+    const _sp=securedSplit(mk), _pp=preSplit(mk);
+    if(_pp.sv>0 || _sp.sv!==0){
+      const _ok=_sp.sv>=_pp.sv, _over=Math.max(0,_sp.sv-_pp.sv);
+      const _spc=Math.max(0, Math.min(100, _pp.sv>0?_sp.sv/_pp.sv*100:0));
+      h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="svdrill">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
-        '<span><span class="muted" style="font-size:12px;font-weight:700">承認</span>'+
-        '<span class="mono muted" style="font-size:11px"> ¥'+_apDone.toLocaleString("ja-JP")+' / ¥'+_apAll.toLocaleString("ja-JP")+'</span></span>'+
-        /* 右は固定費と同じ「予定」(未来日の分)。**同じものを2つの語で呼ばない**(v4.71) */
-        '<span><span class="mono muted" style="font-size:11px">'+(_apDone>=_apAll?'すべて計上済み':'予定')+'</span> '+
-        (_apDone>=_apAll?'':'<span class="mono muted" style="font-size:17px;font-weight:700">¥'+(_apAll-_apDone).toLocaleString("ja-JP")+'</span>')+
+        '<span><span class="muted" style="font-size:12px;font-weight:700">貯金</span>'+
+        '<span class="mono muted" style="font-size:11px"> ¥'+_sp.sv.toLocaleString("ja-JP")+' / ¥'+_pp.sv.toLocaleString("ja-JP")+'</span></span>'+
+        '<span><span class="mono muted" style="font-size:11px">'+(_ok?'':'あと')+'</span> '+
+        '<span class="mono '+(_ok?'teal':'amber')+'" style="font-size:17px;font-weight:700">'+
+        (_ok?'達成':'¥'+(_pp.sv-_sp.sv).toLocaleString("ja-JP"))+'</span>'+
+        (_over>0?'<span class="mono muted" style="font-size:11px"> +¥'+_over.toLocaleString("ja-JP")+'</span>':'')+
         '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
-        '<div class="bar"><div style="width:'+_ap+'%;background:var(--muted)"></div></div></div>';
+        '<div class="bar"><div style="width:'+_spc+'%;background:var(--teal)"></div></div></div>';
     }
   }
   h += '</div>';   /* 予算カード(使う)を閉じる */
@@ -1618,8 +1677,10 @@ function viewLedger(){
       /* v3.61: 滝の定数が見えないと「¥89,508残る」が実態と乖離する(先取り分は口座に残らない)。
          secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
          v3.62: 貯金/投資の2枠に分割 */
-      [["貯金", _sp62.sv, _ps74.sv, "savings", "sink"],
-       ["投資", _sp62.iv, _ps74.iv, "invest", "invest"]].forEach(([nm,done,target,act,key],pi)=>{
+      /* v5.11: **貯金の行は予算カードへ移った**ので、催促カードには出さない。
+         同じ数字を2箇所に並べない——催促カードの役目は「やれ」とボタンを出すことで、
+         残高の提示は予算カードの貯金の行が担う。投資は予算カードに置いていないのでここに残す */
+      [["投資", _sp62.iv, _ps74.iv, "invest", "invest"]].forEach(([nm,done,target,act,key],pi)=>{
         /* v3.98: ふるさと納税行が上にある場合は1行目にも区切りを入れる */
         const _sep = (pi || _fs98.active) ? ';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)' : '';
         if(target<=0){
@@ -1740,9 +1801,13 @@ function viewLedger(){
     const _h1=_row("箱を進めた額", _p.sv, _d.sv,
       /* 内訳は**箱ごと**(v5.01)。何に振り替えたかが分かる */
       savingsPots().map(p=>({name:p.name, v:num((_d.byPot||{})[String(p.id)]||0)})).filter(x=>x.v!==0)), _h2=_row("投資へ", _p.iv, _d.iv);
-    if(_show && (_h1||_h2)){
+    /* v5.11: **貯金の行は予算カードへ移した**ので、ここに出すのは投資だけ。
+       同じ数字を2箇所に並べない(v3.91の役割分担と同じ考え方)。
+       投資も予算カードへ、とはしない——**投資は月によって0のことがあり、
+       行き先として常設すると「使わない枠」に見える**(貯金は必ず動く) */
+    if(_show && _h2){
       h += band("今月の積立");
-      h += '<div class="card" style="margin-bottom:14px">'+_h1+_h2+'</div>';
+      h += '<div class="card" style="margin-bottom:14px">'+_h2+'</div>';
     }
   }
   /* v4.61: **所持金カードは撤去**(ユーザー指摘: 表記が見づらい)。
@@ -5503,6 +5568,7 @@ function bindMain(){
       else if(a==="wallet"){ UI.screen="wallet"; render(); }
       else if(a==="savings"){ UI.screen="savings"; render(); }
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
+      else if(a==="svdrill"){ UI.screen="svdrill"; render(); }
       else if(a==="catdrill"){ UI.drillCat=v; UI.drillOpenStore=null; UI.drillMode="chain"; UI.drillAssign=null; UI.drillVarOnly=(v==="消費"); UI.screen="catdrill"; render(); }
       else if(a==="setbudget"){ UI.screen="budget"; UI.budForm=null; render(); }
       else if(a==="setbudget_legacy"){ const cat=v;
