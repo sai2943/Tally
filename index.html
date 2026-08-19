@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.18 (localStorage保存・完全オフライン)
+   Tally 5.19 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.18";
+const APP_VERSION = "5.19";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1855,9 +1855,36 @@ function viewLedger(){
       h += '<div class="card" style="margin-bottom:14px">'+_h2+'</div>';
     }
   }
-  /* v4.61: **所持金カードは撤去**(ユーザー指摘: 表記が見づらい)。
-     財布が4つあると1行に収まらず折り返し、名前と金額の対応が読めなくなる。
-     付け合わせの動線は資産タブ→所持金に戻す。ここは予算と明細に絞る */
+  /* v4.61: 所持金カードを撤去した(財布が4つあると折り返して読めない)。
+     v5.19: **残高の節として作り直す**(ユーザー要望)。撤去した理由は解消している——
+     v4.61は「財布名+金額+割合」を横1行に詰めて折り返していたが、
+     **1財布1行の縦並び**なら折り返さない。**割合は出さない**(照合に要らない)。
+     日課が `記帳 → 予算 → 残高の突合 → 合わなければ明細` で、**突合の起点がタブの外にあった**のが問題だった。
+     ここに置けばタブ移動ゼロで終わり、ズレた行から明細へそのまま下がれる。
+     **色は使わない**——財布と箱で別々の色体系を持つと重複が増えるし、照合に色は要らない。
+     名前と金額の対応は**行**が担保する。v5.18で明細を3本に畳んだので、足しても縦は短いまま */
+  {
+    const _wp=walletPots(), _sp=savingsPots();
+    const _rows=[];
+    _wp.forEach(w=>_rows.push({name:w.name, v:walletBalance(null,w.id), a:"wallet"}));
+    /* 残高0の箱は出さない——照合する相手がいない(v5.01「0の箱は出さない」と同じ)。
+       財布は0でも出す: **口座は実在していて突合の対象**だから */
+    _sp.forEach(p2=>{ const v=savingsBalance(p2.id); if(v!==0) _rows.push({name:p2.name, v:v, a:"savings"}); });
+    if(_rows.length){
+      h += band("残高");
+      h += '<div class="card" style="margin-bottom:14px">'+
+        /* 所持金と貯金の合計は見出しに置く——**行を足さずに全体が分かる** */
+        '<div class="row between" style="align-items:baseline;margin-bottom:8px;cursor:pointer" data-a="tab" data-v="assets">'+
+        '<span class="muted" style="font-size:11px">所持金 <span class="mono">'+yen(walletBalance())+'</span>'+
+        '<span style="margin:0 6px">/</span>貯金 <span class="mono">'+yen(savingsBalance())+'</span></span>'+
+        '<span class="muted" style="font-size:11px">›</span></div>'+
+        _rows.map((r,i)=>'<div class="row between" style="align-items:baseline;font-size:12px;padding:4px 0'+
+          (i?';border-top:1px solid var(--line)':'')+'">'+
+          '<span class="ellip muted" style="min-width:0">'+esc(r.name)+'</span>'+
+          '<span class="mono '+(r.v<0?'red':'')+'" style="font-size:13px;font-weight:600">'+yen(r.v)+'</span></div>').join("")+
+        '</div>';
+    }
+  }
   h += band("明細");
   const detEntries = me.filter(e=>!isNetEntry(e));
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
