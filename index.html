@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.09 (localStorage保存・完全オフライン)
+   Tally 5.10 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.09";
+const APP_VERSION = "5.10";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1596,7 +1596,7 @@ function viewLedger(){
       h += band("振替");
       h += '<div class="card" style="margin-bottom:14px">';
       h += '<div class="amber" style="font-size:11px;font-weight:700;margin-bottom:10px">'+
-        (_fs98.active ? '今年のふるさと納税枠が未消化です' : '今月の振替がまだです')+'</div>';
+        (_fs98.active ? '今年のふるさと納税枠が未消化です' : '今月の積立がまだです')+'</div>';
       /* v3.98: ふるさと納税を最上段に置く=可処分から最初に引かれる順番と表示順を一致させる。
          色はバー連動(v3.92)でamber——消費でも貯蓄でもない「期限付きの権利行使」なので固有色を当てる */
       if(_fs98.active){
@@ -1734,12 +1734,14 @@ function viewLedger(){
         ((bd && bd.length>1) ? '' :
           '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div>')+'</div>';
     };
-    /* v5.07: 実績が「貯金へ移した額」に戻ったので、名前も「貯金へ」に戻す(嘘がない) */
-    const _h1=_row("貯金へ", _p.sv, _d.sv,
+    /* v5.10: 測るものが「箱の残り目標をいくら減らしたか」になったので名前もそれに合わせる。
+       「貯金へ」だと**財布から払って紐づけた分**を含められない(v5.06で名前だけ変えて失敗した所)。
+       今度は**モデルが先に決まった**ので、名前は実態をなぞるだけでよい */
+    const _h1=_row("箱を進めた額", _p.sv, _d.sv,
       /* 内訳は**箱ごと**(v5.01)。何に振り替えたかが分かる */
       savingsPots().map(p=>({name:p.name, v:num((_d.byPot||{})[String(p.id)]||0)})).filter(x=>x.v!==0)), _h2=_row("投資へ", _p.iv, _d.iv);
     if(_show && (_h1||_h2)){
-      h += band("今月の振替");
+      h += band("今月の積立");
       h += '<div class="card" style="margin-bottom:14px">'+_h1+_h2+'</div>';
     }
   }
@@ -3481,7 +3483,7 @@ function preSplit(mk){
      関係するのは金がどこから出たか。v4.99の「箱の有無で分ける」より線が単純で、
      v4.81の意図(フローから出た承認でバッファが薄くなるのを止める)も自然に満たす */
   const _apr=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="expense"
-    &&e.category==="承認"&&!_NETp.includes(e.src)&&e.svTx==null).reduce((a,e)=>a+e.amount,0);
+    &&e.category==="承認"&&!_NETp.includes(e.src)&&!String(e.svPot||"")).reduce((a,e)=>a+e.amount,0);
   const rest = Math.max(0, base - amuse - varc - _apr);
   const rs=Math.max(0, parseFloat(String(wf.sink||"").replace("%",""))||0);
   const ri=Math.max(0, parseFloat(String(wf.invest||"").replace("%",""))||0);
@@ -3593,6 +3595,21 @@ function securedSplit(mk){
        `mv`の印がある対だけを見るので、**手動の「調整」は入らない**——
        あれは打ち消す相手がいないので、入れると内訳の合計が総額と合わなくなる */
     if(t.type==="adjust" && t.mv) byPot[pid]=(byPot[pid]||0)+num(t.amount);
+  });
+  /* v5.10: **測るのは「箱の残り目標をいくら減らしたか」**(ユーザー設計)。
+     v5.09まではフローの経路で扱いが変わり、**同じ行為が違って見えていた**——
+     「振替してから箱で払う」と「財布から払って箱に紐づける」で、実績・目標・内訳が別々に動いた。
+     箱の進捗は `残高 + 使用` なので、それを増やす行為はどちらも同じだけ残り目標を減らす:
+       入金        → 残高↑ → 進捗↑
+       箱から払う   → 残高↓ 使用↑ → **進捗は動かない**(先月までに貯めた金を使っただけ)
+       財布から払う → 使用↑ → 進捗↑  ← ここがv5.09で数えられていなかった
+     箱同士の移動は片方が減って片方が増えるので正味ゼロ。手動の調整は入れない(v5.04)。
+     **内訳が箱ごとに出せる**ので、貯金画面の進捗バーと突き合わせて確かめられる */
+  (S.entries||[]).forEach(e=>{
+    if(!(e.date||"").startsWith(mk) || e.type!=="expense") return;
+    if(!String(e.svPot||"") || e.svTx!=null) return;          /* 箱から払った分は進捗を動かさない */
+    if(["slot","mahjong"].indexOf(e.src)>=0) return;
+    sv += e.amount; byPot[String(e.svPot)] = (byPot[String(e.svPot)]||0) + e.amount;
   });
   /* v5.07: v5.06の`spent`/`kept`は廃止。実績は**貯金へ移した額**だけを指す(実在する数字に戻す)。
      フローから出た承認は目標側で引くようにしたので、差額(超過)は同じまま */
