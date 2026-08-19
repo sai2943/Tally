@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.08 (localStorage保存・完全オフライン)
+   Tally 5.09 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.08";
+const APP_VERSION = "5.09";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1561,14 +1561,18 @@ function viewLedger(){
       .reduce((a,e)=>a+e.amount,0);
     if(_apAll>0){
       const _ap=Math.min(100, _apAll>0?_apDone/_apAll*100:0);
-      h += '<div style="margin-top:13px;padding-top:13px;border-top:1px solid var(--line)">'+
+      /* v5.09: **中身を開けるようにする**(ユーザー指摘: 承認の金額がよく分からない)。
+         変動消費・娯楽には内訳ドリルへの`›`があるのに、承認だけ数字を置いて開けなかった。
+         **確かめられない数字を置かない**——このアプリでずっと避けてきた形。
+         既にある`catdrill`(分類ごとの内訳)にそのまま繋ぐので、新しい画面は作らない */
+      h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="catdrill" data-v="承認">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">承認</span>'+
         '<span class="mono muted" style="font-size:11px"> ¥'+_apDone.toLocaleString("ja-JP")+' / ¥'+_apAll.toLocaleString("ja-JP")+'</span></span>'+
         /* 右は固定費と同じ「予定」(未来日の分)。**同じものを2つの語で呼ばない**(v4.71) */
         '<span><span class="mono muted" style="font-size:11px">'+(_apDone>=_apAll?'すべて計上済み':'予定')+'</span> '+
         (_apDone>=_apAll?'':'<span class="mono muted" style="font-size:17px;font-weight:700">¥'+(_apAll-_apDone).toLocaleString("ja-JP")+'</span>')+
-        '</span></div>'+
+        '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
         '<div class="bar"><div style="width:'+_ap+'%;background:var(--muted)"></div></div></div>';
     }
   }
