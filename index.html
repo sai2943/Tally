@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.04 (localStorage保存・完全オフライン)
+   Tally 5.06 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -536,6 +536,27 @@ function applyData(d){
   {
     const first=String(S.savings.pots[0].id);
     (S.savings.txns||[]).forEach(t=>{ if(t.potId==null||t.potId==="") t.potId=first; });
+    /* v5.05: **v5.04より前の箱同士の移動に`mv`の印を付ける**(冪等)。
+       印は新しい移動にしか付かないので、既存データの移動が振替の内訳に出なかった
+       (ユーザー指摘: 引越し→ふるさと納税の¥2,000が反映されない)。
+       **箱同士の移動は必ず「同じ日・逆符号・別の箱」の対**で作られる(doTransfer)。
+       手動の「調整」は単独なので対にならない——**対を作れたものだけ**に印を付ける。
+       万一2件の手動調整が偶然対になっても、**打ち消し合うので内訳の合計は総額と一致したまま**。
+       害は「移動ではないものが内訳に出る」だけで、残高は1円も動かない */
+    {
+      const un=(S.savings.txns||[]).filter(t=>t.type==="adjust" && !t.mv && num(t.amount)!==0);
+      const byDate={};
+      un.forEach(t=>{ (byDate[t.date]=byDate[t.date]||[]).push(t); });
+      Object.values(byDate).forEach(arr=>{
+        const used=new Set();
+        arr.forEach(a2=>{
+          if(used.has(a2.id) || num(a2.amount)>=0) return;
+          const m=arr.find(b2=>!used.has(b2.id) && b2.id!==a2.id
+            && num(b2.amount)===-num(a2.amount) && String(b2.potId)!==String(a2.potId));
+          if(m){ a2.mv=1; m.mv=1; used.add(a2.id); used.add(m.id); }
+        });
+      });
+    }
     ((S.bank&&S.bank.txns)||[]).forEach(t=>{ if(t.type==="sweep" && (t.potId==null||t.potId==="")) t.potId=first; });
   }
   if(Array.isArray(d.savings&&d.savings.goals) && S.savings.pots.length){
@@ -816,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.04";
+const APP_VERSION = "5.06";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1539,13 +1560,17 @@ function viewLedger(){
     const _fs98=furusatoDue(mk);
     const _isCur = (mk === todayStr().slice(0,7));
     const _incomeLanded = mainIncomeLanded(mk);   /* v4.17: 臨時収入では発火させない */
-    const _left = Math.max(0,_ps74.sv-_sp62.sv) + Math.max(0,_ps74.iv-_sp62.iv);
-    const _anyDone = (_sp62.sv+_sp62.iv) > 0;
+    /* v5.06: **催促もバンドと同じ「守れた額」(kept)で判定する**。
+       箱の目的に直接使った分も確保なので、貯金へ移した額だけで見ると
+       **実際は守れているのに「まだです」と催促してしまう**(2箇所の基準は必ず揃える) */
+    const _left = Math.max(0,_ps74.sv-_sp62.kept) + Math.max(0,_ps74.iv-_sp62.iv);
+    const _anyDone = (_sp62.kept+_sp62.iv) > 0;
     if(_isCur && ((_incomeLanded || _anyDone) && _left > 0 || _fs98.active)){
       h += band("振替");
       h += '<div class="card" style="margin-bottom:14px">';
       h += '<div class="amber" style="font-size:11px;font-weight:700;margin-bottom:10px">'+
-        (_fs98.active ? '今年のふるさと納税枠が未消化です' : '今月の振替がまだです')+'</div>';
+        /* v5.06: 節を「今月の確保」に改めたので催促の文言も揃える(別の名前で呼ぶと同じものに見えない) */
+        (_fs98.active ? '今年のふるさと納税枠が未消化です' : '今月の確保がまだです')+'</div>';
       /* v3.98: ふるさと納税を最上段に置く=可処分から最初に引かれる順番と表示順を一致させる。
          色はバー連動(v3.92)でamber——消費でも貯蓄でもない「期限付きの権利行使」なので固有色を当てる */
       if(_fs98.active){
@@ -1619,7 +1644,9 @@ function viewLedger(){
     const _p=preSplit(mk), _d=securedSplit(mk);
     const _isCurM = (mk === todayStr().slice(0,7));
     const _isFutM = (mk > todayStr().slice(0,7));
-    const _remain = Math.max(0,_p.sv-_d.sv) + Math.max(0,_p.iv-_d.iv);
+    /* v5.06: **判定は「守れた額」(kept)で行う**。箱の目的に直接使った分も確保に数えるので、
+       貯金へ移した額(sv)だけで未達を判定すると、**実際は守れているのに催促が出る** */
+    const _remain = Math.max(0,_p.sv-_d.kept) + Math.max(0,_p.iv-_d.iv);
     const _nagging = _isCurM && mainIncomeLanded(mk) && _remain > 0;   /* 催促カードが出ている状態 */
     const _show = !_isFutM && !_nagging && (!_isCurM || mainIncomeLanded(mk));
     const _row=(nm,plan,done,bd)=>{
@@ -1683,11 +1710,17 @@ function viewLedger(){
         ((bd && bd.length>1) ? '' :
           '<div class="bar"><div style="width:'+pc+'%;background:'+(ok?"var(--teal)":"var(--amber)")+'"></div></div>')+'</div>';
     };
-    const _h1=_row("貯金へ", _p.sv, _d.sv,
-      /* v5.01: 箱ごとの内訳。0の箱は落とし、並びは箱の順(v4.91の優先順位)を尊重する */
-      savingsPots().map(p=>({name:p.name, v:num((_d.byPot||{})[String(p.id)]||0)})).filter(x=>x.v!==0)), _h2=_row("投資へ", _p.iv, _d.iv);
+    /* v5.06: 行の名前も「貯金へ」から改める——**箱の目的に使った分を含む**ので、
+       貯金へ移した額だけを指す名前は嘘になる。内訳の1行目がその額を持つ */
+    const _h1=_row("守れた額", _p.sv, _d.kept,
+      /* v5.06: **確保の内訳は種類で分ける**(ユーザー設計: 貯金に移しすぎと分かる)。
+         「貯金へ移した」と「箱の目的に使った」は性質が違うので、箱ごとではなく**手段ごと**に割る。
+         箱ごとの内訳は貯金画面(資産→貯金)が持っているので、ここで二重に持たない */
+      [{name:"貯金へ移した", v:_d.sv},{name:"箱の目的に使った", v:_d.spent}].filter(x=>x.v!==0)), _h2=_row("投資へ", _p.iv, _d.iv);
     if(_show && (_h1||_h2)){
-      h += band("今月の振替");
+      /* v5.06: **「振替」から「確保」へ**(ユーザー指摘: 箱の目的に使った分も数えるなら振替では言い表せない)。
+         問いは「可処分のうち使う枠を除いた残りを**守れたか**」で、守り方は移すか直接使うかの2つ */
+      h += band("今月の確保");
       h += '<div class="card" style="margin-bottom:14px">'+_h1+_h2+'</div>';
     }
   }
@@ -3535,8 +3568,17 @@ function securedSplit(mk){
        あれは打ち消す相手がいないので、入れると内訳の合計が総額と合わなくなる */
     if(t.type==="adjust" && t.mv) byPot[pid]=(byPot[pid]||0)+num(t.amount);
   });
+  /* v5.06: **箱の目的に直接使った分も「確保」に数える**(ユーザー設計)。
+     可処分のうち使う枠を除いた残りを**守れたか**が問い。守り方は2つ——
+     ①箱へ移す ②**その箱の目的に直接使う**(箱を経由せず財布から払い、箱に紐づけた分)。
+     どちらも「消費・娯楽に流れなかった」という意味で同じ。
+     **箱から払った分(svTx有り)は数えない**——あれは先月までに貯めた金であって今月のフローではない。
+     この2つを足すと「貯金へ」では言い表せなくなるので、**節の名前を「今月の確保」に改めた**(ユーザー指摘) */
+  const spent=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="expense"
+    &&String(e.svPot||"")&&e.svTx==null&&["slot","mahjong"].indexOf(e.src)<0)
+    .reduce((a,e)=>a+e.amount,0);
   (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
-  return {sv:sv, iv:iv, byPot:byPot};
+  return {sv:sv, iv:iv, byPot:byPot, spent:spent, kept:sv+spent};
 }
 function leakAgg(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
