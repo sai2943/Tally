@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.17 (localStorage保存・完全オフライン)
+   Tally 5.18 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.17";
+const APP_VERSION = "5.18";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1942,7 +1942,26 @@ function viewLedger(){
       '<span class="mono '+clsPM(fNet)+'" style="font-size:13px;font-weight:700">'+signYen(fNet)+'</span></div></div>';
     if(fOpen) futDays.forEach(x=>{ h += dayHtml(x); });
   }
-  pastDays.forEach(x=>{ h += dayHtml(x); });
+  /* v5.18: **今日より前を1本に畳む**(ユーザー指摘: 1ヶ月分の日付が並んで縦が長すぎる)。
+     v4.68で未来を1本にしたのに、**過去は日ごとに並んだまま**で扱いが揃っていなかった。
+     開いた瞬間に要るのは**今日の記帳の確認**で、遡りは例外——例外に常設の場所を与えない。
+     未来のバーと同じ語彙(▸/▾・件数・純額)なので、新しい概念は増えていない。
+     **今日の分は畳まない**(その日の記帳を確かめるのが日課の中心なので) */
+  const todayDays = pastDays.filter(x=>x[0]===todayS);
+  const prevDays  = pastDays.filter(x=>x[0]<todayS);
+  todayDays.forEach(x=>{ h += dayHtml(x); });
+  if(prevDays.length){
+    const pCnt=prevDays.reduce((a2,x)=>a2+x[1].length,0);
+    const pNet=prevDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
+    const pOpen=!!UI.pastOpen;
+    const span=prevDays.length>1 ? mdOf(prevDays[prevDays.length-1][0])+'〜'+mdOf(prevDays[0][0]) : mdOf(prevDays[0][0]);
+    h += '<div style="margin-bottom:8px">'+
+      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ptoggle">'+
+      '<span class="mono muted" style="font-size:11px">'+(pOpen?'▾':'▸')+' '+span+
+      '<span style="margin-left:8px;font-size:11px">'+pCnt+'件</span></span>'+
+      '<span class="mono '+clsPM(pNet)+'" style="font-size:13px;font-weight:700">'+signYen(pNet)+'</span></div></div>';
+    if(pOpen) prevDays.forEach(x=>{ h += dayHtml(x); });
+  }
   return h;
 }
 
@@ -5682,6 +5701,8 @@ function bindMain(){
       else if(a==="dtoggle"){ const d=el.dataset.v; UI.dayOpen=UI.dayOpen||{}; const cur=(UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayStr()); UI.dayOpen[d]=!cur; render(); }
       /* v4.68: 明細の「予定」バー。既定は畳んだまま(UI.futOpenの未定義=false) */
       else if(a==="ftoggle"){ UI.futOpen=!UI.futOpen; render(); }
+      /* v5.18: 今日より前の開閉。既定は畳んだまま(UI.pastOpenの未定義=false) */
+      else if(a==="ptoggle"){ UI.pastOpen=!UI.pastOpen; render(); }
       /* v5.00: 明細の店まとめの開閉。鍵は`日付#並び順`なので店名に何が入っても壊れない */
       else if(a==="stoggle"){ UI.stOpen=UI.stOpen||{}; UI.stOpen[v]=!UI.stOpen[v]; render(); }
       else if(a==="eedit"){
