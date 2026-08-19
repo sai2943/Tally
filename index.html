@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.15 (localStorage保存・完全オフライン)
+   Tally 5.16 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.15";
+const APP_VERSION = "5.16";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1237,18 +1237,25 @@ function viewSvDrill(){
     esc(x.label)+'</span>'+
     '<span class="mono '+clsPM(x.amt)+'">'+signYen(x.amt)+'</span></div>';
   pots.forEach(p2=>{
-    /* v5.15: **「箱から支払い」の見出しも小計も撤去**(ユーザー指摘: 符号で表現している)。
-       日付順に1本で並べ、**プラスが箱を進めた分・マイナスが箱から出た分**。
-       区切りも小計も足さない——符号が既に言っていることを語で繰り返さない。
-       カードの合計は**進めた分だけ**(マイナスの支払いは含めない)。
-       箱を進めた額の定義(v5.10)は崩さず、見せ方だけを1本に畳む */
-    const all=rows[String(p2.id)].slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
-    const sum=all.filter(x=>x.kind!=="paid").reduce((a,x)=>a+x.amt,0);
+    /* v5.16: **合計に入る行を上、入らない行を下に置き、境界に線だけ引く**(ユーザー選択)。
+       v5.15で区切りごと消したのは誤りだった——**数ヶ月貯めてから箱で使う月**に、
+       画面の数字を足しても合計にならない状態が起きる(例: 入金¥10,000 / 支払い¥400,000 で合計+¥10,000)。
+       ただしv5.15の指摘も正しい: 消すべきだったのは**「箱から支払い」という語と小計**で、
+       符号が既に言っていることの繰り返しだった。**線は残し、語は足さない**。
+       線が「ここから下は合計に入らない」と言い、符号が「どこから出たか」を言う。
+       それぞれの中は日付順。合計は上だけ(= 箱を進めた額・v5.10の定義そのまま) */
+    const byDate=(a,b)=>a.date<b.date?-1:a.date>b.date?1:0;
+    const all=rows[String(p2.id)];
+    const up=all.filter(x=>x.kind!=="paid").sort(byDate);
+    const dn=all.filter(x=>x.kind==="paid").sort(byDate);
+    const sum=up.reduce((a,x)=>a+x.amt,0);
     h+='<div class="card" style="margin-bottom:10px">'+
       '<div class="row between" style="align-items:baseline;margin-bottom:8px">'+
       '<span class="ellip" style="font-size:13px;font-weight:700">'+esc(p2.name)+'</span>'+
       '<span class="mono '+clsPM(sum)+'" style="font-size:16px;font-weight:700">'+signYen(sum)+'</span></div>'+
-      all.map(rowHtml).join("")+
+      up.map(rowHtml).join("")+
+      (dn.length ? '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line)">'+
+        dn.map(rowHtml).join("")+'</div>' : '')+
       '</div>';
   });
   return h;
