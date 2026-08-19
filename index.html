@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.13 (localStorage保存・完全オフライン)
+   Tally 5.14 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.13";
+const APP_VERSION = "5.14";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1186,9 +1186,20 @@ function svMoves(mk){
   (((S.savings||{}).txns)||[]).forEach(t=>{
     if(!(t.date||"").startsWith(mk)) return;
     const pid=txPot(t);
-    if(t.type==="deposit")  push(pid,"xfer","振替(所持金から)",num(t.amount),t.date);
-    else if(t.type==="withdraw" && !link.has(String(t.id))) push(pid,"xfer","振替(所持金へ)",-num(t.amount),t.date);
-    else if(t.type==="adjust" && t.mv) push(pid,"xfer",num(t.amount)>=0?"振替(他の箱から)":"振替(他の箱へ)",num(t.amount),t.date);
+    /* v5.14: **振替は「どこから → どこへ」で書く**(ユーザー要望: 表記を統一)。
+       `振替(所持金から)` のような括弧つきの説明ではなく、**矢印で流れをそのまま見せる**。
+       箱同士の移動は相手の箱の名前まで出す——`引越し → ふるさと納税` と読めれば
+       「他の箱」より情報が多く、しかも短い。矢印は全角の → を使う(和文と字面が揃う) */
+    const me=potName(pid);
+    if(t.type==="deposit")  push(pid,"xfer","所持金 → "+me,num(t.amount),t.date);
+    else if(t.type==="withdraw" && !link.has(String(t.id))) push(pid,"xfer",me+" → 所持金",-num(t.amount),t.date);
+    else if(t.type==="adjust" && t.mv){
+      /* 相手は「同じ日・逆符号・別の箱」の対(doTransferがそう作る/v5.05の移行で旧データも印つき) */
+      const mate=(((S.savings||{}).txns)||[]).find(x=>x!==t && x.type==="adjust" && x.mv
+        && x.date===t.date && num(x.amount)===-num(t.amount) && String(txPot(x))!==String(pid));
+      const other=mate?potName(txPot(mate)):"他の箱";
+      push(pid,"xfer", num(t.amount)>=0 ? other+" → "+me : me+" → "+other, num(t.amount), t.date);
+    }
   });
   (S.entries||[]).forEach(e=>{
     if(!(e.date||"").startsWith(mk) || e.type!=="expense") return;
@@ -1220,7 +1231,10 @@ function viewSvDrill(){
   const rowHtml=x=>'<div class="row between" style="font-size:11px;padding:3px 0">'+
     '<span class="ellip muted" style="min-width:0">'+
     '<span class="mono" style="margin-right:6px">'+esc(x.date.slice(5).replace("-","/"))+'</span>'+
-    esc(x.label)+(x.kind!=="xfer"?' <span class="mono" style="font-size:11px">(支出)</span>':'')+'</span>'+
+    /* v5.14: **(支出)の注記を落とす**(ユーザー指摘: 符号で分かる)。
+       箱から払えばマイナス、所持金から払って紐づければプラス——**符号がそのまま出所を表す**ので、
+       語を足しても情報が増えない(今日ずっと落としてきたのと同じ種類のノイズ) */
+    esc(x.label)+'</span>'+
     '<span class="mono '+clsPM(x.amt)+'">'+signYen(x.amt)+'</span></div>';
   pots.forEach(p2=>{
     const all=rows[String(p2.id)];
