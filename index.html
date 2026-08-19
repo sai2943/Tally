@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.16 (localStorage保存・完全オフライン)
+   Tally 5.17 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.16";
+const APP_VERSION = "5.17";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1249,20 +1249,32 @@ function viewSvDrill(){
     const up=all.filter(x=>x.kind!=="paid").sort(byDate);
     const dn=all.filter(x=>x.kind==="paid").sort(byDate);
     const sum=up.reduce((a,x)=>a+x.amt,0);
+    /* v5.17: **箱ごとに畳める**(ユーザー要望)。既定は開いた状態——
+       この画面は「中身を確かめに来る」場所なので、閉じて出迎えると用が足りない。
+       畳む語彙はv3.46(日別)・v4.68(予定)・v5.00(店まとめ)と同じ▸/▾。
+       **見出しの箱名と合計は畳んでも残る**ので、閉じても箱ごとの額は読める */
+    const okey=String(p2.id), oOpen=!(UI.svdOpen&&UI.svdOpen[okey]===false);
     h+='<div class="card" style="margin-bottom:10px">'+
-      '<div class="row between" style="align-items:baseline;margin-bottom:8px">'+
-      '<span class="ellip" style="font-size:13px;font-weight:700">'+esc(p2.name)+'</span>'+
+      '<div class="row between" style="align-items:baseline;'+(oOpen?'margin-bottom:8px':'')+';cursor:pointer" data-sd="toggle" data-v="'+esc(okey)+'">'+
+      '<span class="ellip" style="min-width:0"><span class="mono muted" style="font-size:11px;margin-right:6px">'+(oOpen?'▾':'▸')+'</span>'+
+      '<span style="font-size:13px;font-weight:700">'+esc(p2.name)+'</span></span>'+
       '<span class="mono '+clsPM(sum)+'" style="font-size:16px;font-weight:700">'+signYen(sum)+'</span></div>'+
-      up.map(rowHtml).join("")+
-      (dn.length ? '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line)">'+
-        dn.map(rowHtml).join("")+'</div>' : '')+
+      (oOpen ? up.map(rowHtml).join("")+
+        (dn.length ? '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line)">'+
+          dn.map(rowHtml).join("")+'</div>' : '') : '')+
       '</div>';
   });
   return h;
 }
 function bindSvDrill(){
   document.querySelectorAll("[data-sd]").forEach(el=>{
-    el.onclick=()=>{ if(el.dataset.sd==="back"){ UI.screen="main"; render(); } };
+    el.onclick=()=>{
+      const a=el.dataset.sd, v=el.dataset.v;
+      if(a==="back"){ UI.screen="main"; render(); return; }
+      /* v5.17: 箱ごとの開閉。**既定は開**なので、閉じたものだけをfalseで覚える */
+      if(a==="toggle"){ UI.svdOpen=UI.svdOpen||{};
+        UI.svdOpen[v] = (UI.svdOpen[v]===false); render(); return; }
+    };
   });
 }
 function viewCatDrill(){
