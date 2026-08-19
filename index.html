@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.14 (localStorage保存・完全オフライン)
+   Tally 5.15 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -837,7 +837,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.14";
+const APP_VERSION = "5.15";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1237,25 +1237,18 @@ function viewSvDrill(){
     esc(x.label)+'</span>'+
     '<span class="mono '+clsPM(x.amt)+'">'+signYen(x.amt)+'</span></div>';
   pots.forEach(p2=>{
-    const all=rows[String(p2.id)];
-    const list=all.filter(x=>x.kind!=="paid"), paid=all.filter(x=>x.kind==="paid");
-    const sum=list.reduce((a,x)=>a+x.amt,0), paidSum=paid.reduce((a,x)=>a+x.amt,0);
+    /* v5.15: **「箱から支払い」の見出しも小計も撤去**(ユーザー指摘: 符号で表現している)。
+       日付順に1本で並べ、**プラスが箱を進めた分・マイナスが箱から出た分**。
+       区切りも小計も足さない——符号が既に言っていることを語で繰り返さない。
+       カードの合計は**進めた分だけ**(マイナスの支払いは含めない)。
+       箱を進めた額の定義(v5.10)は崩さず、見せ方だけを1本に畳む */
+    const all=rows[String(p2.id)].slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+    const sum=all.filter(x=>x.kind!=="paid").reduce((a,x)=>a+x.amt,0);
     h+='<div class="card" style="margin-bottom:10px">'+
       '<div class="row between" style="align-items:baseline;margin-bottom:8px">'+
       '<span class="ellip" style="font-size:13px;font-weight:700">'+esc(p2.name)+'</span>'+
       '<span class="mono '+clsPM(sum)+'" style="font-size:16px;font-weight:700">'+signYen(sum)+'</span></div>'+
-      list.map(rowHtml).join("")+
-      /* v5.13: **箱から払った分は区切って下に置く**(ユーザー要望)。
-         上の合計には入らない——あれは「箱を進めた額」で、箱からの支払いは
-         先月までに貯めた金を使っただけなので進捗を動かさない。
-         **同じカードに置くが線で分ける**ことで、合計と混ざらずに残高の動きが追える */
-      (paid.length
-        ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">'+
-          '<div class="row between" style="font-size:11px;margin-bottom:2px">'+
-          '<span class="muted">箱から支払い</span>'+
-          '<span class="mono '+clsPM(paidSum)+'">'+signYen(paidSum)+'</span></div>'+
-          paid.map(rowHtml).join("")+'</div>'
-        : '')+
+      all.map(rowHtml).join("")+
       '</div>';
   });
   return h;
