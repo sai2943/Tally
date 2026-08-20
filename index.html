@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.22 (localStorage保存・完全オフライン)
+   Tally 5.23 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -840,7 +840,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.22";
+const APP_VERSION = "5.23";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1286,25 +1286,44 @@ function viewPayroll(){
   /* v5.21: 出勤日数と年休日数も入力に。時給制なので**基本賃金が日数で動く** */
   const f=UI.payForm||(UI.payForm={h:"",m:"",d:"",y:""});
   const r=payCalc(f.h, f.m, f.d, f.y), c=r.c;
+  /* v5.23: **`yen()`は`Math.abs`で符号を落とす**(符号は`signYen`が付ける約束)。
+     給与画面でそのまま使い、**手取りがマイナスでもプラスで出ていた**(ユーザー指摘)。
+     マイナスになりうる行(手取り)は`signYen`+赤にする */
   const row=(lab,val,sub)=>'<div class="row between" style="font-size:'+(sub?11:12)+'px;padding:'+(sub?3:5)+'px 0'+(sub?';padding-left:12px':'')+'">'+
     '<span class="'+(sub?'muted':'')+'">'+lab+'</span><span class="mono'+(sub?' muted':'')+'" style="font-weight:'+(sub?400:600)+'">'+yen(val)+'</span></div>';
   let h='<div class="hdr"><button class="navbtn" data-pa="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">給与の試算</div><div style="width:44px"></div></div>';
   h+='<div class="card" style="margin-bottom:14px">'+
-    '<div class="muted" style="font-size:11px;margin-bottom:6px">出勤時間<span style="margin-left:6px">明細の「出勤時間」もHH.MM表記(167.37 = 167時間37分)</span></div>'+
+    /* v5.23: **注記を落とす**(ユーザー指摘: 説明文の改行が気になる)。
+       時間と分の欄に分けてある以上、HH.MMの読み違いは起きない——
+       **欄の作りが既に言っていることを、語で繰り返していた** */
+    '<div class="muted" style="font-size:11px;margin-bottom:6px">出勤時間</div>'+
     '<div class="fxg">'+
     '<div><div class="fxl">時間</div><input class="input mono r" type="number" inputmode="numeric" id="pay-d" placeholder="176" value="'+esc(f.d)+'"></div>'+
     '<div><div class="fxl">分</div><input class="input mono r" type="number" inputmode="numeric" id="pay-y" placeholder="0" value="'+esc(f.y)+'"></div>'+
     '</div>'+
-    '<div class="muted" style="font-size:11px;margin:2px 0 6px">残業時間<span style="margin-left:6px">明細の「普通残業」はHH.MM表記(37.28 = 37時間28分)</span></div>'+
+    '<div class="muted" style="font-size:11px;margin:10px 0 6px">残業時間</div>'+
     '<div class="fxg">'+
     '<div><div class="fxl">時間</div><input class="input mono r" type="number" inputmode="numeric" id="pay-h" placeholder="0" value="'+esc(f.h)+'"></div>'+
     '<div><div class="fxl">分</div><input class="input mono r" type="number" inputmode="numeric" id="pay-m" placeholder="0" value="'+esc(f.m)+'"></div>'+
     '</div></div>';
+  /* v5.23: **出勤時間が未入力なら試算を出さない**(ユーザー指摘: 数字を入れる前からプラスが出る)。
+     基本賃金0のまま控除だけ引くので手取りがマイナスになり、意味のない数字が出ていた。
+     **0は情報にならない**——入力を促すだけにする */
+  if(r.workH<=0){
+    h+='<div class="card" style="margin-bottom:14px"><div class="muted" style="font-size:12px;line-height:1.7">'+
+      '出勤時間を入れると試算します。<br>明細の「出勤時間」と「普通残業」はHH.MM表記です'+
+      '<span class="mono">(167.37 = 167時間37分)</span>。</div></div>';
+    h+='<div class="card" data-pa="conf" style="cursor:pointer"><div class="row between" style="align-items:center">'+
+      '<div><div style="font-size:13px;font-weight:600">前提を変える</div>'+
+      '<div class="muted" style="font-size:11px;margin-top:2px">時給・保険料など。昇格や住民税の改定で変わったらここ</div></div>'+
+      '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+    return h;
+  }
   h+='<div class="card" style="margin-bottom:14px">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:10px">'+
     '<span style="font-size:13px;font-weight:700">差引支給額</span>'+
-    '<span class="mono teal" style="font-size:22px;font-weight:700">'+yen(r.net)+'</span></div>'+
+    '<span class="mono '+(r.net<0?'red':'teal')+'" style="font-size:22px;font-weight:700">'+(r.net<0?'−':'')+yen(r.net)+'</span></div>'+
     row("支給額計", r.gross)+
     row("基本賃金", r.base, 1)+row("役割手当", num(c.role), 1)+
     row("普通残業手当", r.otPay, 1)+row("通勤定期", num(c.commute), 1)+
@@ -1319,7 +1338,7 @@ function viewPayroll(){
     '<span style="margin-left:10px">所得税は税額表をこの帯だけ直線で近似</span></div>';
   h+='<div class="card" data-pa="conf" style="cursor:pointer"><div class="row between" style="align-items:center">'+
     '<div><div style="font-size:13px;font-weight:600">前提を変える</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">基本賃金・所定時間・保険料など。昇格で変わったらここ</div></div>'+
+    '<div class="muted" style="font-size:11px;margin-top:2px">時給・保険料など。昇格や住民税の改定で変わったらここ</div></div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   return h;
 }
