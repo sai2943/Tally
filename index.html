@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.23 (localStorage保存・完全オフライン)
+   Tally 5.25 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -840,7 +840,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.23";
+const APP_VERSION = "5.25";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1315,12 +1315,11 @@ function viewPayroll(){
       '出勤時間を入れると試算します。<br>明細の「出勤時間」と「普通残業」はHH.MM表記です'+
       '<span class="mono">(167.37 = 167時間37分)</span>。</div></div>';
     h+='<div class="card" data-pa="conf" style="cursor:pointer"><div class="row between" style="align-items:center">'+
-      '<div><div style="font-size:13px;font-weight:600">前提を変える</div>'+
-      '<div class="muted" style="font-size:11px;margin-top:2px">時給・保険料など。昇格や住民税の改定で変わったらここ</div></div>'+
+      '<div style="font-size:13px;font-weight:600">前提を変える</div>'+
       '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
     return h;
   }
-  h+='<div class="card" style="margin-bottom:14px">'+
+  h+='<div class="card" style="margin-bottom:14px" id="pay-out">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:10px">'+
     '<span style="font-size:13px;font-weight:700">差引支給額</span>'+
     '<span class="mono '+(r.net<0?'red':'teal')+'" style="font-size:22px;font-weight:700">'+(r.net<0?'−':'')+yen(r.net)+'</span></div>'+
@@ -1337,15 +1336,29 @@ function viewPayroll(){
     '<span style="margin-left:10px">割増単価 <span class="mono">'+Math.round(r.unit).toLocaleString("ja-JP")+'円/h</span></span>'+
     '<span style="margin-left:10px">所得税は税額表をこの帯だけ直線で近似</span></div>';
   h+='<div class="card" data-pa="conf" style="cursor:pointer"><div class="row between" style="align-items:center">'+
-    '<div><div style="font-size:13px;font-weight:600">前提を変える</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">時給・保険料など。昇格や住民税の改定で変わったらここ</div></div>'+
+    '<div style="font-size:13px;font-weight:600">前提を変える</div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   return h;
 }
 function bindPayroll(){
-  const f=UI.payForm||(UI.payForm={h:"",m:""});
+  const f=UI.payForm||(UI.payForm={h:"",m:"",d:"",y:""});
+  /* v5.25【バグ修正】**`oninput`で`render()`を呼ぶと1文字ごとに入力欄が作り直され、
+     フォーカスが飛んでテンキーが閉じる**(ユーザー指摘。麻雀のスコア表でも踏んだ同じ事故)。
+     他の画面(予算・麻雀)はどれも`oninput`で再描画していない——**ここだけが例外だった**。
+     ただし試算は入力に応じて即座に更新したいので、**画面全体を描き直さずに
+     出力カードの中身だけ差し替える**。入力欄には触れないのでフォーカスが保たれる */
+  const repaint=()=>{
+    const out=document.getElementById("pay-out");
+    if(!out) { render(); return; }          /* 未入力↔入力の切り替わりは作りが変わるので全体を描き直す */
+    const r=payCalc(f.h, f.m, f.d, f.y);
+    if(r.workH<=0){ render(); return; }
+    const tmp=document.createElement("div");
+    tmp.innerHTML=viewPayroll();
+    const next=tmp.querySelector ? tmp.querySelector("#pay-out") : null;
+    if(next) out.innerHTML=next.innerHTML; else render();
+  };
   ["h","m","d","y"].forEach(k=>{ const el=document.getElementById("pay-"+k);
-    if(el) el.oninput=e=>{ f[k]=e.target.value; render(); }; });
+    if(el) el.oninput=e=>{ f[k]=e.target.value; repaint(); }; });
   document.querySelectorAll("[data-pa]").forEach(el=>{
     el.onclick=()=>{
       const a=el.dataset.pa;
@@ -2399,13 +2412,10 @@ function payCalc(otH, otM, days, paidLeave){
 function viewTool(){
   if(UI.screen==="mjtable") return "";  // 別画面で描画
   let h = band("家計簿");
-  h += '<div class="card" data-a="fixed" style="cursor:pointer"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">固定費</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">毎月の定期支出を登録(家計簿に自動計上)</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  h += '<div class="card" data-a="fixed" style="cursor:pointer"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">固定費</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   /* v5.20: 給与の試算。**残業時間から手取りを先に読む**ので、給料日を待たずに今月の枠が組める */
-  h += '<div class="card" data-a="payroll" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">給与の試算</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">残業時間から手取りを試算(給料日前に予算を組める)</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
-  h += '<div class="card" data-a="wishlist" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">ほしい物</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">買いたい物・欲しい物リスト</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  h += '<div class="card" data-a="payroll" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">給与の試算</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  h += '<div class="card" data-a="wishlist" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">ほしい物</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   /* v3.38: ふるさと納税 残枠カード。限度額の計算は外部シミュレーター(税制の毎年改正を追わない=時価不追随と同型)。
      アプリは限度額1個の入力(S.furusato={year,limit})と当年寄付の全導出トラッキングに徹する。
      記帳規約: 店名「ふるさと納税」固定・分類=承認(バー対象外)。
@@ -2440,34 +2450,31 @@ function viewTool(){
 
   h += '<div class="card" data-a="togglelaunchadd" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div>'+
     '<div style="font-size:13px;font-weight:600">起動時に記帳画面を開く</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">アイコンから開くと即入力(閲覧は ‹戻る)</div></div>'+
+    '</div>'+
     '<span class="btn '+(S.openAddOnLaunch?"sel":"")+'" style="flex:none;font-size:11px;padding:6px 14px">'+(S.openAddOnLaunch?"ON":"OFF")+'</span></div></div>';
   h += band("麻雀");
   h += '<div class="card" data-a="mjtlist" style="cursor:pointer"><div class="row between" style="align-items:center"><div>'+
     '<div style="font-size:13px;font-weight:600">スコア表</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">半荘ごとのスコアを記録・集計'+((S.mjTables||[]).length?'（'+(S.mjTables||[]).length+'件）':'')+'</div></div>'+
+    /* v5.25: 説明の語は落とし、**件数だけ残す**——件数は情報だが「半荘ごとのスコアを記録・集計」は名前で分かる */
+    ((S.mjTables||[]).length?'<div class="muted mono" style="font-size:11px;margin-top:2px">'+(S.mjTables||[]).length+'件</div>':'')+'</div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += '<div class="card" data-a="mjstats" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div>'+
-    '<div style="font-size:13px;font-weight:600">ルール名別 成績</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">全期間の平均着順・収支をルールごとに</div></div>'+
+    '<div style="font-size:13px;font-weight:600">ルール名別 成績</div></div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   /* パチスロ */
   h += band("パチスロ");
-  h += '<div class="card" data-a="opentool" data-v="bordertool" style="cursor:pointer"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">回転数・ボーダー試算</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">この台を続けるか判断(収支の記録とは別)</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
-  h += '<div class="card" data-a="mdb" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">機種データ</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">分母・理論TYを登録(ボーダー試算と機種名サジェストで使用)</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
-  h += '<div class="card" data-a="stores" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">店舗データ</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">店ごとの換金率・貸出・貯玉レートを登録</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  h += '<div class="card" data-a="opentool" data-v="bordertool" style="cursor:pointer"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">回転数・ボーダー試算</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  h += '<div class="card" data-a="mdb" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">機種データ</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  h += '<div class="card" data-a="stores" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">店舗データ</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += band("データ");
   h += '<div class="card" style="cursor:pointer" data-a="backup"><div class="row between" style="align-items:center">'+
-    '<div><div style="font-size:13px;font-weight:700">バックアップ・同期</div><div class="muted" style="font-size:11px;margin-top:2px">データの書き出し・復元・同期設定</div></div>'+
+    '<div><div style="font-size:13px;font-weight:700">バックアップ・同期</div></div>'+
     '<span class="muted">›</span></div></div>';
   h += '<div class="card" style="cursor:pointer;margin-top:8px" data-a="monthly"><div class="row between" style="align-items:center">'+
-    '<div><div style="font-size:13px;font-weight:700">月別の収支</div><div class="muted" style="font-size:11px;margin-top:2px">全月の収入・支出・生活費を一覧する</div></div>'+
+    '<div><div style="font-size:13px;font-weight:700">月別の収支</div></div>'+
     '<span class="muted">›</span></div></div>';
   h += '<div class="card" style="cursor:pointer;margin-top:8px" data-a="summary"><div class="row between" style="align-items:center">'+
-    '<div><div style="font-size:13px;font-weight:700">収支サマリを書き出す</div><div class="muted" style="font-size:11px;margin-top:2px">人に見せる・AIに読ませるための要約テキスト</div></div>'+
+    '<div><div style="font-size:13px;font-weight:700">収支サマリを書き出す</div></div>'+
     '<span class="muted">›</span></div></div>';
   return h;
 }
