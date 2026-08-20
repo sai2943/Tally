@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.19 (localStorage保存・完全オフライン)
+   Tally 5.22 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -589,6 +589,9 @@ function applyData(d){
      (=クラウド復元・インポート・スナップ復元・他端末からのpull の全経路で消える)。
      同一セッション中はS上の値が生き残るため気付けなかった——v3.13(openAddOnLaunch)と全く同じ事故 */
   S.furusato = (d.furusato && typeof d.furusato==="object") ? d.furusato : {};   /* v3.38: {year,limit} */
+  /* v5.20: 給与試算の前提。**ホワイトリストに載せないと復元のたびに失われる**——
+     v3.97のふるさと納税と全く同じ事故になるところを、不変量テストが止めた */
+  S.payroll = (d.payroll && typeof d.payroll==="object") ? d.payroll : {};
   S.invest = (d.invest && typeof d.invest==="object") ? d.invest : {policy:"",holdings:[],bufferTxns:[]};   /* v3.18: 投資台帳 */
   S.waterfall = (d.waterfall && typeof d.waterfall==="object") ? d.waterfall : {};   /* v3.23: 滝方式の定数(投資月額・目的積立月額) */
   /* v4.02: 旧goals(順次の梯子)の初期投入は廃止。目標は箱ごとに持つ。
@@ -837,7 +840,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.19";
+const APP_VERSION = "5.22";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1014,6 +1017,7 @@ function _renderScreen(app){
   if(UI.screen==="wallet"){ app.innerHTML = viewWallet(); bindWallet(); return; }
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
   if(UI.screen==="svdrill"){ app.innerHTML = viewSvDrill(); bindSvDrill(); return; }
+  if(UI.screen==="payroll"){ app.innerHTML = viewPayroll(); bindPayroll(); return; }
   /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う */
   if(UI.screen==="monthly"){ app.innerHTML = viewMonthly(); bindMain(); return; }
   if(UI.screen==="summary"){ app.innerHTML = viewSummary(); bindMain(); return; }
@@ -1274,6 +1278,80 @@ function bindSvDrill(){
       /* v5.17: 箱ごとの開閉。**既定は開**なので、閉じたものだけをfalseで覚える */
       if(a==="toggle"){ UI.svdOpen=UI.svdOpen||{};
         UI.svdOpen[v] = (UI.svdOpen[v]===false); render(); return; }
+    };
+  });
+}
+/* v5.20: 給与の試算画面。管理タブから開く */
+function viewPayroll(){
+  /* v5.21: 出勤日数と年休日数も入力に。時給制なので**基本賃金が日数で動く** */
+  const f=UI.payForm||(UI.payForm={h:"",m:"",d:"",y:""});
+  const r=payCalc(f.h, f.m, f.d, f.y), c=r.c;
+  const row=(lab,val,sub)=>'<div class="row between" style="font-size:'+(sub?11:12)+'px;padding:'+(sub?3:5)+'px 0'+(sub?';padding-left:12px':'')+'">'+
+    '<span class="'+(sub?'muted':'')+'">'+lab+'</span><span class="mono'+(sub?' muted':'')+'" style="font-weight:'+(sub?400:600)+'">'+yen(val)+'</span></div>';
+  let h='<div class="hdr"><button class="navbtn" data-pa="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">給与の試算</div><div style="width:44px"></div></div>';
+  h+='<div class="card" style="margin-bottom:14px">'+
+    '<div class="muted" style="font-size:11px;margin-bottom:6px">出勤時間<span style="margin-left:6px">明細の「出勤時間」もHH.MM表記(167.37 = 167時間37分)</span></div>'+
+    '<div class="fxg">'+
+    '<div><div class="fxl">時間</div><input class="input mono r" type="number" inputmode="numeric" id="pay-d" placeholder="176" value="'+esc(f.d)+'"></div>'+
+    '<div><div class="fxl">分</div><input class="input mono r" type="number" inputmode="numeric" id="pay-y" placeholder="0" value="'+esc(f.y)+'"></div>'+
+    '</div>'+
+    '<div class="muted" style="font-size:11px;margin:2px 0 6px">残業時間<span style="margin-left:6px">明細の「普通残業」はHH.MM表記(37.28 = 37時間28分)</span></div>'+
+    '<div class="fxg">'+
+    '<div><div class="fxl">時間</div><input class="input mono r" type="number" inputmode="numeric" id="pay-h" placeholder="0" value="'+esc(f.h)+'"></div>'+
+    '<div><div class="fxl">分</div><input class="input mono r" type="number" inputmode="numeric" id="pay-m" placeholder="0" value="'+esc(f.m)+'"></div>'+
+    '</div></div>';
+  h+='<div class="card" style="margin-bottom:14px">'+
+    '<div class="row between" style="align-items:baseline;margin-bottom:10px">'+
+    '<span style="font-size:13px;font-weight:700">差引支給額</span>'+
+    '<span class="mono teal" style="font-size:22px;font-weight:700">'+yen(r.net)+'</span></div>'+
+    row("支給額計", r.gross)+
+    row("基本賃金", r.base, 1)+row("役割手当", num(c.role), 1)+
+    row("普通残業手当", r.otPay, 1)+row("通勤定期", num(c.commute), 1)+
+    '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line)"></div>'+
+    row("控除合計", r.ded)+
+    row("雇用保険料", r.koyou, 1)+row("健康保険料", num(c.kenpo), 1)+
+    row("厚生年金保険", num(c.kounen), 1)+row("所得税", r.tax, 1)+row("住民税", num(c.juumin), 1)+
+    '</div>';
+  h+='<div class="muted" style="font-size:11px;margin-bottom:14px;line-height:1.7">'+
+    '出勤 <span class="mono">'+r.workH.toFixed(2)+'h</span>'+
+    '<span style="margin-left:10px">割増単価 <span class="mono">'+Math.round(r.unit).toLocaleString("ja-JP")+'円/h</span></span>'+
+    '<span style="margin-left:10px">所得税は税額表をこの帯だけ直線で近似</span></div>';
+  h+='<div class="card" data-pa="conf" style="cursor:pointer"><div class="row between" style="align-items:center">'+
+    '<div><div style="font-size:13px;font-weight:600">前提を変える</div>'+
+    '<div class="muted" style="font-size:11px;margin-top:2px">基本賃金・所定時間・保険料など。昇格で変わったらここ</div></div>'+
+    '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  return h;
+}
+function bindPayroll(){
+  const f=UI.payForm||(UI.payForm={h:"",m:""});
+  ["h","m","d","y"].forEach(k=>{ const el=document.getElementById("pay-"+k);
+    if(el) el.oninput=e=>{ f[k]=e.target.value; render(); }; });
+  document.querySelectorAll("[data-pa]").forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset.pa;
+      if(a==="back"){ UI.screen="main"; render(); return; }
+      /* v5.20: 前提は数が多いので1件ずつ聞かず、**1つのプロンプトに全部出して行で編集**する。
+         箱の目標(v4.95)と同じ発想——入口を増やさず、書き方で意味を持たせる */
+      if(a==="conf"){
+        const c=payConf();
+        const K=[["wage","時給"],["avgHours","月平均所定時間"],
+                 ["role","役割手当"],["commute","通勤費(非課税)"],
+                 ["rate","割増率(%)"],["kenpo","健康保険料"],["kounen","厚生年金保険"],["juumin","住民税"],
+                 ["koyou","雇用保険料率(%)"],["taxBase","所得税:折れ点の課税対象"],["taxAmt","所得税:折れ点の税額"],
+                 ["taxRate","所得税:折れ点より上の率(%)"],["taxLowRate","所得税:折れ点より下の率(%)"]];
+        const cur=K.map(([k,lab])=>lab+"="+c[k]).join("\n");
+        const txt=prompt("前提(1行に1つ。= の右だけ直す)\n\n昇格や保険料改定で変わったらここを更新すると、試算がまた合うようになります。", cur);
+        if(txt===null) return;
+        const m={}; K.forEach(([k,lab])=>m[lab]=k);
+        const next=Object.assign({}, c);
+        String(txt).split(/\r?\n/).forEach(ln=>{
+          const i=ln.indexOf("="); if(i<0) return;
+          const key=m[ln.slice(0,i).trim()]; if(!key) return;
+          const v=num(ln.slice(i+1)); if(!isNaN(v)) next[key]=v;
+        });
+        S.payroll=next; save(); render(); return;
+      }
     };
   });
 }
@@ -2247,11 +2325,66 @@ function bindMjtList(){
   });
 }
 
+/* v5.20: **給与の試算**(ユーザー要望: 出勤日数と残業時間から事前に計算したい)。
+   **入力は残業時間だけ**——明細2ヶ月の実測で、出勤日数は手取りに影響しないと確認した
+   (7月22日/8月21日+年休1日で基本賃金は同額¥352,000。月給制で年休も有給、所定時間も176.00固定)。
+   例外は欠勤で、そのときは欠勤控除が入るが**実績が無いので式を作れない**。
+   導いた式(実測との差は手取りで最大8円):
+     残業手当 = 残業時間 × 割増単価(=(基本+役割)÷所定 × 割増率)
+     雇用保険 = 支給額計 × 0.5%(切り捨て)
+     健保・厚年・住民税 = 固定
+     所得税 = 源泉徴収税額表を**この帯だけ直線で近似**(基準点+率)
+   **定数は全部設定に置く**——基幹職になれば基本賃金も所定時間も変わるし、
+   管理監督者なら残業手当そのものが消えうる。コードに埋めない。
+   **残業時間は明細のHH.MM表記(37.28=37時間28分)**。10進で読むと合わないので、
+   入力は時間と分に分ける(読み違いの余地を作らない) */
+/* v5.21: **時給制**(ユーザー指摘。v5.20は月給制と誤認していた)。
+   誤認の原因: 明細2ヶ月がどちらも22日相当(7月=出勤22日 / 8月=出勤21日+年休1日)で
+   基本賃金が同額だったため「日数は効かない」と結論した。**2点が偶然一致しただけ**で検証になっていなかった。
+   裏付け: **時給¥2,000 × 176時間 = ¥352,000** と基本賃金が完全一致する。
+   **残業単価の根拠も判明**——`(時給 + 役割手当 ÷ 月平均所定173.2h) × 1.25 = 2,608.26`(実測2,608.27)。
+   役割手当を時間単価へ割り戻すのに**月平均所定労働時間**(年間所定÷12)を使う、法定どおりの計算だった。
+   だから**日数が変わっても残業単価は動かない**(基本賃金だけが動く)。 */
+/* v5.22: 明細4ヶ月(5〜8月)で検証。**基本賃金 = 時給¥2,000 × 出勤時間**が全月で一致(誤差1円以内)。
+   **5月だけ出勤時間が167.37(=167時間37分)**で、(出勤18+年休3)×8=168hから23分足りない。
+   **日数×8では出ない**ので、入力は**出勤時間そのもの**にする(明細にHH.MMで載っている)。
+   所得税は**税額表が階段**なので1本の直線では足りない: 実測の傾きは
+   ¥295,785〜¥319,130が5.06% / それ以上が8.17%。**折れ点を持つ2本の直線**にする。 */
+const PAY_DEF = {wage:2000, avgHours:173.2, role:15000, commute:8220, rate:125,
+  kenpo:17221, kounen:31110, juumin:11700, koyou:0.5,
+  taxBase:319130, taxAmt:9090, taxRate:8.167, taxLowRate:5.055};
+function payConf(){ return Object.assign({}, PAY_DEF, S.payroll||{}); }
+function payCalc(otH, otM, days, paidLeave){
+  const c=payConf();
+  /* **率は小数を持つので fnum を使う**——`num`はparseIntなので0.5が0になる
+     (実際に雇用保険料が0になって手取りが¥2,334ズレた)。単価も小数を保つ */
+  const ot=Math.max(0, num(otH)) + Math.max(0, num(otM))/60;
+  /* v5.22: **出勤時間を直接受け取る**(時給制)。明細の「出勤時間」はHH.MM表記で、
+     5月は167.37(=167時間37分)と8時間の倍数にならない。日数×8では再現できない */
+  const workH=Math.max(0, num(days)) + Math.max(0, num(paidLeave))/60;
+  const base=Math.round(fnum(c.wage)*workH);
+  /* 残業単価は**時給+手当の時間割り**。月平均所定で割り戻すので**日数では動かない** */
+  const unit=(fnum(c.wage)+num(c.role)/Math.max(1,fnum(c.avgHours))) * (fnum(c.rate)/100);
+  const otPay=Math.round(unit*ot);
+  const gross=base+num(c.role)+otPay+num(c.commute);
+  const koyou=Math.floor(gross*fnum(c.koyou)/100);
+  const shaho=koyou+num(c.kenpo)+num(c.kounen);
+  const taxable=gross-num(c.commute)-shaho;
+  /* 税額表は階段なので**折れ点(基準点)を境に2本の直線**で近似する。10円刻み */
+  const tb=num(c.taxBase), tr=(taxable>=tb ? fnum(c.taxRate) : fnum(c.taxLowRate));
+  const tax=Math.max(0, Math.round((num(c.taxAmt)+(taxable-tb)*tr/100)/10)*10);
+  const ded=shaho+tax+num(c.juumin);
+  return {ot:ot, unit:unit, otPay:otPay, base:base, workH:workH,
+          gross:gross, koyou:koyou, tax:tax, ded:ded, net:gross-ded, c:c};
+}
 function viewTool(){
   if(UI.screen==="mjtable") return "";  // 別画面で描画
   let h = band("家計簿");
   h += '<div class="card" data-a="fixed" style="cursor:pointer"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">固定費</div>'+
     '<div class="muted" style="font-size:11px;margin-top:2px">毎月の定期支出を登録(家計簿に自動計上)</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+  /* v5.20: 給与の試算。**残業時間から手取りを先に読む**ので、給料日を待たずに今月の枠が組める */
+  h += '<div class="card" data-a="payroll" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">給与の試算</div>'+
+    '<div class="muted" style="font-size:11px;margin-top:2px">残業時間から手取りを試算(給料日前に予算を組める)</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += '<div class="card" data-a="wishlist" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">ほしい物</div>'+
     '<div class="muted" style="font-size:11px;margin-top:2px">買いたい物・欲しい物リスト</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   /* v3.38: ふるさと納税 残枠カード。限度額の計算は外部シミュレーター(税制の毎年改正を追わない=時価不追随と同型)。
@@ -5660,6 +5793,7 @@ function bindMain(){
       else if(a==="savings"){ UI.screen="savings"; render(); }
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
       else if(a==="svdrill"){ UI.screen="svdrill"; render(); }
+      else if(a==="payroll"){ UI.screen="payroll"; render(); }
       else if(a==="catdrill"){ UI.drillCat=v; UI.drillOpenStore=null; UI.drillMode="chain"; UI.drillAssign=null; UI.drillVarOnly=(v==="消費"); UI.screen="catdrill"; render(); }
       else if(a==="setbudget"){ UI.screen="budget"; UI.budForm=null; render(); }
       else if(a==="setbudget_legacy"){ const cat=v;
