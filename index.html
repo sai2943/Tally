@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.25 (localStorage保存・完全オフライン)
+   Tally 5.26 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -840,7 +840,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.25";
+const APP_VERSION = "5.26";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -898,6 +898,9 @@ function subnavExtra(sc){
   /* v4.98: 予算の設定も下バーへ(ユーザー要望)。**v4.43の規則の適用漏れ**で、
      ここだけ本文の一番下まで探しに行く形が残っていた */
   if(sc==="budget") return [["[data-bu='save']",'保存する',SV]];
+  /* v5.26: 給与の試算は**押したときだけ計算する**(ユーザー設計: 入力途中に数字を出しても意味がない)。
+     これで`oninput`から再描画が消え、テンキーが閉じる事故も根から無くなる */
+  if(sc==="payroll") return [["[data-pa='calc']",'試算する',SV]];
   if(sc==="entry"){
     const f=UI.entryForm||{};
     const lb = f.type==="transfer" ? "振り替える" : (UI.editEntryId!==null ? "更新する" : "記録する");
@@ -1310,16 +1313,17 @@ function viewPayroll(){
   /* v5.23: **出勤時間が未入力なら試算を出さない**(ユーザー指摘: 数字を入れる前からプラスが出る)。
      基本賃金0のまま控除だけ引くので手取りがマイナスになり、意味のない数字が出ていた。
      **0は情報にならない**——入力を促すだけにする */
-  if(r.workH<=0){
-    h+='<div class="card" style="margin-bottom:14px"><div class="muted" style="font-size:12px;line-height:1.7">'+
-      '出勤時間を入れると試算します。<br>明細の「出勤時間」と「普通残業」はHH.MM表記です'+
-      '<span class="mono">(167.37 = 167時間37分)</span>。</div></div>';
-    h+='<div class="card" data-pa="conf" style="cursor:pointer"><div class="row between" style="align-items:center">'+
-      '<div style="font-size:13px;font-weight:600">前提を変える</div>'+
-      '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
-    return h;
-  }
-  h+='<div class="card" style="margin-bottom:14px" id="pay-out">'+
+  /* v5.26: **試算は押したときだけ**(ユーザー設計)。押す前・入力を触った後は案内だけ出す。
+     本文の試算ボタンは隠して下バーからclick()する——他の保存ボタンと同じ方式(v4.43) */
+  h+='<button style="display:none" data-pa="calc">試算する</button>';
+  const _show = UI.payShow && r.workH>0;
+  h+='<div class="card" id="pay-hint" style="margin-bottom:14px'+(_show?';display:none':'')+'">'+
+    '<div class="muted" style="font-size:12px;line-height:1.7">'+
+    (r.workH>0 ? '下の「試算する」を押してください。'
+               : '出勤時間を入れて「試算する」を押してください。')+
+    '<br>明細の「出勤時間」と「普通残業」はHH.MM表記です'+
+    '<span class="mono">(167.37 = 167時間37分)</span>。</div></div>';
+  h+='<div class="card" style="margin-bottom:14px'+(_show?'':';display:none')+'" id="pay-out">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:10px">'+
     '<span style="font-size:13px;font-weight:700">差引支給額</span>'+
     '<span class="mono '+(r.net<0?'red':'teal')+'" style="font-size:22px;font-weight:700">'+(r.net<0?'−':'')+yen(r.net)+'</span></div>'+
@@ -1347,22 +1351,24 @@ function bindPayroll(){
      他の画面(予算・麻雀)はどれも`oninput`で再描画していない——**ここだけが例外だった**。
      ただし試算は入力に応じて即座に更新したいので、**画面全体を描き直さずに
      出力カードの中身だけ差し替える**。入力欄には触れないのでフォーカスが保たれる */
-  const repaint=()=>{
-    const out=document.getElementById("pay-out");
-    if(!out) { render(); return; }          /* 未入力↔入力の切り替わりは作りが変わるので全体を描き直す */
-    const r=payCalc(f.h, f.m, f.d, f.y);
-    if(r.workH<=0){ render(); return; }
-    const tmp=document.createElement("div");
-    tmp.innerHTML=viewPayroll();
-    const next=tmp.querySelector ? tmp.querySelector("#pay-out") : null;
-    if(next) out.innerHTML=next.innerHTML; else render();
-  };
+  /* v5.26【バグ修正の決着】**`oninput`では値を持つだけ。描画は一切しない**。
+     v5.25の部分更新は、**未入力のときは出力カードが存在しない**ので1文字目で`render()`に落ち、
+     症状がそのまま残っていた。試算を押したときだけ計算する形にすれば、この経路自体が消える。
+     入力を触ったら**結果を隠す**(直接styleを触るだけなので再描画は起きない)——
+     古い数字が残って嘘をつくのを防ぐ */
   ["h","m","d","y"].forEach(k=>{ const el=document.getElementById("pay-"+k);
-    if(el) el.oninput=e=>{ f[k]=e.target.value; repaint(); }; });
+    if(el) el.oninput=e=>{
+      f[k]=e.target.value;
+      UI.payShow=false;
+      const out=document.getElementById("pay-out"); if(out) out.style.display="none";
+      const hint=document.getElementById("pay-hint"); if(hint) hint.style.display="";
+    }; });
   document.querySelectorAll("[data-pa]").forEach(el=>{
     el.onclick=()=>{
       const a=el.dataset.pa;
       if(a==="back"){ UI.screen="main"; render(); return; }
+      /* v5.26: 押したときだけ計算する。ここで初めて描画が走る */
+      if(a==="calc"){ UI.payShow=true; render(); return; }
       /* v5.20: 前提は数が多いので1件ずつ聞かず、**1つのプロンプトに全部出して行で編集**する。
          箱の目標(v4.95)と同じ発想——入口を増やさず、書き方で意味を持たせる */
       if(a==="conf"){
