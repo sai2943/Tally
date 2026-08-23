@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.29 (localStorage保存・完全オフライン)
+   Tally 5.30 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -840,7 +840,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.29";
+const APP_VERSION = "5.30";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2065,7 +2065,21 @@ function viewLedger(){
                 : '<button class="btn" style="font-size:11px;padding:4px 10px;color:var(--red)" data-a="stgdel" data-v="'+esc(key)+'">まとめて削除</button>')+
               '</div>'
             : '');
-        }).join("");
+        }).join("")+
+        /* v5.30: **振替はその日の支出入の下に、線で区切って置く**(ユーザー要望)。
+           **合計には足さない**——振替は所持金の中の移動であって収支ではない。
+           v5.16で「線の上は合計に入る、下は入らない」としたのと同じ形。
+           タップで日付・金額・削除ができる(3つの保存先を横断して1箇所で直せる) */
+        (()=>{ const tr=transferRows(d);
+          if(!tr.length) return '';
+          return '<div style="border-top:1px solid var(--line)">'+
+            tr.map((t,ti)=>'<div class="row between" style="padding:9px 14px;cursor:pointer;opacity:.72'+
+              (ti?';border-top:1px solid var(--line)':'')+'" data-a="tredit" data-v="'+esc(d+"#"+ti)+'">'+
+              '<span class="ellip muted" style="min-width:0;font-size:11px">'+
+              '<span class="mono" style="margin-right:6px">振替</span>'+esc(t.label)+'</span>'+
+              '<span class="mono muted" style="font-size:12px">'+(t.adj&&t.amt<0?'−':'')+'¥'+Math.abs(t.amt).toLocaleString("ja-JP")+'</span></div>').join("")+
+            '</div>';
+        })();
       })()+'</div>')+'</div>';
     return h;
   };
@@ -3912,6 +3926,65 @@ function isFixedCost(e){ return !!(e && e.fixedId!=null && !e.varc); }
 function monthEntries(mk){
   return (S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk))
     .sort((a,b)=> a.date<b.date?1 : a.date>b.date?-1 : (String(b.id)>String(a.id)?1:-1));
+}
+/* v5.30: **その日の振替を1件ずつ拾う**(ユーザー要望: 間違えても直せないので明細から直したい)。
+   振替は**3つの保存先に分かれている**——`savings.txns`(所持金⇄箱・箱⇄箱)、
+   `bank.txns`(所持金⇄軍資金・軍資金⇄軍資金)、`wallet.txns`(所持金⇄所持金)。
+   **貯金の内訳では半分しか直せない**(ユーザー指摘: 所持金→所持金はどうする?)ので明細に集める。
+   **対で作られるもの(箱⇄箱・財布⇄財布・軍資金⇄軍資金)は1件にまとめて見せる**——
+   利用者にとっては1回の操作なので、2行に見えると「片方だけ消す」事故を招く。
+   `key`は保存先と実体を特定できる形にして、**編集も削除も同じ鍵で辿れる**ようにする */
+function transferRows(d){
+  const sv=(S.savings||{}).txns||[], bk=(S.bank||{}).txns||[], wl=(S.wallet||{}).txns||[];
+  const svLink=new Set((S.entries||[]).filter(e=>e.svTx!=null).map(e=>String(e.svTx)));
+  const out=[], used=new Set();
+  const nameW=id=>{ const p=walletPots().find(x=>String(x.id)===String(id)); return p?p.name:"所持金"; };
+  const nameP=id=>{ const p=savingsPots().find(x=>String(x.id)===String(id)); return p?p.name:"貯金"; };
+  const nameB=id=>{ const p=bankPots().find(x=>String(x.id)===String(id)); return p?p.name:"軍資金"; };
+  /* 対を1件に畳む(同じ日・逆符号・別の相手) */
+  const pairUp=(arr, store, keyOf, nameOf)=>{
+    arr.forEach(t=>{
+      if(t.type!=="adjust" || t.date!==d || used.has(t.id)) return;
+      if(num(t.amount)>=0) return;                     /* マイナス側を起点にする */
+      const m=arr.find(x=>x!==t && x.type==="adjust" && x.date===d && !used.has(x.id)
+        && num(x.amount)===-num(t.amount) && String(keyOf(x))!==String(keyOf(t)));
+      if(!m) return;
+      used.add(t.id); used.add(m.id);
+      out.push({store:store, ids:[t.id,m.id], amt:Math.abs(num(t.amount)), date:d,
+                label:nameOf(keyOf(t))+" → "+nameOf(keyOf(m))});
+    });
+  };
+  pairUp(sv, "sv", t=>t.potId, nameP);
+  pairUp(wl, "wl", t=>t.walId, nameW);
+  pairUp(bk, "bk", t=>t.bwal,  nameB);
+  /* 残りは片側だけの記録 */
+  sv.forEach(t=>{
+    if(t.date!==d || used.has(t.id)) return;
+    if(t.type==="deposit")  out.push({store:"sv", ids:[t.id], amt:num(t.amount), date:d,
+      label:nameW(t.walId)+" → "+nameP(txPot(t))});
+    else if(t.type==="withdraw"){
+      /* 箱の支払いに紐づく引き出しは記帳側が面倒を見るので出さない(二重に直せると壊れる) */
+      if(svLink.has(String(t.id))) return;
+      out.push({store:"sv", ids:[t.id], amt:num(t.amount), date:d,
+        label:nameP(txPot(t))+" → "+nameW(t.walId)});
+    }
+    else if(t.type==="adjust") out.push({store:"sv", ids:[t.id], amt:num(t.amount), date:d,
+      label:nameP(txPot(t))+" の調整", adj:true});
+  });
+  wl.forEach(t=>{ if(t.date!==d || used.has(t.id) || t.type!=="adjust") return;
+    out.push({store:"wl", ids:[t.id], amt:num(t.amount), date:d, label:nameW(t.walId)+" の調整", adj:true}); });
+  bk.forEach(t=>{
+    if(t.date!==d || used.has(t.id)) return;
+    if(t.type==="topup")  out.push({store:"bk", ids:[t.id], amt:num(t.amount), date:d,
+      label:nameW(t.walId)+" → "+nameB(t.bwal)});
+    else if(t.type==="return") out.push({store:"bk", ids:[t.id], amt:num(t.amount), date:d,
+      label:nameB(t.bwal)+" → "+nameW(t.walId)});
+    else if(t.type==="sweep")  out.push({store:"bk", ids:[t.id], amt:num(t.amount), date:d,
+      label:nameB(t.bwal)+" → "+nameP(t.potId)});
+    else if(t.type==="adjust") out.push({store:"bk", ids:[t.id], amt:num(t.amount), date:d,
+      label:nameB(t.bwal)+" の調整", adj:true});
+  });
+  return out;
 }
 function storeGroups(list){
   const groups=[], idxOf={};
@@ -5960,6 +6033,49 @@ function bindMain(){
       else if(a==="ftoggle"){ UI.futOpen=!UI.futOpen; render(); }
       /* v5.18: 今日より前の開閉。既定は畳んだまま(UI.pastOpenの未定義=false) */
       else if(a==="ptoggle"){ UI.pastOpen=!UI.pastOpen; render(); }
+      /* v5.30: **振替の修正・削除**(ユーザー要望: 間違えても直せない)。
+         **対で作られた振替は両側を揃えて直す**——片方だけ動かすと残高が壊れる。
+         保存先(sv/wl/bk)は行が覚えているので、3種類を同じ導線で扱える */
+      else if(a==="tredit"){
+        const sp=String(v).split("#"), d0=sp[0], ti=parseInt(sp[1],10);
+        const row=transferRows(d0)[ti];
+        if(!row) return;
+        const bag = row.store==="sv" ? (S.savings.txns||[])
+                  : row.store==="wl" ? (S.wallet.txns||[]) : (S.bank.txns||[]);
+        const targets=row.ids.map(id=>bag.find(t=>String(t.id)===String(id))).filter(Boolean);
+        if(!targets.length) return;
+        const cur=Math.abs(num(targets[0].amount));
+        const ans=prompt("振替: "+row.label+"\n\n"+
+          "日付と金額を直せます(消すなら「削除」と入力)\n"+
+          "日付=YYYY-MM-DD / 金額=数字",
+          "日付="+d0+"\n金額="+cur);
+        if(ans===null) return;
+        const txt=String(ans).trim();
+        if(txt==="削除"){
+          if(!confirm(row.label+" の振替(¥"+cur.toLocaleString("ja-JP")+")を削除しますか?")) return;
+          const ids=new Set(row.ids.map(String));
+          const key = row.store==="sv" ? "savings" : row.store==="wl" ? "wallet" : "bank";
+          S[key].txns=(S[key].txns||[]).filter(t=>!ids.has(String(t.id)));
+          save(); render(); toast("振替を削除しました");
+          return;
+        }
+        let nd=d0, na=cur;
+        txt.split(/\r?\n/).forEach(ln=>{
+          const i=ln.indexOf("="); if(i<0) return;
+          const k=ln.slice(0,i).trim(), val=ln.slice(i+1).trim();
+          if(k==="日付") nd=val;
+          if(k==="金額") na=num(val);
+        });
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(nd)){ toast("日付の形が違います(YYYY-MM-DD)"); return; }
+        if(!(na>0)){ toast("金額は1円以上にしてください"); return; }
+        /* **符号は元のまま保つ**(対の片方はマイナス)。金額の絶対値だけ差し替える */
+        targets.forEach(t=>{
+          t.date=nd;
+          t.amount=String(num(t.amount)<0 ? -na : na);
+        });
+        save(); render(); toast("振替を直しました");
+        return;
+      }
       /* v5.29: **店ごとのまとめ操作**(ユーザー要望: 一括登録できるのに直すのが1件ずつなのは面倒)。
          鍵`日付#並び順`から`storeGroups()`で同じ並びを作り直して対象を特定する——
          **描画と同じ関数を通す**ので、並びがズレて別の店を触る事故が起きない */
