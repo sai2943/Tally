@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.28 (localStorage保存・完全オフライン)
+   Tally 5.29 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -840,7 +840,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.28";
+const APP_VERSION = "5.29";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1631,8 +1631,7 @@ function viewMain(){
 
 function viewLedger(){
   const mk = monthKey();
-  const me = S.entries.filter(e=>e.date.startsWith(mk))
-    .sort((a,b)=> a.date<b.date?1 : a.date>b.date?-1 : (String(b.id)>String(a.id)?1:-1));
+  const me = monthEntries(mk);
   /* 収支カテゴリ(純額で見る独立セクション): 勝ち負けする活動。将来の投資もここに追加できる */
   const NET_SRCS = ["slot","mahjong"]; // 収支カテゴリとして扱うsrc
   const isNetEntry = e => NET_SRCS.includes(e.src);
@@ -2008,6 +2007,8 @@ function viewLedger(){
   detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
   const dayNetOf = list => list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
   const mdOf = d => d.slice(5).replace("-","/");
+  /* v5.29: **同じ店をまとめる並べ方**。描画とまとめ操作の両方から呼ぶ。
+     鍵は`日付#並び順`なので、この順序が2箇所でズレると**別の店を消す**事故になる */
   const dayHtml = ([d,list])=>{
     let h="";
     /* v3.46: 日別折り畳み(ユーザー発案)。既定=今日のみ展開、UI.dayOpenで明示開閉(セッション内保持・render()のscroll復元が効く) */
@@ -2026,13 +2027,9 @@ function viewLedger(){
            **1件しかない店はまとめない**——畳んでも減らないうえ、開く手間だけ増える。
            店名の無い記録も個別のまま(まとめると「店名なし」という架空の店ができる)。
            鍵は`日付#並び順`にする——**店名に区切り文字が入っても壊れない** */
-        const groups=[], idxOf={};
-        list.forEach(e=>{
-          const st=String(e.store||"").trim();
-          const k = st ? ("s:"+st) : ("e:"+e.id);   /* 店名なしは1件ずつ */
-          if(idxOf[k]==null){ idxOf[k]=groups.length; groups.push({store:st, items:[]}); }
-          groups[idxOf[k]].items.push(e);
-        });
+        /* v5.29: 並べ方は`storeGroups()`に括り出した——**まとめ操作の側でも同じ並びが要る**ので、
+           2箇所に書くと鍵(日付#並び順)がズレて別の店を消しかねない */
+        const groups=storeGroups(list);
         let row=0;
         const entryRow=(e)=>{
           const signedAmt = e.type==="income" ? e.amount : -e.amount;
@@ -2058,7 +2055,16 @@ function viewLedger(){
             '<span style="font-size:12px">'+esc(g.store)+'</span>'+
             '<span class="mono muted" style="font-size:11px;margin-left:6px">'+g.items.length+'件</span></span>'+
             '<span class="mono '+clsPM(net)+'" style="font-size:14px">'+signYen(net)+'</span></div>'+
-            (open ? g.items.map(entryRow).join("") : '');
+            (open ? g.items.map(entryRow).join("")+
+              /* v5.29: **開いたときだけ操作行を出す**(ユーザー要望: 日付を間違えたとき1件ずつ直すのが面倒)。
+                 畳んだ状態に置くと押し間違いで消える。**固定費を含む店では削除を出さない**——
+                 固定費は次回発生日やテンプレの扱いがあり、まとめて消すと壊れる(1件ずつなら既存の導線が面倒を見る) */
+              '<div class="row" style="gap:8px;padding:8px 14px;border-top:1px solid var(--line)">'+
+              '<button class="btn" style="font-size:11px;padding:4px 10px" data-a="stgdate" data-v="'+esc(key)+'">日付をまとめて変える</button>'+
+              (g.items.some(x=>x.fixedId!=null) ? ''
+                : '<button class="btn" style="font-size:11px;padding:4px 10px;color:var(--red)" data-a="stgdel" data-v="'+esc(key)+'">まとめて削除</button>')+
+              '</div>'
+            : '');
         }).join("");
       })()+'</div>')+'</div>';
     return h;
@@ -3898,6 +3904,25 @@ function furusatoDue(mk){
    tpl.varc=true なら生成エントリに varc を付け、予算上は普通の変動支出として扱う。
    **生成の仕組み(fixedId)はそのまま**なので、停止・一括修正・削除は従来どおり効く */
 function isFixedCost(e){ return !!(e && e.fixedId!=null && !e.varc); }
+/* v5.29: **同じ店をまとめる並べ方**(明細の店まとめ・まとめ操作の共通の土台)。
+   **1件しかない店はまとめない / 店名の無い記録は個別のまま**(v5.00の判断をそのまま持つ)。
+   描画と操作で並びがズレると鍵(日付#並び順)が別の店を指すので、**必ずここを通す** */
+/* v5.29: **明細の並び**(日付降順・同日は登録の逆順)。描画とまとめ操作の両方から呼ぶ。
+   ここがズレると`storeGroups`の番号が食い違い、**鍵が別の店を指す** */
+function monthEntries(mk){
+  return (S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk))
+    .sort((a,b)=> a.date<b.date?1 : a.date>b.date?-1 : (String(b.id)>String(a.id)?1:-1));
+}
+function storeGroups(list){
+  const groups=[], idxOf={};
+  (list||[]).forEach(e=>{
+    const st=String(e.store||"").trim();
+    const k = st ? ("s:"+st) : ("e:"+e.id);
+    if(idxOf[k]==null){ idxOf[k]=groups.length; groups.push({store:st, items:[]}); }
+    groups[idxOf[k]].items.push(e);
+  });
+  return groups;
+}
 function disposableBase(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
   const NET=["slot","mahjong"];
@@ -5935,6 +5960,38 @@ function bindMain(){
       else if(a==="ftoggle"){ UI.futOpen=!UI.futOpen; render(); }
       /* v5.18: 今日より前の開閉。既定は畳んだまま(UI.pastOpenの未定義=false) */
       else if(a==="ptoggle"){ UI.pastOpen=!UI.pastOpen; render(); }
+      /* v5.29: **店ごとのまとめ操作**(ユーザー要望: 一括登録できるのに直すのが1件ずつなのは面倒)。
+         鍵`日付#並び順`から`storeGroups()`で同じ並びを作り直して対象を特定する——
+         **描画と同じ関数を通す**ので、並びがズレて別の店を触る事故が起きない */
+      else if(a==="stgdate" || a==="stgdel"){
+        /* v5.29【重要】**描画と同じ並びでグループ番号を振らないと別の店を指す**。
+           明細は`monthEntries()`の並び(日付降順・同日は登録の逆順)を通っているので、
+           ここでも同じ関数から取り出す。`S.entries`の元順で引くと番号が食い違う
+           (検証で実際に #0=日清食品 に対し画面の鍵が #1 とズレていた) */
+        const sp=String(v).split("#"), d0=sp[0], gi=parseInt(sp[1],10);
+        const mk0=String(d0).slice(0,7);
+        /* `isNetEntry`は描画関数のローカルなのでここからは見えない。同じ判定を直に書く */
+        const dayList=monthEntries(mk0).filter(e=>e.date===d0 && ["slot","mahjong"].indexOf(e.src)<0);
+        const g=storeGroups(dayList)[gi];
+        if(!g || !g.items.length) return;
+        const nm=g.store||"この記録", n=g.items.length;
+        const sum=g.items.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
+        if(a==="stgdate"){
+          const nd=prompt(nm+" の "+n+"件をまとめて移す日付(YYYY-MM-DD)", d0);
+          if(nd===null) return;
+          const t=String(nd).trim();
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(t)){ toast("日付の形が違います(YYYY-MM-DD)"); return; }
+          g.items.forEach(e=>{ e.date=t; });
+          save(); render(); toast(nm+" の "+n+"件を "+t+" に移しました");
+          return;
+        }
+        if(!confirm(nm+" の "+n+"件("+signYen(sum)+")をまとめて削除しますか?")) return;
+        /* 箱に紐づく引き出しも一緒に消す(1件削除と同じ後始末) */
+        g.items.forEach(e=>{ try{ entrySvDrop(e); }catch(err){} });
+        const ids=new Set(g.items.map(e=>String(e.id)));
+        S.entries=(S.entries||[]).filter(e=>!ids.has(String(e.id)));
+        save(); render(); toast(nm+" の "+n+"件を削除しました");
+      }
       /* v5.00: 明細の店まとめの開閉。鍵は`日付#並び順`なので店名に何が入っても壊れない */
       else if(a==="stoggle"){ UI.stOpen=UI.stOpen||{}; UI.stOpen[v]=!UI.stOpen[v]; render(); }
       else if(a==="eedit"){
