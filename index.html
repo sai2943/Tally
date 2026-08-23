@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.30 (localStorage保存・完全オフライン)
+   Tally 5.31 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -840,7 +840,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.30";
+const APP_VERSION = "5.31";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -901,6 +901,9 @@ function subnavExtra(sc){
   /* v5.26: 給与の試算は**押したときだけ計算する**(ユーザー設計: 入力途中に数字を出しても意味がない)。
      これで`oninput`から再描画が消え、テンキーが閉じる事故も根から無くなる */
   if(sc==="payroll") return [["[data-pa='calc']",'試算する',SV]];
+  /* v5.31: 振替の編集も保存は下バー(戻るの右)。削除は本文に置く——**危険な操作を定位置に置かない**。
+     **編集対象が無いときは出さない**(描画スイープが「本文に届かない」で捕捉した) */
+  if(sc==="tredit" && UI.trForm) return [["[data-te='save']",'更新する',SV]];
   if(sc==="entry"){
     const f=UI.entryForm||{};
     const lb = f.type==="transfer" ? "振り替える" : (UI.editEntryId!==null ? "更新する" : "記録する");
@@ -1021,6 +1024,7 @@ function _renderScreen(app){
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
   if(UI.screen==="svdrill"){ app.innerHTML = viewSvDrill(); bindSvDrill(); return; }
   if(UI.screen==="payroll"){ app.innerHTML = viewPayroll(); bindPayroll(); return; }
+  if(UI.screen==="tredit"){ app.innerHTML = viewTrEdit(); bindTrEdit(); return; }
   /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う */
   if(UI.screen==="monthly"){ app.innerHTML = viewMonthly(); bindMain(); return; }
   if(UI.screen==="summary"){ app.innerHTML = viewSummary(); bindMain(); return; }
@@ -1389,6 +1393,62 @@ function bindPayroll(){
           const v=num(ln.slice(i+1)); if(!isNaN(v)) next[key]=v;
         });
         S.payroll=next; save(); render(); return;
+      }
+    };
+  });
+}
+/* v5.31: **振替の修正は画面で行う**(ユーザー指摘: プロンプトはUIとして不親切すぎる)。
+   日付と金額の入力欄・更新・削除・戻るを普通の画面として置く。
+   保存ボタンは下バー(v4.43の規則)、削除は本文(危険な操作を下バーの定位置に置かない)。
+   **対で作られた振替は両側を揃えて直す**——片方だけ動かすと残高が壊れる(v5.30の判断を引き継ぐ) */
+function viewTrEdit(){
+  const t=UI.trForm;
+  if(!t) { UI.screen="main"; return ""; }
+  let h='<div class="hdr"><button class="navbtn" data-te="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">振替を直す</div><div style="width:44px"></div></div>';
+  h+='<div class="card" style="margin-bottom:14px">'+
+    '<div class="muted" style="font-size:11px;margin-bottom:4px">振替</div>'+
+    '<div style="font-size:15px;font-weight:700">'+esc(t.label)+'</div></div>';
+  h+='<div class="card" style="margin-bottom:14px">'+
+    '<div class="fxl">日付</div>'+
+    '<input class="input mono" type="date" id="tr-date" value="'+esc(t.date)+'" style="margin-bottom:12px">'+
+    '<div class="fxl">金額</div>'+
+    '<input class="input mono r" type="number" inputmode="numeric" id="tr-amt" value="'+esc(t.amt)+'">'+
+    '</div>';
+  h+='<button style="display:none" data-te="save">更新する</button>';
+  h+='<div class="card" data-te="del" style="cursor:pointer;border-color:var(--red)">'+
+    '<div style="text-align:center;color:var(--red);font-size:13px;font-weight:600">この振替を削除</div></div>';
+  return h;
+}
+function bindTrEdit(){
+  const t=UI.trForm; if(!t) return;
+  const dEl=document.getElementById("tr-date"), aEl=document.getElementById("tr-amt");
+  /* v5.26の教訓: **`oninput`で`render()`を呼ばない**(テンキーが閉じる)。値を持つだけ */
+  if(dEl) dEl.oninput=e=>{ t.date=e.target.value; };
+  if(aEl) aEl.oninput=e=>{ t.amt=e.target.value; };
+  document.querySelectorAll("[data-te]").forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset.te;
+      if(a==="back"){ UI.trForm=null; UI.screen="main"; render(); return; }
+      const bagKey = t.store==="sv" ? "savings" : t.store==="wl" ? "wallet" : "bank";
+      const bag=(S[bagKey].txns||[]);
+      if(a==="del"){
+        if(!confirm(t.label+" の振替(¥"+num(t.amt).toLocaleString("ja-JP")+")を削除しますか?")) return;
+        const ids=new Set(t.ids.map(String));
+        S[bagKey].txns=bag.filter(x=>!ids.has(String(x.id)));
+        UI.trForm=null; UI.screen="main"; save(); render(); toast("振替を削除しました");
+        return;
+      }
+      if(a==="save"){
+        const nd=String(t.date||"").trim(), na=num(t.amt);
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(nd)){ toast("日付を入れてください"); return; }
+        if(!(na>0)){ toast("金額は1円以上にしてください"); return; }
+        const targets=t.ids.map(id=>bag.find(x=>String(x.id)===String(id))).filter(Boolean);
+        if(!targets.length){ toast("元の振替が見つかりません"); return; }
+        /* **符号は元のまま保つ**(対の片方はマイナス)。金額の絶対値だけ差し替える */
+        targets.forEach(x=>{ x.date=nd; x.amount=String(num(x.amount)<0 ? -na : na); });
+        UI.trForm=null; UI.screen="main"; save(); render(); toast("振替を直しました");
+        return;
       }
     };
   });
@@ -6036,44 +6096,15 @@ function bindMain(){
       /* v5.30: **振替の修正・削除**(ユーザー要望: 間違えても直せない)。
          **対で作られた振替は両側を揃えて直す**——片方だけ動かすと残高が壊れる。
          保存先(sv/wl/bk)は行が覚えているので、3種類を同じ導線で扱える */
+      /* v5.31: 振替をタップ → **編集画面へ**(プロンプトは不親切だったので廃止)。
+         行が保存先と実体を覚えているので、画面側は保存先を意識せず直せる */
       else if(a==="tredit"){
         const sp=String(v).split("#"), d0=sp[0], ti=parseInt(sp[1],10);
         const row=transferRows(d0)[ti];
         if(!row) return;
-        const bag = row.store==="sv" ? (S.savings.txns||[])
-                  : row.store==="wl" ? (S.wallet.txns||[]) : (S.bank.txns||[]);
-        const targets=row.ids.map(id=>bag.find(t=>String(t.id)===String(id))).filter(Boolean);
-        if(!targets.length) return;
-        const cur=Math.abs(num(targets[0].amount));
-        const ans=prompt("振替: "+row.label+"\n\n"+
-          "日付と金額を直せます(消すなら「削除」と入力)\n"+
-          "日付=YYYY-MM-DD / 金額=数字",
-          "日付="+d0+"\n金額="+cur);
-        if(ans===null) return;
-        const txt=String(ans).trim();
-        if(txt==="削除"){
-          if(!confirm(row.label+" の振替(¥"+cur.toLocaleString("ja-JP")+")を削除しますか?")) return;
-          const ids=new Set(row.ids.map(String));
-          const key = row.store==="sv" ? "savings" : row.store==="wl" ? "wallet" : "bank";
-          S[key].txns=(S[key].txns||[]).filter(t=>!ids.has(String(t.id)));
-          save(); render(); toast("振替を削除しました");
-          return;
-        }
-        let nd=d0, na=cur;
-        txt.split(/\r?\n/).forEach(ln=>{
-          const i=ln.indexOf("="); if(i<0) return;
-          const k=ln.slice(0,i).trim(), val=ln.slice(i+1).trim();
-          if(k==="日付") nd=val;
-          if(k==="金額") na=num(val);
-        });
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(nd)){ toast("日付の形が違います(YYYY-MM-DD)"); return; }
-        if(!(na>0)){ toast("金額は1円以上にしてください"); return; }
-        /* **符号は元のまま保つ**(対の片方はマイナス)。金額の絶対値だけ差し替える */
-        targets.forEach(t=>{
-          t.date=nd;
-          t.amount=String(num(t.amount)<0 ? -na : na);
-        });
-        save(); render(); toast("振替を直しました");
+        UI.trForm={store:row.store, ids:row.ids, label:row.label,
+                   date:d0, amt:String(Math.abs(row.amt))};
+        UI.screen="tredit"; render();
         return;
       }
       /* v5.29: **店ごとのまとめ操作**(ユーザー要望: 一括登録できるのに直すのが1件ずつなのは面倒)。
