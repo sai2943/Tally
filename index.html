@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.26 (localStorage保存・完全オフライン)
+   Tally 5.28 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -840,7 +840,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.26";
+const APP_VERSION = "5.28";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3748,20 +3748,59 @@ function leakMonths(){
    だから財布を丸ごと外すのではなく**分類ごとに**決める。`pot.nobud=["娯楽"]` に列挙した枠の原資から外れる。
    チャージ(口座→Suica)は所持金の総額を変えないので消費枠は動かず、娯楽枠だけが自動で縮む——**構造が正解を出す**。
    制限が1つも無ければ従来と完全に同じ経路を通る(財布ごとの残高計算をしない) */
+/* v5.27: **これから確定で出入りする分を所持金から差し引く**(ユーザー指摘: 未来の所持金を参照していない)。
+   実例: 所持金¥107,454・固定費の残り¥93,105 → 消費に回せるのは¥14,349なのに「残り¥24,614」と表示していた。
+   **使いすぎる方向に嘘をつく**ので害が大きい。
+   **未来の収入も足す**のが肝——ユーザーの懸念「月初で未来の所持金を参照しても困る」は、
+   支出だけ引いて収入を足さないと給料前に不当に絞られるから。**確定している入出金を両方見る**。
+   遊技(slot/mahjong)は軍資金の世界なので除く。振替は所持金の中の移動なので関係しない */
+/* v5.28: **地平は「次の収入まで」**(ユーザー設計)。
+   v5.27は月末までの入出金を純額で見ていたが、**未来の収入を足すと手元に無い金を使えると出る**
+   (月初に¥50,000でも未来の給料¥400,000を足せば枠は月枠のまま)。塞いだ穴を別の形で開けていた。
+   かといって**収入だけ除いて月末で切るのも誤り**——ユーザーの自己修正どおり、
+   月末に使い切ると翌月頭に詰む。**次の収入が入るまでの金でやりくりする**のが生活の実態。
+   だから**次の収入の前日までを見る**。次の収入そのものは向こう側の話なので含めない。
+   **月をまたいで見る**のが肝——給料日直後なら翌月頭の固定費もこの窓に入る。
+   給与を固定費の「収入」として登録しておけば未来の給料日がデータに現れる(画面にも案内あり)。
+   未来に収入が1件も無ければ従来どおり月末まで(それ以上は推測になる)。 */
+function nextIncomeDate(){
+  const t=todayStr();
+  const ds=(S.entries||[]).filter(e=>e.date&&e.date>t&&e.type==="income"
+      &&["slot","mahjong"].indexOf(e.src)<0).map(e=>e.date).sort();
+  return ds.length ? ds[0] : null;
+}
+function futureNet(mk){
+  const t=todayStr();
+  const nx=nextIncomeDate();
+  /* 窓の終わり: 次の収入の前日。無ければ月末まで */
+  const end=nx || (mk+"-31");
+  /* `isNetEntry`はこの位置から見えないので同じ判定を直に書く(遊技は軍資金の世界) */
+  return (S.entries||[]).filter(e=>e.date&&e.date>t&&e.date<end
+      &&["slot","mahjong"].indexOf(e.src)<0)
+    .reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
+}
 function nowCaps(mk){
-  const base=disposableBase(mk), bg=S.budgets||{}, w=walletBalance();
+  const base=disposableBase(mk), bg=S.budgets||{};
+  /* 今の所持金に、月内に確定している入出金を織り込んだ額で縛る */
+  const w=Math.max(0, walletBalance()+futureNet(mk));
   const pots=walletPots();
   const restricted=pots.some(p=>((p.nobud||[]).length>0));
   const perPot=restricted ? pots.map(p=>({n:(p.nobud||[]), v:walletBalance(null,p.id)})) : null;
-  const wFor=key=> restricted ? perPot.reduce((a,x)=>a+(x.n.indexOf(key)>=0?0:x.v),0) : w;
+  /* 財布を限定している場合も同じだけ差し引く(全体で見た確定分を按分せず、そのまま引く) */
+  const fut=Math.min(0, futureNet(mk));
+  const wFor=key=> restricted
+    ? Math.max(0, perPot.reduce((a,x)=>a+(x.n.indexOf(key)>=0?0:x.v),0)+fut)
+    : w;
   const one=(key)=>{
     const raw=String(bg[key]==null?"":bg[key]).trim();
     const m=/(\d+(?:\.\d+)?)%/.exec(raw);
     const monthCap=budgetAmt(raw, base);
     const wk=wFor(key);
-    if(!m || wk<=0) return {pct:0, cap:0, monthCap:monthCap, has:false};
-    const pct=parseFloat(m[1])||0;
-    return {pct:pct, cap:Math.max(0, Math.min(monthCap, Math.round(wk*pct/100))), monthCap:monthCap, has:pct>0};
+    /* v5.27: **割合指定が無くても所持金で縛る**。以前は割合があるときだけ縛っており、
+       金額だけの指定(例: 消費¥130,000)では**手元に無い金を使えると表示していた** */
+    if(wk<=0) return {pct:0, cap:0, monthCap:monthCap, has:true};
+    const pct=m ? (parseFloat(m[1])||0) : 100;
+    return {pct:pct, cap:Math.max(0, Math.min(monthCap, Math.round(wk*pct/100))), monthCap:monthCap, has:true};
   };
   return {wallet:w, varc:one("消費"), amuse:one("娯楽")};
 }
