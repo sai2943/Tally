@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.32 (localStorage保存・完全オフライン)
+   Tally 5.33 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -847,7 +847,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.32";
+const APP_VERSION = "5.33";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1695,40 +1695,154 @@ function viewMain(){
   return h;
 }
 
-function viewLedger(){
-  const mk = monthKey();
+/* v5.33【最適化②】**明細の節を独立させた**。viewLedgerは498行で、
+   予算・振替の催促・積立/残高・明細の4つが1つの関数に同居していた。
+   **意味は一切変えず、節ごとに関数へ移すだけ**——描画スイープ180本が守っている。
+   依存は`mk`(表示月)だけにして、中で使う値は自分で用意する */
+function viewLedgerDetail(mk){
   const me = monthEntries(mk);
-  /* 収支カテゴリ(純額で見る独立セクション): 勝ち負けする活動。将来の投資もここに追加できる */
-  const isNetEntry = isNet;   /* v5.32: グローバルの判定を使う */
-  const income = me.filter(e=>e.type==="income").reduce((s,e)=>s+e.amount,0);
-  const expense = me.filter(e=>e.type==="expense").reduce((s,e)=>s+e.amount,0);
-  const _inBank = e => (e.src==="slot"||e.src==="mahjong");
-  const bal = me.filter(e=>!_inBank(e)).reduce((s,e)=> s + (e.type==="income"?e.amount:-e.amount), 0);
-  /* 内訳用: 収支カテゴリを除いた通常の収入・支出 */
-  /* 実績/予定(案ア): 日付が今日以前=実績、未来=予定。大きい数字は予定込みの見込み */
   const todayS = todayStr();
-  const hasFuture = me.some(e=>e.date>todayS);
-  const actualBal = me.filter(e=>e.date<=todayS && !_inBank(e)).reduce((s,e)=> s + (e.type==="income"?e.amount:-e.amount), 0);
-  const futIncome = me.filter(e=>e.type==="income" && !isNetEntry(e) && e.date>todayS).reduce((s,e)=>s+e.amount,0);
-  const futExpense = me.filter(e=>e.type==="expense" && !isNetEntry(e) && e.date>todayS).reduce((s,e)=>s+e.amount,0);
-  /* v3.62: 見出しを「当月残金」へ(ユーザー提案)。収支は純資産の増分だが、先取り分は生活口座に残らないため
-     「いくら残るか」を答えられていなかった。**先取りはmax(実績,目標)で引く**——実績だけだと月初は過大に見え
-     入金した瞬間に急落する(財務状況は不変なのに数字が暴れる)。支出が予定込みなのと同じ扱いに揃える */
-  const _sp62=securedSplit(mk);
-  /* v3.72【設計バグ修正】max(実績,目標)は進行中の月にだけ正しい規則だった。
-     終わった月に「実行されなかった計画」を引くのは事実の歪曲(7月は貯金していないのに50,000引かれて残金が−30,634になっていた)。
-     過去の月は実績のみ、当月・未来は予定込み——アプリ全体の「過去は事実/未来は予定」の原則に揃える */
-  const _isPastM = mk < todayStr().slice(0,7);   /* monthKey()は表示中の月なので実際の今月と比較する */
-  /* v3.80: 見出しを「当月収支」へ差し戻し(ユーザー指摘)。
-     収支は収入−支出という定義の明確な事実であり、計画(先取り)を引いて実態を模擬するのは
-     事実と意図の混在だった。手元にいくら残るかは所持金が語るべき役割。 */
-  /* v4.59: **当月収支を主役から降ろす**(ユーザー設計)。
-     収支=収入−支出は、収入の大半が給料なので**「給料日を過ぎたか」を表す数字**になる。
-     月初は−¥13,000、給料後は+¥150,000——振れ幅の大半がカレンダーの都合で、行動の結果ではない。
-     家計簿で行動が変わるのは**「箱に収まっているか」「あといくら使えるか」**なので予算を最上段へ。
-     収支と内訳は残す(支出の見直しには要る)が、位置は下げて折りたたむ。
-     ※遊技タブの月次収支は逆に主役のまま——あちらは負けが自分の判断やEVを疑う契機になる */
-  let h = "";
+  const isNetEntry = isNet;
+  const income = me.filter(e=>e.type==="income").reduce((s,e)=>s+e.amount,0);
+  let h="";
+  h += band("明細");
+  const detEntries = me.filter(e=>!isNetEntry(e));
+  if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
+  const byDate = {};
+  detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
+  const dayNetOf = list => list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
+  const mdOf = d => d.slice(5).replace("-","/");
+  /* v5.29: **同じ店をまとめる並べ方**。描画とまとめ操作の両方から呼ぶ。
+     鍵は`日付#並び順`なので、この順序が2箇所でズレると**別の店を消す**事故になる */
+  const dayHtml = ([d,list])=>{
+    let h="";
+    /* v3.46: 日別折り畳み(ユーザー発案)。既定=今日のみ展開、UI.dayOpenで明示開閉(セッション内保持・render()のscroll復元が効く) */
+    const dayNet=dayNetOf(list);
+    const dOpen=(UI.dayOpen&&UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayS);
+    h += '<div style="margin-bottom:8px">'+
+      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;'+(d>todayS?'opacity:.62;':'')+'" data-a="dtoggle" data-v="'+d+'">'+
+      '<span class="mono muted" style="font-size:11px">'+(dOpen?'▾':'▸')+' '+d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')'+
+      '<span style="margin-left:8px;font-size:11px">'+list.length+'件</span></span>'+
+      '<span class="mono '+clsPM(dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(dayNet)+'</span></div>'+
+      (!dOpen?'':'<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
+      (()=>{
+        /* v5.00: **同じ店は1行にまとめ、タップで品目を出す**(ユーザー要望)。
+           1日24件のうち同じ通販が6件、というのが普通に起きる。**店が読めれば内訳は要らない日が多い**。
+           畳む語彙はv3.46(日別)・v4.68(予定)と同じで、新しい概念を増やしていない。
+           **1件しかない店はまとめない**——畳んでも減らないうえ、開く手間だけ増える。
+           店名の無い記録も個別のまま(まとめると「店名なし」という架空の店ができる)。
+           鍵は`日付#並び順`にする——**店名に区切り文字が入っても壊れない** */
+        /* v5.29: 並べ方は`storeGroups()`に括り出した——**まとめ操作の側でも同じ並びが要る**ので、
+           2箇所に書くと鍵(日付#並び順)がズレて別の店を消しかねない */
+        const groups=storeGroups(list);
+        let row=0;
+        const entryRow=(e)=>{
+          const signedAmt = e.type==="income" ? e.amount : -e.amount;
+          const isFuture = e.date > todayS;
+          const cc = e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
+          const sep = row++ ? 'border-top:1px solid var(--line);' : '';
+          return '<div class="row" style="padding:10px 14px;cursor:pointer;'+sep+(isFuture?'opacity:.62;':'')+'" data-a="eedit" data-v="'+e.id+'">'+
+          '<div style="flex:1;min-width:0"><div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
+          '<span class="tag" style="border:1px solid '+cc+';color:'+cc+'">'+esc(e.category)+'</span>'+
+          (e.src==="slot"||e.src==="mahjong"?'<span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:11px">連携</span>':'')+
+          (e.src==="fixed"?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">定期</span>':'')+
+          (isFuture?'<span class="tag" style="border:1px solid var(--blue);color:var(--blue);font-size:11px">予定</span>':'')+'</div>'+
+          entryDetailHtml(e)+'</div>'+
+          '<div class="mono '+clsPM(signedAmt)+'" style="font-size:14px">'+signYen(signedAmt)+'</div></div>';
+        };
+        return groups.map((g,gi)=>{
+          if(g.items.length<2) return entryRow(g.items[0]);
+          const key=d+"#"+gi, open=!!(UI.stOpen&&UI.stOpen[key]);
+          const net=dayNetOf(g.items);
+          const sep = row++ ? 'border-top:1px solid var(--line);' : '';
+          return '<div class="row between" style="padding:10px 14px;cursor:pointer;'+sep+'" data-a="stoggle" data-v="'+esc(key)+'">'+
+            '<span class="ellip" style="flex:1;min-width:0"><span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+'</span> '+
+            '<span style="font-size:12px">'+esc(g.store)+'</span>'+
+            '<span class="mono muted" style="font-size:11px;margin-left:6px">'+g.items.length+'件</span></span>'+
+            '<span class="mono '+clsPM(net)+'" style="font-size:14px">'+signYen(net)+'</span></div>'+
+            (open ? g.items.map(entryRow).join("")+
+              /* v5.29: **開いたときだけ操作行を出す**(ユーザー要望: 日付を間違えたとき1件ずつ直すのが面倒)。
+                 畳んだ状態に置くと押し間違いで消える。**固定費を含む店では削除を出さない**——
+                 固定費は次回発生日やテンプレの扱いがあり、まとめて消すと壊れる(1件ずつなら既存の導線が面倒を見る) */
+              '<div class="row" style="gap:8px;padding:8px 14px;border-top:1px solid var(--line)">'+
+              '<button class="btn" style="font-size:11px;padding:4px 10px" data-a="stgdate" data-v="'+esc(key)+'">日付をまとめて変える</button>'+
+              (g.items.some(x=>x.fixedId!=null) ? ''
+                : '<button class="btn" style="font-size:11px;padding:4px 10px;color:var(--red)" data-a="stgdel" data-v="'+esc(key)+'">まとめて削除</button>')+
+              '</div>'
+            : '');
+        }).join("")+
+        /* v5.30: **振替はその日の支出入の下に、線で区切って置く**(ユーザー要望)。
+           **合計には足さない**——振替は所持金の中の移動であって収支ではない。
+           v5.16で「線の上は合計に入る、下は入らない」としたのと同じ形。
+           タップで日付・金額・削除ができる(3つの保存先を横断して1箇所で直せる) */
+        (()=>{ const tr=transferRows(d);
+          if(!tr.length) return '';
+          return '<div style="border-top:1px solid var(--line)">'+
+            tr.map((t,ti)=>'<div class="row between" style="padding:9px 14px;cursor:pointer;opacity:.72'+
+              (ti?';border-top:1px solid var(--line)':'')+'" data-a="tredit" data-v="'+esc(d+"#"+ti)+'">'+
+              '<span class="ellip muted" style="min-width:0;font-size:11px">'+
+              '<span class="mono" style="margin-right:6px">振替</span>'+esc(t.label)+'</span>'+
+              '<span class="mono muted" style="font-size:12px">'+(t.adj&&t.amt<0?'−':'')+'¥'+Math.abs(t.amt).toLocaleString("ja-JP")+'</span></div>').join("")+
+            '</div>';
+        })();
+      })()+'</div>')+'</div>';
+    return h;
+  };
+  /* v4.68: **未来は1行に畳む**(ユーザー指摘: 今日の日付に辿り着くのも一苦労)。
+     固定費は年内分が先に生成されるので、8月なら平日の駐輪だけで**今日より上に14行=ちょうど1画面**積まれていた。
+     未来の固定費は明細のどの用途にも寄与しない——今日使った金ではなく、まだ引き落とされておらず、
+     自動生成なのでミスはテンプレ側にあり、検索の対象でもない。**しかもv4.62で予算カードに「未引落」として既に出ている**
+     (催促カードとバンドの重複を潰したのと同じ問題がここに残っていた)。
+     **消さずに畳む**のは、手で入れた未来の予定支出が埋もれると困るため。畳んだ姿はv2.83の
+     「🔒 X〜Y回戦 確定済み」バーと同じ語彙で、新しい概念を増やさない。
+     **明細のゴール = 上から3行で今日と昨日が読めて、下へ行けば月全体を付け合わせできる。** */
+  const allDays = Object.entries(byDate).sort((a,b)=>a[0]<b[0]?1:-1);
+  const futDays = allDays.filter(x=>x[0]>todayS), pastDays = allDays.filter(x=>x[0]<=todayS);
+  if(futDays.length){
+    const fCnt=futDays.reduce((a2,x)=>a2+x[1].length,0);
+    const fNet=futDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
+    const fOpen=!!UI.futOpen;
+    const span=futDays.length>1 ? mdOf(futDays[futDays.length-1][0])+'〜'+mdOf(futDays[0][0]) : mdOf(futDays[0][0]);
+    h += '<div style="margin-bottom:8px">'+
+      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ftoggle">'+
+      '<span class="mono muted" style="font-size:11px">'+(fOpen?'▾':'▸')+' 予定 '+span+
+      '<span style="margin-left:8px;font-size:11px">'+fCnt+'件</span></span>'+
+      '<span class="mono '+clsPM(fNet)+'" style="font-size:13px;font-weight:700">'+signYen(fNet)+'</span></div></div>';
+    if(fOpen) futDays.forEach(x=>{ h += dayHtml(x); });
+  }
+  /* v5.18: **今日より前を1本に畳む**(ユーザー指摘: 1ヶ月分の日付が並んで縦が長すぎる)。
+     v4.68で未来を1本にしたのに、**過去は日ごとに並んだまま**で扱いが揃っていなかった。
+     開いた瞬間に要るのは**今日の記帳の確認**で、遡りは例外——例外に常設の場所を与えない。
+     未来のバーと同じ語彙(▸/▾・件数・純額)なので、新しい概念は増えていない。
+     **今日の分は畳まない**(その日の記帳を確かめるのが日課の中心なので) */
+  const todayDays = pastDays.filter(x=>x[0]===todayS);
+  const prevDays  = pastDays.filter(x=>x[0]<todayS);
+  todayDays.forEach(x=>{ h += dayHtml(x); });
+  if(prevDays.length){
+    const pCnt=prevDays.reduce((a2,x)=>a2+x[1].length,0);
+    const pNet=prevDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
+    const pOpen=!!UI.pastOpen;
+    const span=prevDays.length>1 ? mdOf(prevDays[prevDays.length-1][0])+'〜'+mdOf(prevDays[0][0]) : mdOf(prevDays[0][0]);
+    h += '<div style="margin-bottom:8px">'+
+      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ptoggle">'+
+      '<span class="mono muted" style="font-size:11px">'+(pOpen?'▾':'▸')+' '+span+
+      '<span style="margin-left:8px;font-size:11px">'+pCnt+'件</span></span>'+
+      '<span class="mono '+clsPM(pNet)+'" style="font-size:13px;font-weight:700">'+signYen(pNet)+'</span></div></div>';
+    if(pOpen) prevDays.forEach(x=>{ h += dayHtml(x); });
+  }
+  return h;
+  return h;
+}
+
+/* v5.33【最適化②】**予算の節を独立させた**。意味は変えず移すだけ。
+   依存は`mk`だけ——中で使う値は自分で用意する */
+function viewLedgerBudget(mk){
+  const me = monthEntries(mk);
+  const todayS = todayStr();
+  const isNetEntry = isNet;
+  const expense = me.filter(e=>e.type==="expense").reduce((s,e)=>s+e.amount,0);
+  const _sp62 = securedSplit(mk);
+  let h="";
   h += band("予算");
   h += '<div class="card" style="margin-bottom:14px">';
   EXPENSE_CATS.filter(c=>c!=="承認").forEach((cat,i)=>{  /* 承認は予算バー対象外(承認プロセス自体が統制) */
@@ -1862,6 +1976,45 @@ function viewLedger(){
   }
   h += '</div>';   /* 予算カード(使う)を閉じる */
 
+  return h;
+}
+
+
+function viewLedger(){
+  const mk = monthKey();
+  const me = monthEntries(mk);
+  /* 収支カテゴリ(純額で見る独立セクション): 勝ち負けする活動。将来の投資もここに追加できる */
+  const isNetEntry = isNet;   /* v5.32: グローバルの判定を使う */
+  const income = me.filter(e=>e.type==="income").reduce((s,e)=>s+e.amount,0);
+  const expense = me.filter(e=>e.type==="expense").reduce((s,e)=>s+e.amount,0);
+  const _inBank = e => (e.src==="slot"||e.src==="mahjong");
+  const bal = me.filter(e=>!_inBank(e)).reduce((s,e)=> s + (e.type==="income"?e.amount:-e.amount), 0);
+  /* 内訳用: 収支カテゴリを除いた通常の収入・支出 */
+  /* 実績/予定(案ア): 日付が今日以前=実績、未来=予定。大きい数字は予定込みの見込み */
+  const todayS = todayStr();
+  const hasFuture = me.some(e=>e.date>todayS);
+  const actualBal = me.filter(e=>e.date<=todayS && !_inBank(e)).reduce((s,e)=> s + (e.type==="income"?e.amount:-e.amount), 0);
+  const futIncome = me.filter(e=>e.type==="income" && !isNetEntry(e) && e.date>todayS).reduce((s,e)=>s+e.amount,0);
+  const futExpense = me.filter(e=>e.type==="expense" && !isNetEntry(e) && e.date>todayS).reduce((s,e)=>s+e.amount,0);
+  /* v3.62: 見出しを「当月残金」へ(ユーザー提案)。収支は純資産の増分だが、先取り分は生活口座に残らないため
+     「いくら残るか」を答えられていなかった。**先取りはmax(実績,目標)で引く**——実績だけだと月初は過大に見え
+     入金した瞬間に急落する(財務状況は不変なのに数字が暴れる)。支出が予定込みなのと同じ扱いに揃える */
+  const _sp62=securedSplit(mk);
+  /* v3.72【設計バグ修正】max(実績,目標)は進行中の月にだけ正しい規則だった。
+     終わった月に「実行されなかった計画」を引くのは事実の歪曲(7月は貯金していないのに50,000引かれて残金が−30,634になっていた)。
+     過去の月は実績のみ、当月・未来は予定込み——アプリ全体の「過去は事実/未来は予定」の原則に揃える */
+  const _isPastM = mk < todayStr().slice(0,7);   /* monthKey()は表示中の月なので実際の今月と比較する */
+  /* v3.80: 見出しを「当月収支」へ差し戻し(ユーザー指摘)。
+     収支は収入−支出という定義の明確な事実であり、計画(先取り)を引いて実態を模擬するのは
+     事実と意図の混在だった。手元にいくら残るかは所持金が語るべき役割。 */
+  /* v4.59: **当月収支を主役から降ろす**(ユーザー設計)。
+     収支=収入−支出は、収入の大半が給料なので**「給料日を過ぎたか」を表す数字**になる。
+     月初は−¥13,000、給料後は+¥150,000——振れ幅の大半がカレンダーの都合で、行動の結果ではない。
+     家計簿で行動が変わるのは**「箱に収まっているか」「あといくら使えるか」**なので予算を最上段へ。
+     収支と内訳は残す(支出の見直しには要る)が、位置は下げて折りたたむ。
+     ※遊技タブの月次収支は逆に主役のまま——あちらは負けが自分の判断やEVを疑う契機になる */
+  let h = "";
+  h += viewLedgerBudget(mk);
   /* v3.91: **先取りは常設をやめ、給料日に催促して終わったら消える**(ユーザー設計)。
      先取りは月に一度やれば終わる仕事なので、済んだ後も居座るのは計器でなく雑音。
      出す条件 = 表示中が今月 かつ (当月の収入が着弾済み or 既に一部実行済み) かつ 未達。
@@ -2051,7 +2204,7 @@ function viewLedger(){
        財布は0でも出す: **口座は実在していて突合の対象**だから */
     _sp.forEach(p2=>{ const v=savingsBalance(p2.id); if(v!==0) _rows.push({name:p2.name, v:v, a:"savings"}); });
     if(_rows.length){
-      h += band("残高");
+  h += band("残高");
       h += '<div class="card" style="margin-bottom:14px">'+
         /* 所持金と貯金の合計は見出しに置く——**行を足さずに全体が分かる** */
         '<div class="row between" style="align-items:baseline;margin-bottom:8px;cursor:pointer" data-a="tab" data-v="assets">'+
@@ -2065,131 +2218,7 @@ function viewLedger(){
         '</div>';
     }
   }
-  h += band("明細");
-  const detEntries = me.filter(e=>!isNetEntry(e));
-  if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
-  const byDate = {};
-  detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
-  const dayNetOf = list => list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
-  const mdOf = d => d.slice(5).replace("-","/");
-  /* v5.29: **同じ店をまとめる並べ方**。描画とまとめ操作の両方から呼ぶ。
-     鍵は`日付#並び順`なので、この順序が2箇所でズレると**別の店を消す**事故になる */
-  const dayHtml = ([d,list])=>{
-    let h="";
-    /* v3.46: 日別折り畳み(ユーザー発案)。既定=今日のみ展開、UI.dayOpenで明示開閉(セッション内保持・render()のscroll復元が効く) */
-    const dayNet=dayNetOf(list);
-    const dOpen=(UI.dayOpen&&UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayS);
-    h += '<div style="margin-bottom:8px">'+
-      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;'+(d>todayS?'opacity:.62;':'')+'" data-a="dtoggle" data-v="'+d+'">'+
-      '<span class="mono muted" style="font-size:11px">'+(dOpen?'▾':'▸')+' '+d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')'+
-      '<span style="margin-left:8px;font-size:11px">'+list.length+'件</span></span>'+
-      '<span class="mono '+clsPM(dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(dayNet)+'</span></div>'+
-      (!dOpen?'':'<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
-      (()=>{
-        /* v5.00: **同じ店は1行にまとめ、タップで品目を出す**(ユーザー要望)。
-           1日24件のうち同じ通販が6件、というのが普通に起きる。**店が読めれば内訳は要らない日が多い**。
-           畳む語彙はv3.46(日別)・v4.68(予定)と同じで、新しい概念を増やしていない。
-           **1件しかない店はまとめない**——畳んでも減らないうえ、開く手間だけ増える。
-           店名の無い記録も個別のまま(まとめると「店名なし」という架空の店ができる)。
-           鍵は`日付#並び順`にする——**店名に区切り文字が入っても壊れない** */
-        /* v5.29: 並べ方は`storeGroups()`に括り出した——**まとめ操作の側でも同じ並びが要る**ので、
-           2箇所に書くと鍵(日付#並び順)がズレて別の店を消しかねない */
-        const groups=storeGroups(list);
-        let row=0;
-        const entryRow=(e)=>{
-          const signedAmt = e.type==="income" ? e.amount : -e.amount;
-          const isFuture = e.date > todayS;
-          const cc = e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
-          const sep = row++ ? 'border-top:1px solid var(--line);' : '';
-          return '<div class="row" style="padding:10px 14px;cursor:pointer;'+sep+(isFuture?'opacity:.62;':'')+'" data-a="eedit" data-v="'+e.id+'">'+
-          '<div style="flex:1;min-width:0"><div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
-          '<span class="tag" style="border:1px solid '+cc+';color:'+cc+'">'+esc(e.category)+'</span>'+
-          (e.src==="slot"||e.src==="mahjong"?'<span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:11px">連携</span>':'')+
-          (e.src==="fixed"?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">定期</span>':'')+
-          (isFuture?'<span class="tag" style="border:1px solid var(--blue);color:var(--blue);font-size:11px">予定</span>':'')+'</div>'+
-          entryDetailHtml(e)+'</div>'+
-          '<div class="mono '+clsPM(signedAmt)+'" style="font-size:14px">'+signYen(signedAmt)+'</div></div>';
-        };
-        return groups.map((g,gi)=>{
-          if(g.items.length<2) return entryRow(g.items[0]);
-          const key=d+"#"+gi, open=!!(UI.stOpen&&UI.stOpen[key]);
-          const net=dayNetOf(g.items);
-          const sep = row++ ? 'border-top:1px solid var(--line);' : '';
-          return '<div class="row between" style="padding:10px 14px;cursor:pointer;'+sep+'" data-a="stoggle" data-v="'+esc(key)+'">'+
-            '<span class="ellip" style="flex:1;min-width:0"><span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+'</span> '+
-            '<span style="font-size:12px">'+esc(g.store)+'</span>'+
-            '<span class="mono muted" style="font-size:11px;margin-left:6px">'+g.items.length+'件</span></span>'+
-            '<span class="mono '+clsPM(net)+'" style="font-size:14px">'+signYen(net)+'</span></div>'+
-            (open ? g.items.map(entryRow).join("")+
-              /* v5.29: **開いたときだけ操作行を出す**(ユーザー要望: 日付を間違えたとき1件ずつ直すのが面倒)。
-                 畳んだ状態に置くと押し間違いで消える。**固定費を含む店では削除を出さない**——
-                 固定費は次回発生日やテンプレの扱いがあり、まとめて消すと壊れる(1件ずつなら既存の導線が面倒を見る) */
-              '<div class="row" style="gap:8px;padding:8px 14px;border-top:1px solid var(--line)">'+
-              '<button class="btn" style="font-size:11px;padding:4px 10px" data-a="stgdate" data-v="'+esc(key)+'">日付をまとめて変える</button>'+
-              (g.items.some(x=>x.fixedId!=null) ? ''
-                : '<button class="btn" style="font-size:11px;padding:4px 10px;color:var(--red)" data-a="stgdel" data-v="'+esc(key)+'">まとめて削除</button>')+
-              '</div>'
-            : '');
-        }).join("")+
-        /* v5.30: **振替はその日の支出入の下に、線で区切って置く**(ユーザー要望)。
-           **合計には足さない**——振替は所持金の中の移動であって収支ではない。
-           v5.16で「線の上は合計に入る、下は入らない」としたのと同じ形。
-           タップで日付・金額・削除ができる(3つの保存先を横断して1箇所で直せる) */
-        (()=>{ const tr=transferRows(d);
-          if(!tr.length) return '';
-          return '<div style="border-top:1px solid var(--line)">'+
-            tr.map((t,ti)=>'<div class="row between" style="padding:9px 14px;cursor:pointer;opacity:.72'+
-              (ti?';border-top:1px solid var(--line)':'')+'" data-a="tredit" data-v="'+esc(d+"#"+ti)+'">'+
-              '<span class="ellip muted" style="min-width:0;font-size:11px">'+
-              '<span class="mono" style="margin-right:6px">振替</span>'+esc(t.label)+'</span>'+
-              '<span class="mono muted" style="font-size:12px">'+(t.adj&&t.amt<0?'−':'')+'¥'+Math.abs(t.amt).toLocaleString("ja-JP")+'</span></div>').join("")+
-            '</div>';
-        })();
-      })()+'</div>')+'</div>';
-    return h;
-  };
-  /* v4.68: **未来は1行に畳む**(ユーザー指摘: 今日の日付に辿り着くのも一苦労)。
-     固定費は年内分が先に生成されるので、8月なら平日の駐輪だけで**今日より上に14行=ちょうど1画面**積まれていた。
-     未来の固定費は明細のどの用途にも寄与しない——今日使った金ではなく、まだ引き落とされておらず、
-     自動生成なのでミスはテンプレ側にあり、検索の対象でもない。**しかもv4.62で予算カードに「未引落」として既に出ている**
-     (催促カードとバンドの重複を潰したのと同じ問題がここに残っていた)。
-     **消さずに畳む**のは、手で入れた未来の予定支出が埋もれると困るため。畳んだ姿はv2.83の
-     「🔒 X〜Y回戦 確定済み」バーと同じ語彙で、新しい概念を増やさない。
-     **明細のゴール = 上から3行で今日と昨日が読めて、下へ行けば月全体を付け合わせできる。** */
-  const allDays = Object.entries(byDate).sort((a,b)=>a[0]<b[0]?1:-1);
-  const futDays = allDays.filter(x=>x[0]>todayS), pastDays = allDays.filter(x=>x[0]<=todayS);
-  if(futDays.length){
-    const fCnt=futDays.reduce((a2,x)=>a2+x[1].length,0);
-    const fNet=futDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
-    const fOpen=!!UI.futOpen;
-    const span=futDays.length>1 ? mdOf(futDays[futDays.length-1][0])+'〜'+mdOf(futDays[0][0]) : mdOf(futDays[0][0]);
-    h += '<div style="margin-bottom:8px">'+
-      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ftoggle">'+
-      '<span class="mono muted" style="font-size:11px">'+(fOpen?'▾':'▸')+' 予定 '+span+
-      '<span style="margin-left:8px;font-size:11px">'+fCnt+'件</span></span>'+
-      '<span class="mono '+clsPM(fNet)+'" style="font-size:13px;font-weight:700">'+signYen(fNet)+'</span></div></div>';
-    if(fOpen) futDays.forEach(x=>{ h += dayHtml(x); });
-  }
-  /* v5.18: **今日より前を1本に畳む**(ユーザー指摘: 1ヶ月分の日付が並んで縦が長すぎる)。
-     v4.68で未来を1本にしたのに、**過去は日ごとに並んだまま**で扱いが揃っていなかった。
-     開いた瞬間に要るのは**今日の記帳の確認**で、遡りは例外——例外に常設の場所を与えない。
-     未来のバーと同じ語彙(▸/▾・件数・純額)なので、新しい概念は増えていない。
-     **今日の分は畳まない**(その日の記帳を確かめるのが日課の中心なので) */
-  const todayDays = pastDays.filter(x=>x[0]===todayS);
-  const prevDays  = pastDays.filter(x=>x[0]<todayS);
-  todayDays.forEach(x=>{ h += dayHtml(x); });
-  if(prevDays.length){
-    const pCnt=prevDays.reduce((a2,x)=>a2+x[1].length,0);
-    const pNet=prevDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
-    const pOpen=!!UI.pastOpen;
-    const span=prevDays.length>1 ? mdOf(prevDays[prevDays.length-1][0])+'〜'+mdOf(prevDays[0][0]) : mdOf(prevDays[0][0]);
-    h += '<div style="margin-bottom:8px">'+
-      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ptoggle">'+
-      '<span class="mono muted" style="font-size:11px">'+(pOpen?'▾':'▸')+' '+span+
-      '<span style="margin-left:8px;font-size:11px">'+pCnt+'件</span></span>'+
-      '<span class="mono '+clsPM(pNet)+'" style="font-size:13px;font-weight:700">'+signYen(pNet)+'</span></div></div>';
-    if(pOpen) prevDays.forEach(x=>{ h += dayHtml(x); });
-  }
+  h += viewLedgerDetail(mk);
   return h;
 }
 
