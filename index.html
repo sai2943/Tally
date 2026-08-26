@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.43 (localStorage保存・完全オフライン)
+   Tally 5.44 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -849,7 +849,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.43";
+const APP_VERSION = "5.44";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -914,6 +914,10 @@ function subnavExtra(sc){
      **編集対象が無いときは出さない**(描画スイープが「本文に届かない」で捕捉した) */
   if(sc==="tredit" && UI.trForm) return [["[data-te='save']",'更新する',SV]];
   /* v5.34: 半荘の記録。**打ちながら押す**ので下バーの定位置に置く */
+  /* v5.44: 精算が入って締められる状態なら、下バーを「締める」に切り替える。
+     **記録するより締めるが優先**——締めるのは卓の終わりで、その時は記録が済んでいる */
+  if(sc==="mjlog" && (()=>{ const t=mjLogTotals(); return t.settled && t.n; })())
+    return [["[data-ml='close']",'この卓を締める','color:var(--teal);font-weight:700']];
   if(sc==="mjlog") return [["[data-ml='add']",
     ((UI.mjlForm&&UI.mjlForm.editIdx!=null) ? '更新する' : '記録する'), SV]];
   /* v5.42: 単価の設定も保存は下バー(戻るの右・v4.43の規則) */
@@ -1629,10 +1633,12 @@ function viewMjLog(){
   /* v5.42【バグ修正】**締めるボタンをカードの外に出す**(ユーザー指摘: 押せない)。
      精算カードの内側に入れ子で置いていたため、親カードと重なってタップが通らなかった。
      **押せるものはカードの入れ子にしない** */
+  /* v5.44: **締めるは下バーへ**(ユーザー: まだ押せない)。
+     本文に置いた`<button>`が押せない原因を特定しきれなかったので、
+     **確実に動いている経路**(本文に隠しボタン→下バーがclick / v4.43)に載せ替える。
+     締めは画面を離れる操作なので、下バーの定位置が意味的にも正しい */
   if(t.settled && t.n){
-    h+='<button class="btn full" data-ml="close" style="margin-bottom:12px;padding:14px 0;'+
-      'border-color:var(--teal);color:var(--teal);font-size:14px;font-weight:700">'+
-      'この卓を締める &nbsp;'+signYen(t.net)+'</button>';
+    h+='<button style="display:none" data-ml="close">この卓を締める</button>';
   }
   /* 記録した半荘(新しい順) */
   if(rows.length){
@@ -1695,31 +1701,43 @@ function bindMjLog(){
          既存の「麻雀を記録」と**同じ経路**に乗せる——`S.entries`に`src:"mahjong"`で1件作れば、
          軍資金の増減として家計簿に載り、可処分にも変動消費にも混ざらない(遊技は軍資金の世界)。
          **締めたら記録を空にする**——次の卓のために。金額はエントリに残るので失われない */
+      /* v5.44【②の統合】**締めたら既存のセッションを作って編集画面へ送る**(ユーザー選択)。
+         打っている最中は着順とチップだけ触れればよく、**店・実働・同卓者・経費は終わってから1回**入れる。
+         半荘の記録は「入力の下書き」で、締めると既存の記録方法に合流する——
+         これで**家計簿への反映も、店やルール名の記録も、両方成立する**。
+         金額は`score`(スコア分)と`chips`(チップ枚数)に入れ、単価は1にして**そのまま円で効く**ようにする
+         ——素点を持っていないので、既存の「素点×レート」の器に金額を直接載せる形が正確 */
       if(a==="close"){
-        const t=mjLogTotals();
+        const t=mjLogTotals(), c=t.c;
         if(!t.n){ toast("半荘の記録がありません"); return; }
         if(!t.settled){ toast("卓の精算額を入れてください"); return; }
-        const memo="麻雀(フリー・"+c.seats+"麻) "+t.n+"半荘 "+
-          [1,2,3,4].slice(0,c.seats).map(k=>(t.rank[k]||0)).join("-");
-        if(!confirm("この卓を締めて家計簿へ反映しますか?\n\n"+memo+"\n最終収支 "+signYen(t.net)+
-                    "\n\n締めると半荘の記録は空になります(金額は明細に残ります)")) return;
-        const bw=(bankPots()[0]||{}).id;
-        if(t.net!==0){
-          S.entries.push({id:uid(), date:todayStr(), src:"mahjong",
-            type: t.net>0?"income":"expense", category:"遊技",
-            amount: Math.abs(t.net), bwal: String(S.mjLog.bwal||bw), memo:memo});
-        }
-        /* 単価と設定は残し、その卓の記録だけ空にする */
-        const keep=Object.assign({}, S.mjLog);
-        delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle;
-        S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
-        UI.mjlForm={rank:0, uma:0};
-        save(); UI.screen="main"; render(); toast("卓を締めました "+signYen(t.net));
+        const rc=[1,2,3,4].slice(0,c.seats).map(k=>String(t.rank[k]||0));
+        UI.mjDraft={
+          id:uid(), date:todayStr(), store:"", category:"free", rule:String(c.seats),
+          startAt:"", endAt:"",
+          /* **スコア分をそのまま円で**(レート1)。素点は持っていないので金額を直接載せる */
+          score:String(t.score), scoreRate:"1",
+          chips:String(t.chip), chipRate:String(c.chipUnit),
+          ranks:[rc[0]||"", rc[1]||"", rc[2]||"", rc[3]||""],
+          /* **ゲーム代とトップ賞は既存の器にそのまま入れる**——半荘数と1着回数から
+             既存側が同じ式で計算するので、二重に持たずに済む */
+          players:[], baseFee:String(c.gameFee), topBonus:String(c.topBonus), drinkFee:"", setFee:"",
+          /* 卓の外(馬身・ゲーム代バック)は既存に器が無いので**経費のマイナス**として持たせる。
+             経費はプラスが支出なので、もらう分はマイナスで入れる */
+          expenses: (t.umaY||t.back)
+            ? [{name:"馬身・ゲーム代バック", amount:String(-(t.umaY+t.back))}] : [],
+          memo:"半荘の記録から: "+t.n+"半荘 "+rc.join("-")+
+               " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+
+               " / 卓の精算"+signYen(t.settle),
+          bwal:String(S.mjLog.bwal||(bankPots()[0]||{}).id||"")
+        };
+        UI.mjIsNew=true;
+        /* 締めた印。**保存されたら記録を空にする**——保存前に消すと戻れなくなる */
+        UI.mjlPending=true;
+        UI.screen="mahjong-edit"; render();
+        toast("店と同卓者を足して保存してください");
         return;
       }
-      /* v5.42: **設定は画面へ**(ユーザー指摘: プロンプトはマジで大変)。
-         iOSのプロンプトは**1行しか見えない**ので複数行の設定を入れる器にならない。
-         v5.31で振替を画面にしたのと同じ判断 */
       if(a==="conf"){ UI.mjcDraft={}; UI.screen="mjconf"; render(); return; }
       if(a==="add"){
         if(!f.rank){ toast("着順を選んでください"); return; }
@@ -6349,6 +6367,16 @@ function saveMj(){
   if(num(cleaned.baseFee)) S.rates.mjBase = cleaned.baseFee;
   if(num(cleaned.topBonus)) S.rates.mjTop = cleaned.topBonus;
   if(num(cleaned.drinkFee)) S.rates.mjDrink = cleaned.drinkFee;
+  /* v5.44: **半荘の記録から来たものが保存されたら、その記録を空にする**。
+     保存前に消すと「やめる」で戻れなくなるので、**保存が済んでから**片付ける。
+     単価と設定は残す(次の卓で入れ直さない) */
+  if(UI.mjlPending){
+    const keep=Object.assign({}, S.mjLog||{});
+    delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle;
+    S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
+    UI.mjlForm={rank:0, uma:0};
+    UI.mjlPending=false;
+  }
   const linkId = "mj-"+m.id;
   const fin = mjFinal(cleaned);
   S.entries = S.entries.filter(e=>e.id!==linkId);
