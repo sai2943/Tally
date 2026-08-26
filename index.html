@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.44 (localStorage保存・完全オフライン)
+   Tally 5.45 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -794,7 +794,12 @@ const mjGameFee = m => m.category==="free"
   : num(m.setFee);
 const mjScoreYen = m => Math.round(fnum(m.score)*fnum(m.scoreRate));
 const mjChipYen = m => Math.round(fnum(m.chips)*fnum(m.chipRate));
-const mjRaw = m => mjScoreYen(m) + mjChipYen(m);          // ゲーム代抜き(麻雀のみの収支)
+/* v5.45: **卓の外でもらう金**(馬身・ゲーム代バックなど)。
+   ユーザー指摘「ゲームバックは経費と分けるべきでは?」——**経費は出ていく金の欄**なので、
+   もらう金をマイナスで混ぜると意味が壊れる。**別の器を持たせる**。
+   `[{name,amount}]` の形は経費と同じだが、**符号の向きが逆**(プラスがもらう) */
+const mjExtraTotal = m => ((m&&m.extras)||[]).reduce((a,e)=>a+num(e.amount),0);
+const mjRaw = m => mjScoreYen(m) + mjChipYen(m) + mjExtraTotal(m);   // ゲーム代抜き(麻雀のみの収支)
 const mjExpTotal = m => (m.expenses||[]).reduce((a,e)=>a+num(e.amount),0); // セット飲食等の私的経費
 const mjFinal = m => mjRaw(m) - mjGameFee(m) - mjExpTotal(m); // ゲーム代・経費込み(家計簿へ)
 const mjAvgRank = m => {
@@ -849,7 +854,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.44";
+const APP_VERSION = "5.45";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1722,10 +1727,12 @@ function bindMjLog(){
           /* **ゲーム代とトップ賞は既存の器にそのまま入れる**——半荘数と1着回数から
              既存側が同じ式で計算するので、二重に持たずに済む */
           players:[], baseFee:String(c.gameFee), topBonus:String(c.topBonus), drinkFee:"", setFee:"",
-          /* 卓の外(馬身・ゲーム代バック)は既存に器が無いので**経費のマイナス**として持たせる。
-             経費はプラスが支出なので、もらう分はマイナスで入れる */
-          expenses: (t.umaY||t.back)
-            ? [{name:"馬身・ゲーム代バック", amount:String(-(t.umaY+t.back))}] : [],
+          expenses: [],
+          /* v5.45: **卓の外は経費と分ける**(ユーザー指摘)。しかも**馬身とバックは別々の行**に——
+             1行にまとめると内訳が読めない */
+          extras: [].concat(
+            t.umaY ? [{name:"馬身", amount:String(t.umaY)}] : [],
+            t.back ? [{name:"ゲーム代バック", amount:String(t.back)}] : []),
           memo:"半荘の記録から: "+t.n+"半荘 "+rc.join("-")+
                " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+
                " / 卓の精算"+signYen(t.settle),
@@ -6207,6 +6214,22 @@ function viewMj(){
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="まとめて入力" value="'+esc(m.setFee)+'" data-in="mjf" data-v="setFee"></div>';
   }
 
+  /* v5.45: **卓の外でもらう金**(馬身・ゲーム代バックなど)。経費とは**符号の向きが逆**なので節を分ける
+     (ユーザー指摘: ゲームバックは経費と分けるべきでは?)。**もらう分がプラス** */
+  if((m.extras||[]).length || m.category==="free"){
+    h += band("卓の外(馬身・バックなど)");
+    (m.extras||[]).forEach(x=>{
+      h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
+        '<input class="input sm" placeholder="名前" value="'+esc(x.name||"")+'" style="flex:1.2" data-in="mjename" data-v="'+x.id+'">'+
+        '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="もらう額" value="'+esc(x.amount)+'" style="flex:1;min-width:82px" data-in="mjeamount" data-v="'+x.id+'">'+
+        '<button class="xbtn" data-a="mjedel" data-v="'+x.id+'">×</button></div>';
+    });
+    h += '<button class="btn dash full" data-a="mjeadd">＋ もらう分を追加</button>';
+    if((m.extras||[]).length){
+      h += '<div class="muted mono" style="font-size:11px;margin-top:6px;text-align:right">合計 '+
+        signYen(mjExtraTotal(m))+'</div>';
+    }
+  }
   /* ----- 経費(私的・スコア表には出さない) ----- */
   h += band("経費(飲食など)");
   (m.expenses||[]).forEach(x=>{
@@ -6291,6 +6314,13 @@ function bindMj(){
         else x.amount=el.value;
         refreshMj();
       }
+      /* v5.45: 卓の外(もらう分)。経費と同じ形だが**符号の向きが逆**(プラスがもらう) */
+      else if(kind==="mjename"||kind==="mjeamount"){
+        const x = (m.extras||[]).find(e=>String(e.id)===String(v));
+        if(!x) return;
+        if(kind==="mjename") x.name=el.value; else x.amount=el.value;
+        refreshMj();
+      }
       else if(kind==="mjabs"){
         const neg = String(m[v]||"").startsWith("-");
         m[v] = (neg?"-":"") + el.value.replace(/-/g,"");
@@ -6323,6 +6353,15 @@ function bindMj(){
         S.entries = S.entries.filter(e=>e.id!=="mj-"+m.id);
         S.mjSessions = (S.mjSessions||[]).filter(x=>x.id!==m.id);
         save(); UI.screen="main"; UI.mjDraft=null; render();
+      }
+      /* v5.45: 卓の外(もらう分)の追加・削除。経費と同じ形だが**符号の向きが逆** */
+      else if(a==="mjeadd"){
+        UI.mjDraft.extras=(UI.mjDraft.extras||[]).concat([{id:uid(), name:"", amount:""}]);
+        render(); return;
+      }
+      else if(a==="mjedel"){
+        UI.mjDraft.extras=(UI.mjDraft.extras||[]).filter(x=>String(x.id)!==String(v));
+        render(); return;
       }
       else if(a==="mjxadd"){ (m.expenses=m.expenses||[]).push({id:uid(),store:"",item:"",amount:""}); render(); }
       else if(a==="mjxdel"){
