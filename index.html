@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.45 (localStorage保存・完全オフライン)
+   Tally 5.46 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -854,7 +854,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.45";
+const APP_VERSION = "5.46";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -6216,6 +6216,8 @@ function viewMj(){
 
   /* v5.45: **卓の外でもらう金**(馬身・ゲーム代バックなど)。経費とは**符号の向きが逆**なので節を分ける
      (ユーザー指摘: ゲームバックは経費と分けるべきでは?)。**もらう分がプラス** */
+  /* v5.46: **描画中にデータを書き換えない**(描画は何度も走るので副作用を置かない)。
+     行が無いときは**入力欄だけを見せる**ことで「何を入れる場所か」を示す */
   if((m.extras||[]).length || m.category==="free"){
     h += band("卓の外(馬身・バックなど)");
     (m.extras||[]).forEach(x=>{
@@ -6224,6 +6226,14 @@ function viewMj(){
         '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="もらう額" value="'+esc(x.amount)+'" style="flex:1;min-width:82px" data-in="mjeamount" data-v="'+x.id+'">'+
         '<button class="xbtn" data-a="mjedel" data-v="'+x.id+'">×</button></div>';
     });
+    /* v5.46: **馬身の欄が無かった**(ユーザー指摘)。行が1つも無いときは、
+       よく使う2つを**押すだけで足せる**ようにする——追加ボタンだけでは何を入れる場所か分からない */
+    if(!(m.extras||[]).length){
+      h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
+        '<button class="btn" style="flex:1;padding:10px 0" data-a="mjepreset" data-v="馬身">＋ 馬身</button>'+
+        '<button class="btn" style="flex:1;padding:10px 0" data-a="mjepreset" data-v="ゲームバック">＋ ゲームバック</button>'+
+        '</div>';
+    }
     h += '<button class="btn dash full" data-a="mjeadd">＋ もらう分を追加</button>';
     if((m.extras||[]).length){
       h += '<div class="muted mono" style="font-size:11px;margin-top:6px;text-align:right">合計 '+
@@ -6287,6 +6297,9 @@ function mjSummary(m){
     '<span class="mono '+clsPM(v)+'" style="'+(big?"font-size:20px;font-weight:700":"")+'">'+signYen(v)+'</span></div>';
   let h = srow("スコア収支", mjScoreYen(m));
   if(num(m.chips)||fnum(m.chipRate)) h += srow("チップ収支", mjChipYen(m));
+  /* v5.46: **卓の外(馬身・バック)も内訳に出す**(ユーザー指摘: 表示したい)。
+     `mjRaw`に含まれているのに行が無いと、**合計だけ増えて理由が読めない** */
+  ((m.extras||[]).forEach(x=>{ if(num(x.amount)) h += srow(x.name||"卓の外", num(x.amount)); }));
   h += '<div class="row between" style="font-size:13px;margin:4px 0"><span class="muted">麻雀のみ収支(ゲーム代抜)</span>'+
     '<span class="mono '+clsPM(mjRaw(m))+'" style="font-weight:700">'+signYen(mjRaw(m))+'</span></div>';
   h += srow("ゲーム代", -mjGameFee(m));
@@ -6355,6 +6368,10 @@ function bindMj(){
         save(); UI.screen="main"; UI.mjDraft=null; render();
       }
       /* v5.45: 卓の外(もらう分)の追加・削除。経費と同じ形だが**符号の向きが逆** */
+      else if(a==="mjepreset"){
+        UI.mjDraft.extras=(UI.mjDraft.extras||[]).concat([{id:uid(), name:String(v), amount:""}]);
+        render(); return;
+      }
       else if(a==="mjeadd"){
         UI.mjDraft.extras=(UI.mjDraft.extras||[]).concat([{id:uid(), name:"", amount:""}]);
         render(); return;
