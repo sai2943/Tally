@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.35 (localStorage保存・完全オフライン)
+   Tally 5.36 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -849,7 +849,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.35";
+const APP_VERSION = "5.36";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -914,7 +914,8 @@ function subnavExtra(sc){
      **編集対象が無いときは出さない**(描画スイープが「本文に届かない」で捕捉した) */
   if(sc==="tredit" && UI.trForm) return [["[data-te='save']",'更新する',SV]];
   /* v5.34: 半荘の記録。**打ちながら押す**ので下バーの定位置に置く */
-  if(sc==="mjlog") return [["[data-ml='add']",'記録する',SV]];
+  if(sc==="mjlog") return [["[data-ml='add']",
+    ((UI.mjlForm&&UI.mjlForm.editIdx!=null) ? '更新する' : '記録する'), SV]];
   if(sc==="entry"){
     const f=UI.entryForm||{};
     const lb = f.type==="transfer" ? "振り替える" : (UI.editEntryId!==null ? "更新する" : "記録する");
@@ -1486,7 +1487,13 @@ function viewMjLog(){
       [1,2,3,4].slice(0,c.seats).map(k=>k+'着 '+(t.rank[k]||0)).join(' / ')+'</span></div>' : '')+
     '</div>';
   /* 入力 */
-  h+='<div class="card" style="margin-bottom:12px">'+
+  /* v5.36: **何を直しているかを出す**(ユーザー要望の修正機能)。
+     編集中と分からないまま更新するのが一番危ないので、入力の上に明示してやめる道も置く */
+  const _ed = (f.editIdx!=null && rows[f.editIdx]);
+  h+='<div class="card" style="margin-bottom:12px'+(_ed?';border-color:var(--amber)':'')+'">'+
+    (_ed ? '<div class="row between" style="align-items:center;margin-bottom:10px">'+
+      '<span class="amber" style="font-size:12px;font-weight:700">'+(num(f.editIdx)+1)+'半荘目を直す</span>'+
+      '<button class="btn" style="font-size:11px;padding:3px 12px" data-ml="cancel">やめる</button></div>' : '')+
     '<div class="fxl">着順</div>'+
     '<div class="row" style="gap:6px;margin-bottom:10px">'+
     [1,2,3,4].slice(0,c.seats).map(k=>
@@ -1502,7 +1509,7 @@ function viewMjLog(){
     (c.useUma? '<div style="margin-top:10px"><div class="fxl">馬身</div>'+
       '<input class="input mono r" type="number" inputmode="numeric" id="mjl-uma" placeholder="0" value="'+esc(f.uma)+'"></div>' : '')+
     '</div>';
-  h+='<button style="display:none" data-ml="add">記録する</button>';
+  h+='<button style="display:none" data-ml="add">'+(_ed?'更新する':'記録する')+'</button>';
   /* 記録した半荘(新しい順) */
   if(rows.length){
     h+=band("この卓の記録");
@@ -1510,7 +1517,9 @@ function viewMjLog(){
       const i=rows.length-1-ri, v=mjLogCalc(r,c);
       return '<div class="row between" style="align-items:baseline;padding:8px 0;font-size:12px'+
         (ri?';border-top:1px solid var(--line)':'')+'">'+
-        '<span class="ellip" style="min-width:0">'+
+        /* v5.36: **行の左側をタップで修正**(ユーザー要望: 誤入力を直したい)。
+           ✕(削除)とは別の要素にしてあるので、押し間違いで消えない */
+        '<span class="ellip" style="min-width:0;cursor:pointer" data-ml="edit" data-v="'+i+'">'+
         '<span class="mono muted" style="margin-right:8px">'+(i+1)+'</span>'+
         '<span style="font-weight:700">'+(r.rank||'-')+'着</span>'+
         '<span class="mono muted" style="margin-left:8px">'+(v.ten>=0?'+':'−')+Math.abs(v.ten).toLocaleString("ja-JP")+'</span>'+
@@ -1557,11 +1566,30 @@ function bindMjLog(){
         if(!confirm((i+1)+"半荘目を消しますか?")) return;
         S.mjLog.rows=rows.filter((_,k)=>k!==i); save(); render(); return;
       }
+      /* v5.36: **確定した半荘を直せる**(ユーザー要望)。行の左をタップで読み込み、
+         下バーが「更新する」に変わる。**画面を移らない**ので打ちながらでも速い */
+      if(a==="edit"){
+        const i=num(v), r=mjLogRows()[i];
+        if(!r) return;
+        UI.mjlForm={rank:num(r.rank), ten:String(r.ten), chip:String(r.chip||""),
+                    uma:String(r.uma||""), editIdx:i};
+        render(); return;
+      }
+      if(a==="cancel"){ UI.mjlForm={rank:0, ten:"", chip:"", uma:""}; render(); return; }
       if(a==="add"){
         if(!f.rank){ toast("着順を選んでください"); return; }
         if(String(f.ten).trim()===""){ toast("点棒を入れてください"); return; }
-        S.mjLog=S.mjLog||{}; S.mjLog.rows=(S.mjLog.rows||[]).concat([
-          {rank:num(f.rank), ten:num(f.ten), chip:num(f.chip), uma:num(f.uma), at:todayStr()}]);
+        S.mjLog=S.mjLog||{};
+        const row={rank:num(f.rank), ten:num(f.ten), chip:num(f.chip), uma:num(f.uma), at:todayStr()};
+        if(f.editIdx!=null && mjLogRows()[f.editIdx]){
+          /* 直すときは**その行だけ差し替える**(順番は変えない) */
+          const at=mjLogRows()[f.editIdx].at;
+          S.mjLog.rows=mjLogRows().map((x,k)=> k===num(f.editIdx) ? Object.assign(row,{at:at||row.at}) : x);
+          UI.mjlForm={rank:0, ten:"", chip:"", uma:""};
+          save(); render(); toast((num(f.editIdx)+1)+"半荘目を直しました");
+          return;
+        }
+        S.mjLog.rows=(S.mjLog.rows||[]).concat([row]);
         /* **次の半荘へすぐ入れる**ように入力を空にする(着順も外す) */
         UI.mjlForm={rank:0, ten:"", chip:"", uma:""};
         save(); render(); toast(mjLogRows().length+"半荘目を記録");
