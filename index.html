@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.34 (localStorage保存・完全オフライン)
+   Tally 5.35 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -849,7 +849,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.34";
+const APP_VERSION = "5.35";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4206,8 +4206,12 @@ function transferRows(d){
    **精算はまとめて来るが、記録は分けて持つ**——分けて持てばアプリが金額を出せる */
 function mjLogConf(){
   const c=S.mjLog||{};
+  /* v5.35: **既定を3麻・馬身ありに**(ユーザー: 3麻なので4着は不要、馬身も入れたい)。
+     打ちに行く前に設定を触らせないための既定値。4麻や馬身なしにしたければ「単価」から変えられる。
+     `useUma`は未設定なら true——**false を明示的に保存した場合だけ隠す** */
   return {tenUnit:fnum(c.tenUnit)||30, chipUnit:fnum(c.chipUnit)||50,
-          umaUnit:fnum(c.umaUnit)||0, seats:num(c.seats)||4, useUma:!!c.useUma};
+          umaUnit:fnum(c.umaUnit)||0, seats:num(c.seats)||3,
+          useUma:(c.useUma===undefined ? true : !!c.useUma)};
 }
 function mjLogRows(){ return (S.mjLog&&S.mjLog.rows)||[]; }
 function mjLogCalc(r, c){
