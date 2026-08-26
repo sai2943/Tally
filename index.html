@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.40 (localStorage保存・完全オフライン)
+   Tally 5.41 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -849,7 +849,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.40";
+const APP_VERSION = "5.41";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1559,6 +1559,11 @@ function viewMjLog(){
         '<div class="row between" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
         '<span style="font-size:13px;font-weight:700">最終収支</span>'+
         '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>'+
+        /* v5.41: **締めると家計簿へ反映される**。精算額が入って最終収支が出てから出す——
+           それ以前に押しても意味がないので、条件が揃うまで見せない */
+        '<div class="card" data-ml="close" style="cursor:pointer;margin-top:12px;border-color:var(--teal)">'+
+        '<div style="text-align:center;color:var(--teal);font-size:13px;font-weight:700">この卓を締める</div>'+
+        '<div class="muted" style="text-align:center;font-size:11px;margin-top:3px">家計簿の遊技に '+signYen(t.net)+' を計上します</div></div>'+
         '</div>'
       : '<div class="muted" style="font-size:11px;margin-top:8px">卓で払った/もらった額を入れるとスコア分が逆算されます</div>')+
     '</div>';
@@ -1618,6 +1623,32 @@ function bindMjLog(){
         if(!rows[i]) return;
         if(!confirm((i+1)+"半荘目を消しますか?")) return;
         S.mjLog.rows=rows.filter((_,k)=>k!==i); save(); render(); return;
+      }
+      /* v5.41: **卓を締めて家計簿へ反映する**(ユーザー: この記録をどう反映させますか)。
+         既存の「麻雀を記録」と**同じ経路**に乗せる——`S.entries`に`src:"mahjong"`で1件作れば、
+         軍資金の増減として家計簿に載り、可処分にも変動消費にも混ざらない(遊技は軍資金の世界)。
+         **締めたら記録を空にする**——次の卓のために。金額はエントリに残るので失われない */
+      if(a==="close"){
+        const t=mjLogTotals();
+        if(!t.n){ toast("半荘の記録がありません"); return; }
+        if(!t.settled){ toast("卓の精算額を入れてください"); return; }
+        const memo="麻雀(フリー・"+c.seats+"麻) "+t.n+"半荘 "+
+          [1,2,3,4].slice(0,c.seats).map(k=>(t.rank[k]||0)).join("-");
+        if(!confirm("この卓を締めて家計簿へ反映しますか?\n\n"+memo+"\n最終収支 "+signYen(t.net)+
+                    "\n\n締めると半荘の記録は空になります(金額は明細に残ります)")) return;
+        const bw=(bankPots()[0]||{}).id;
+        if(t.net!==0){
+          S.entries.push({id:uid(), date:todayStr(), src:"mahjong",
+            type: t.net>0?"income":"expense", category:"遊技",
+            amount: Math.abs(t.net), bwal: String(S.mjLog.bwal||bw), memo:memo});
+        }
+        /* 単価と設定は残し、その卓の記録だけ空にする */
+        const keep=Object.assign({}, S.mjLog);
+        delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle;
+        S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
+        UI.mjlForm={rank:0, uma:0};
+        save(); UI.screen="main"; render(); toast("卓を締めました "+signYen(t.net));
+        return;
       }
       if(a==="conf"){
         const c=mjLogConf();
