@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.37 (localStorage保存・完全オフライン)
+   Tally 5.40 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -849,7 +849,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.37";
+const APP_VERSION = "5.40";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1466,128 +1466,152 @@ function bindTrEdit(){
     };
   });
 }
-/* v5.37: 符号ボタン付きの数値入力。**iOSの数値キーボードにマイナスキーが無い**ので、
-   押して反転させる。入力欄は絶対値だけを持ち、符号はボタンが持つ——
-   **キーボードで「-」を打てなくても必ず入れられる** */
-function _mjlNum(key, val, ph){
-  const raw=String(val==null?"":val);
-  const neg=raw.trim().charAt(0)==="-";
-  const abs=raw.replace(/^-/,"");
-  return '<div class="row" style="gap:6px">'+
-    '<button class="btn'+(neg?' sel':'')+'" style="width:46px;padding:10px 0;font-size:15px;font-weight:700'+
-      (neg?';color:var(--red);border-color:var(--red)':'')+'" data-ml="sign" data-v="'+key+'">'+(neg?'−':'+')+'</button>'+
-    '<input class="input mono r" type="number" inputmode="numeric" id="mjl-'+key+'" placeholder="'+ph+'" value="'+esc(abs)+'" style="flex:1">'+
-    '</div>';
+/* v5.39: 精算の内訳の1行 */
+function _mjRow(lab, yen){
+  return '<div class="row between" style="font-size:12px;padding:2px 0">'+
+    '<span class="muted">'+lab+'</span>'+
+    '<span class="mono muted">'+signYen(yen)+'</span></div>';
 }
-/* v5.34: 半荘ごとの記録画面。**打ちながら使う**ので、1半荘=着順タップ+点棒+(チップ)で確定 */
+/* v5.38: 半荘の記録。**打ちながら使う**ので全部ワンタッチ。
+   チップと飛びは**半荘と非同期**(ゲーム中に発生する)ので上に独立して置く。
+   着順と馬身は半荘ごとに1タップずつ */
 function viewMjLog(){
-  const c=mjLogConf(), rows=mjLogRows(), t=mjLogTotals();
-  const f=UI.mjlForm||(UI.mjlForm={rank:0, ten:"", chip:"", uma:""});
+  const c=mjLogConf(), rows=mjLogRows(), t=mjLogTotals(), L=S.mjLog||{};
+  const f=UI.mjlForm||(UI.mjlForm={rank:0, uma:0});
+  const RANKS=[1,2,3,4].slice(0,c.seats);
   let h='<div class="hdr"><button class="navbtn" data-ml="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">半荘の記録</div>'+
     '<button class="navbtn" data-ml="conf" style="font-size:12px">単価</button></div>';
-  /* 今の合計——打っている最中に一番見たい数字 */
+  /* いま分かっている数——打っている最中に見たいのはここ */
   h+='<div class="card" style="margin-bottom:12px">'+
     '<div class="row between" style="align-items:baseline">'+
     '<span class="muted" style="font-size:12px">'+t.n+'半荘</span>'+
-    '<span class="mono '+clsPM(t.money)+'" style="font-size:26px;font-weight:700">'+signYen(t.money)+'</span></div>'+
-    '<div class="row between" style="font-size:11px;margin-top:6px">'+
-    '<span class="muted">点棒 <span class="mono">'+(t.ten>=0?'+':'−')+Math.abs(t.ten).toLocaleString("ja-JP")+'</span></span>'+
-    '<span class="muted">チップ <span class="mono">'+(t.chip>=0?'+':'−')+Math.abs(t.chip)+'</span></span>'+
-    (c.useUma?'<span class="muted">馬身 <span class="mono">'+(t.uma>=0?'+':'−')+Math.abs(t.uma)+'</span></span>':'')+
-    '</div>'+
-    (t.n? '<div class="row between" style="font-size:11px;margin-top:4px"><span class="muted">着順</span><span class="mono muted">'+
-      [1,2,3,4].slice(0,c.seats).map(k=>k+'着 '+(t.rank[k]||0)).join(' / ')+'</span></div>' : '')+
-    '</div>';
-  /* 入力 */
-  /* v5.36: **何を直しているかを出す**(ユーザー要望の修正機能)。
-     編集中と分からないまま更新するのが一番危ないので、入力の上に明示してやめる道も置く */
-  const _ed = (f.editIdx!=null && rows[f.editIdx]);
+    '<span class="mono" style="font-size:13px">'+
+      RANKS.map(k=>'<span class="muted" style="margin-left:8px">'+k+'着 <span style="color:var(--fg);font-weight:700">'+(t.rank[k]||0)+'</span></span>').join("")+
+    '</span></div>'+
+    '<div class="row between" style="font-size:12px;margin-top:8px">'+
+    '<span class="muted">チップ <span class="mono" style="color:var(--fg);font-weight:700">'+(t.chip>=0?'+':'−')+Math.abs(t.chip)+'</span>枚</span>'+
+    (c.useUma?'<span class="muted">馬身 <span class="mono" style="color:var(--fg);font-weight:700">'+(t.uma>=0?'+':'−')+Math.abs(t.uma)+'</span></span>':'')+
+    (c.useTobi?'<span class="muted">飛び <span class="mono" style="color:var(--fg);font-weight:700">'+(t.tobi>=0?'+':'−')+Math.abs(t.tobi)+'</span></span>':'')+
+    '</div></div>';
+  /* チップ(非同期)——チップ入れから抜いた/足したを押すだけ */
+  h+='<div class="card" style="margin-bottom:12px">'+
+    '<div class="row between" style="align-items:center;margin-bottom:8px">'+
+    '<span class="fxl" style="margin:0">チップ</span>'+
+    '<span class="mono" style="font-size:22px;font-weight:700">'+(t.chip>=0?'+':'−')+Math.abs(t.chip)+'</span></div>'+
+    '<div class="row" style="gap:6px">'+
+    [[-5,'−5'],[-1,'−1'],[1,'+1'],[5,'+5']].map(([d,lb])=>
+      '<button class="btn" style="flex:1;padding:12px 0;font-size:15px;font-weight:700'+
+      (d<0?';color:var(--red)':'')+'" data-ml="chip" data-v="'+d+'">'+lb+'</button>').join("")+
+    '</div></div>';
+  /* 飛び(非同期)——清算と一緒に払うので回数だけ数える */
+  if(c.useTobi){
+    h+='<div class="card" style="margin-bottom:12px">'+
+      '<div class="row between" style="align-items:center;margin-bottom:8px">'+
+      '<span class="fxl" style="margin:0">飛び</span>'+
+      '<span class="mono" style="font-size:18px;font-weight:700">'+(t.tobi>=0?'+':'−')+Math.abs(t.tobi)+'</span></div>'+
+      '<div class="row" style="gap:6px">'+
+      '<button class="btn" style="flex:1;padding:10px 0;font-size:13px;color:var(--red)" data-ml="tobi" data-v="-1">飛んだ</button>'+
+      '<button class="btn" style="flex:1;padding:10px 0;font-size:13px;color:var(--teal)" data-ml="tobi" data-v="1">飛ばした</button>'+
+      '</div></div>';
+  }
+  /* 半荘(着順+馬身をワンタッチ) */
+  const _ed=(f.editIdx!=null && rows[f.editIdx]);
   h+='<div class="card" style="margin-bottom:12px'+(_ed?';border-color:var(--amber)':'')+'">'+
     (_ed ? '<div class="row between" style="align-items:center;margin-bottom:10px">'+
       '<span class="amber" style="font-size:12px;font-weight:700">'+(num(f.editIdx)+1)+'半荘目を直す</span>'+
       '<button class="btn" style="font-size:11px;padding:3px 12px" data-ml="cancel">やめる</button></div>' : '')+
     '<div class="fxl">着順</div>'+
-    '<div class="row" style="gap:6px;margin-bottom:10px">'+
-    [1,2,3,4].slice(0,c.seats).map(k=>
-      '<button class="btn'+(f.rank===k?' sel':'')+'" style="flex:1;padding:12px 0;font-size:15px;font-weight:700" '+
+    '<div class="row" style="gap:6px;margin-bottom:'+(c.useUma?'12px':'0')+'">'+
+    RANKS.map(k=>'<button class="btn'+(f.rank===k?' sel':'')+'" style="flex:1;padding:14px 0;font-size:16px;font-weight:700" '+
       'data-ml="rank" data-v="'+k+'">'+k+'着</button>').join("")+
     '</div>'+
-    /* v5.37: **符号ボタンを付ける**(ユーザー指摘: チップと馬身のマイナスが入れられない)。
-       **iOSの数値キーボードにマイナスキーが無い**のが原因。点棒は打つ機会が多くて気づかなかったが、
-       同じ問題を3つとも抱えていた。**キーボードに頼らず、押せば符号が反転する**形にする。
-       今どちらかが一目で分かるよう、マイナスのときはボタンを赤くする */
-    '<div class="fxg">'+
-    '<div><div class="fxl">点棒<span class="muted" style="font-size:11px;margin-left:4px">下2桁は0</span></div>'+
-    _mjlNum("ten", f.ten, "321")+'</div>'+
-    '<div><div class="fxl">チップ</div>'+
-    _mjlNum("chip", f.chip, "0")+'</div>'+
-    '</div>'+
-    (c.useUma? '<div style="margin-top:10px"><div class="fxl">馬身</div>'+
-      _mjlNum("uma", f.uma, "0")+'</div>' : '')+
+    (c.useUma ? '<div class="fxl">馬身</div><div class="row" style="gap:5px">'+
+      mjUmaSteps(c.seats).map(u=>'<button class="btn'+(num(f.uma)===u?' sel':'')+'" '+
+        'style="flex:1;padding:12px 0;font-size:14px;font-weight:700'+(u<0?';color:var(--red)':'')+'" '+
+        'data-ml="uma" data-v="'+u+'">'+(u>0?'+':'−')+Math.abs(u)+'</button>').join("")+'</div>' : '')+
     '</div>';
   h+='<button style="display:none" data-ml="add">'+(_ed?'更新する':'記録する')+'</button>';
+  /* 精算——**スコアは消去法**。実際にやり取りした額を入れると残りがスコア分 */
+  h+='<div class="card" style="margin-bottom:12px">'+
+    '<div class="fxl">精算(実際の収支)</div>'+
+    '<div class="row" style="gap:6px">'+
+    '<button class="btn'+(String(L.settle||"").charAt(0)==="-"?' sel':'')+'" style="width:46px;padding:10px 0;font-size:15px;font-weight:700'+
+      (String(L.settle||"").charAt(0)==="-"?';color:var(--red);border-color:var(--red)':'')+'" data-ml="ssign">'+
+      (String(L.settle||"").charAt(0)==="-"?'−':'+')+'</button>'+
+    '<input class="input mono r" type="number" inputmode="numeric" id="mjl-settle" placeholder="0" value="'+esc(String(L.settle||"").replace(/^-/,""))+'" style="flex:1">'+
+    '</div>'+
+    (t.settled
+      ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">'+
+        (t.fee? _mjRow("ゲーム代 "+t.n+"半荘", t.fee):'')+
+        (t.top? _mjRow("トップ賞 "+(t.rank[1]||0)+"回(追加で払う)", t.top):'')+
+        (t.chip? _mjRow("チップ "+t.chip+"枚", t.chipY):'')+
+        (c.useTobi&&t.tobi? _mjRow("飛び "+t.tobi, t.tobiY):'')+
+        '<div class="row between" style="font-size:13px;padding:6px 0 0;margin-top:4px;border-top:1px solid var(--line)">'+
+        '<span style="font-weight:700">スコア分</span>'+
+        '<span class="mono '+clsPM(t.score)+'" style="font-weight:700;font-size:15px">'+signYen(t.score)+'</span></div>'+
+        ((t.umaY||t.back)
+          ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line)">'+
+            '<div class="muted" style="font-size:11px;margin-bottom:2px">卓の外</div>'+
+            (c.useUma&&t.umaY? _mjRow("馬身 "+t.uma, t.umaY):'')+
+            (t.back? _mjRow("ゲーム代バック "+t.n+"半荘", t.back):'')+'</div>'
+          : '')+
+        '<div class="row between" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
+        '<span style="font-size:13px;font-weight:700">最終収支</span>'+
+        '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>'+
+        '</div>'
+      : '<div class="muted" style="font-size:11px;margin-top:8px">卓で払った/もらった額を入れるとスコア分が逆算されます</div>')+
+    '</div>';
   /* 記録した半荘(新しい順) */
   if(rows.length){
     h+=band("この卓の記録");
     h+='<div class="card">'+rows.slice().reverse().map((r,ri)=>{
-      const i=rows.length-1-ri, v=mjLogCalc(r,c);
-      return '<div class="row between" style="align-items:baseline;padding:8px 0;font-size:12px'+
+      const i=rows.length-1-ri;
+      return '<div class="row between" style="align-items:baseline;padding:9px 0;font-size:13px'+
         (ri?';border-top:1px solid var(--line)':'')+'">'+
-        /* v5.36: **行の左側をタップで修正**(ユーザー要望: 誤入力を直したい)。
-           ✕(削除)とは別の要素にしてあるので、押し間違いで消えない */
         '<span class="ellip" style="min-width:0;cursor:pointer" data-ml="edit" data-v="'+i+'">'+
-        '<span class="mono muted" style="margin-right:8px">'+(i+1)+'</span>'+
+        '<span class="mono muted" style="margin-right:10px">'+(i+1)+'</span>'+
         '<span style="font-weight:700">'+(r.rank||'-')+'着</span>'+
-        '<span class="mono muted" style="margin-left:8px">'+(v.ten>=0?'+':'−')+Math.abs(v.ten).toLocaleString("ja-JP")+'</span>'+
-        (num(r.chip)?'<span class="mono muted" style="margin-left:6px">チップ'+(num(r.chip)>0?'+':'')+num(r.chip)+'</span>':'')+
-        (num(r.uma)?'<span class="mono muted" style="margin-left:6px">馬身'+(num(r.uma)>0?'+':'')+num(r.uma)+'</span>':'')+
+        (c.useUma&&num(r.uma)?'<span class="mono '+(num(r.uma)<0?'red':'muted')+'" style="margin-left:10px">馬身'+(num(r.uma)>0?'+':'−')+Math.abs(num(r.uma))+'</span>':'')+
         '</span>'+
-        '<span><span class="mono '+clsPM(v.money)+'" style="font-weight:700">'+signYen(v.money)+'</span>'+
-        '<span class="mono" style="color:var(--red);margin-left:10px;cursor:pointer" data-ml="del" data-v="'+i+'">✕</span></span></div>';
+        '<span class="mono" style="color:var(--red);margin-left:10px;cursor:pointer" data-ml="del" data-v="'+i+'">✕</span></div>';
     }).join("")+'</div>';
   }
   return h;
 }
 function bindMjLog(){
-  const f=UI.mjlForm||(UI.mjlForm={rank:0, ten:"", chip:"", uma:""});
+  const f=UI.mjlForm||(UI.mjlForm={rank:0, uma:0});
   /* v5.26の教訓: **`oninput`で`render()`を呼ばない**(テンキーが閉じる)。値を持つだけ。
-     v5.37: 入力欄は**絶対値**を持ち、符号はボタンが持つ。保存時に組み立てる */
-  [["ten","mjl-ten"],["chip","mjl-chip"],["uma","mjl-uma"]].forEach(([k,id])=>{
-    const el=document.getElementById(id);
-    if(el) el.oninput=e=>{
-      const neg=String(f[k]||"").trim().charAt(0)==="-";
-      const abs=String(e.target.value||"").replace(/^-/,"");
-      f[k] = abs==="" ? "" : ((neg?"-":"")+abs);
-    };
-  });
+     符号はボタンが持ち、欄は絶対値(v5.37と同じ形) */
+  const sEl=document.getElementById("mjl-settle");
+  if(sEl) sEl.oninput=e=>{
+    S.mjLog=S.mjLog||{};
+    const neg=String(S.mjLog.settle||"").trim().charAt(0)==="-";
+    const abs=String(e.target.value||"").replace(/^-/,"");
+    S.mjLog.settle = abs==="" ? "" : ((neg?"-":"")+abs);
+    save();
+  };
   document.querySelectorAll("[data-ml]").forEach(el=>{
     el.onclick=()=>{
       const a=el.dataset.ml, v=el.dataset.v;
+      S.mjLog=S.mjLog||{};
       if(a==="back"){ UI.screen="main"; render(); return; }
-      if(a==="rank"){ f.rank=num(v); render(); return; }
-      /* v5.37: 符号を反転する。**空欄でも押せる**(先に符号を決めてから数字を打てる) */
-      if(a==="sign"){
-        const cur=String(f[v]||"");
-        f[v] = cur.trim().charAt(0)==="-" ? cur.replace(/^-/,"") : ("-"+cur.replace(/^-/,""));
-        render(); return;
+      /* **チップは非同期**——ゲーム中でも押せる。押すたびに累計が動く */
+      if(a==="chip"){ S.mjLog.chip=num(S.mjLog.chip)+num(v); save(); render(); return; }
+      if(a==="tobi"){ S.mjLog.tobi=num(S.mjLog.tobi)+num(v); save(); render(); return; }
+      if(a==="ssign"){
+        const cur=String(S.mjLog.settle||"");
+        S.mjLog.settle = cur.trim().charAt(0)==="-" ? cur.replace(/^-/,"") : ("-"+cur.replace(/^-/,""));
+        save(); render(); return;
       }
-      if(a==="conf"){
-        const c=mjLogConf();
-        const txt=prompt("単価と設定(1行に1つ。= の右だけ直す)",
-          "スコア単価(1000点あたり円)="+c.tenUnit+"\nチップ単価(円)="+c.chipUnit+
-          "\n馬身単価(円)="+c.umaUnit+"\n馬身を使う(1/0)="+(c.useUma?1:0)+"\n人数(3or4)="+c.seats);
-        if(txt===null) return;
-        const M={"スコア単価(1000点あたり円)":"tenUnit","チップ単価(円)":"chipUnit",
-                 "馬身単価(円)":"umaUnit","馬身を使う(1/0)":"useUma","人数(3or4)":"seats"};
-        const next=Object.assign({}, S.mjLog||{});
-        String(txt).split(/\r?\n/).forEach(ln=>{
-          const i=ln.indexOf("="); if(i<0) return;
-          const key=M[ln.slice(0,i).trim()]; if(!key) return;
-          const val=ln.slice(i+1).trim();
-          next[key] = key==="useUma" ? (num(val)===1) : fnum(val);
-        });
-        S.mjLog=next; save(); render(); return;
+      if(a==="rank"){ f.rank=num(v); render(); return; }
+      if(a==="uma"){ f.uma=(num(f.uma)===num(v)?0:num(v)); render(); return; }
+      if(a==="cancel"){ UI.mjlForm={rank:0, uma:0}; render(); return; }
+      if(a==="edit"){
+        const i=num(v), r=mjLogRows()[i];
+        if(!r) return;
+        UI.mjlForm={rank:num(r.rank), uma:num(r.uma), editIdx:i};
+        render(); return;
       }
       if(a==="del"){
         const i=num(v); const rows=mjLogRows();
@@ -1595,32 +1619,40 @@ function bindMjLog(){
         if(!confirm((i+1)+"半荘目を消しますか?")) return;
         S.mjLog.rows=rows.filter((_,k)=>k!==i); save(); render(); return;
       }
-      /* v5.36: **確定した半荘を直せる**(ユーザー要望)。行の左をタップで読み込み、
-         下バーが「更新する」に変わる。**画面を移らない**ので打ちながらでも速い */
-      if(a==="edit"){
-        const i=num(v), r=mjLogRows()[i];
-        if(!r) return;
-        UI.mjlForm={rank:num(r.rank), ten:String(r.ten), chip:String(r.chip||""),
-                    uma:String(r.uma||""), editIdx:i};
-        render(); return;
+      if(a==="conf"){
+        const c=mjLogConf();
+        const txt=prompt("単価と設定(1行に1つ。= の右だけ直す)",
+          "チップ単価(円)="+c.chipUnit+"\n馬身単価(円)="+c.umaUnit+"\n飛び単価(円)="+c.tobiUnit+
+          "\nゲーム代(半荘ごと円)="+c.gameFee+"\nトップ賞(1着ごと・追加で払う円)="+c.topBonus+
+          "\nゲーム代バック(半荘ごと円)="+c.feeBack+
+          "\n馬身を使う(1/0)="+(c.useUma?1:0)+"\n飛びを使う(1/0)="+(c.useTobi?1:0)+"\n人数(3or4)="+c.seats);
+        if(txt===null) return;
+        const M={"チップ単価(円)":"chipUnit","馬身単価(円)":"umaUnit","飛び単価(円)":"tobiUnit",
+                 "ゲーム代(半荘ごと円)":"gameFee","トップ賞(1着ごと・追加で払う円)":"topBonus",
+                 "ゲーム代バック(半荘ごと円)":"feeBack",
+                 "馬身を使う(1/0)":"useUma","飛びを使う(1/0)":"useTobi","人数(3or4)":"seats"};
+        const next=Object.assign({}, S.mjLog||{});
+        String(txt).split(/\r?\n/).forEach(ln=>{
+          const i=ln.indexOf("="); if(i<0) return;
+          const key=M[ln.slice(0,i).trim()]; if(!key) return;
+          const val=ln.slice(i+1).trim();
+          next[key] = (key==="useUma"||key==="useTobi") ? (num(val)===1) : fnum(val);
+        });
+        S.mjLog=next; save(); render(); return;
       }
-      if(a==="cancel"){ UI.mjlForm={rank:0, ten:"", chip:"", uma:""}; render(); return; }
       if(a==="add"){
         if(!f.rank){ toast("着順を選んでください"); return; }
-        if(String(f.ten).trim()===""){ toast("点棒を入れてください"); return; }
-        S.mjLog=S.mjLog||{};
-        const row={rank:num(f.rank), ten:num(f.ten), chip:num(f.chip), uma:num(f.uma), at:todayStr()};
+        const row={rank:num(f.rank), uma:num(f.uma), at:todayStr()};
         if(f.editIdx!=null && mjLogRows()[f.editIdx]){
-          /* 直すときは**その行だけ差し替える**(順番は変えない) */
           const at=mjLogRows()[f.editIdx].at;
           S.mjLog.rows=mjLogRows().map((x,k)=> k===num(f.editIdx) ? Object.assign(row,{at:at||row.at}) : x);
-          UI.mjlForm={rank:0, ten:"", chip:"", uma:""};
+          UI.mjlForm={rank:0, uma:0};
           save(); render(); toast((num(f.editIdx)+1)+"半荘目を直しました");
           return;
         }
         S.mjLog.rows=(S.mjLog.rows||[]).concat([row]);
-        /* **次の半荘へすぐ入れる**ように入力を空にする(着順も外す) */
-        UI.mjlForm={rank:0, ten:"", chip:"", uma:""};
+        /* **次の半荘へすぐ入れる**ように選択を外す */
+        UI.mjlForm={rank:0, uma:0};
         save(); render(); toast(mjLogRows().length+"半荘目を記録");
         return;
       }
@@ -1862,7 +1894,8 @@ function viewMain(){
       h += '<div class="card" data-a="mjlog" style="cursor:pointer;margin-bottom:12px">'+
         '<div class="row between" style="align-items:center">'+
         '<div><div style="font-size:13px;font-weight:600">半荘の記録</div>'+
-        (_mlt.n? '<div class="muted mono" style="font-size:11px;margin-top:2px">'+_mlt.n+'半荘 '+signYen(_mlt.money)+'</div>':'')+
+        (_mlt.n? '<div class="muted mono" style="font-size:11px;margin-top:2px">'+_mlt.n+'半荘'+
+          (_mlt.settled? ' '+signYen(_mlt.settle) : '')+'</div>':'')+
         '</div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
     }
     h += viewGameSessions();
@@ -4261,29 +4294,53 @@ function transferRows(d){
    **馬身はやる時だけ**出す(常設しない)。単価はスコアとは別。
    金額 = 点棒×スコア単価 + チップ×チップ単価 + 馬身×馬身単価。
    **精算はまとめて来るが、記録は分けて持つ**——分けて持てばアプリが金額を出せる */
+/* v5.38: **実際に打って分かったことで作り直した**(ユーザー報告)。
+   ・**半荘別のスコア記録は不要**——点棒を毎回追うのは大変
+   ・**スコアは消去法**: 精算額から チップ・馬身・飛び を引いた残りがスコア分
+   ・**チップは半荘と非同期**——ゲーム中に増減する(チップ入れから抜く/足す)
+   ・**着順と馬身はワンタッチ**——馬身は ±1〜±(人数−1) の4通り(4麻でも6通り)
+   ・**飛び賞は清算と一緒に支払いが発生**するので、飛んだ/飛ばしたを数える */
 function mjLogConf(){
   const c=S.mjLog||{};
-  /* v5.35: **既定を3麻・馬身ありに**(ユーザー: 3麻なので4着は不要、馬身も入れたい)。
-     打ちに行く前に設定を触らせないための既定値。4麻や馬身なしにしたければ「単価」から変えられる。
-     `useUma`は未設定なら true——**false を明示的に保存した場合だけ隠す** */
-  return {tenUnit:fnum(c.tenUnit)||30, chipUnit:fnum(c.chipUnit)||50,
-          umaUnit:fnum(c.umaUnit)||0, seats:num(c.seats)||3,
-          useUma:(c.useUma===undefined ? true : !!c.useUma)};
+  /* v5.39: **ゲーム代・トップ賞・バックを半荘数と着順から自動で出す**(ユーザーの実データで確定)。
+     入力するのは**卓の精算額**だけ。実額から引くので**端数処理(50円単位の切上/切捨)を知らなくてよい** */
+  return {chipUnit:fnum(c.chipUnit)||50, umaUnit:fnum(c.umaUnit)||0, tobiUnit:fnum(c.tobiUnit)||0,
+          gameFee:fnum(c.gameFee)||0, topBonus:fnum(c.topBonus)||0, feeBack:fnum(c.feeBack)||0,
+          seats:num(c.seats)||3,
+          useUma:(c.useUma===undefined ? true : !!c.useUma),
+          useTobi:(c.useTobi===undefined ? true : !!c.useTobi)};
 }
 function mjLogRows(){ return (S.mjLog&&S.mjLog.rows)||[]; }
-function mjLogCalc(r, c){
-  c=c||mjLogConf();
-  const ten=num(r.ten)*100;                 /* 下2桁は常に0 */
-  return { ten:ten,
-           money: Math.round(ten*c.tenUnit/1000) + num(r.chip)*c.chipUnit + num(r.uma)*c.umaUnit };
+/* 馬身の選べる値。3麻なら +2 +1 −1 −2 / 4麻なら +3..−3(0は無い) */
+function mjUmaSteps(seats){
+  const n=Math.max(1,(num(seats)||3)-1), out=[];
+  for(let k=n;k>=1;k--) out.push(k);
+  for(let k=1;k<=n;k++) out.push(-k);
+  return out;
 }
 function mjLogTotals(){
-  const c=mjLogConf(), rows=mjLogRows();
-  let ten=0, chip=0, uma=0, money=0; const rank={};
-  rows.forEach(r=>{ const v=mjLogCalc(r,c);
-    ten+=v.ten; chip+=num(r.chip); uma+=num(r.uma); money+=v.money;
-    if(r.rank) rank[r.rank]=(rank[r.rank]||0)+1; });
-  return {n:rows.length, ten:ten, chip:chip, uma:uma, money:money, rank:rank, c:c};
+  const c=mjLogConf(), rows=mjLogRows(), L=S.mjLog||{};
+  const rank={}; let uma=0;
+  rows.forEach(r=>{ if(r.rank) rank[r.rank]=(rank[r.rank]||0)+1; uma+=num(r.uma); });
+  const chip=num(L.chip), tobi=num(L.tobi), n=rows.length;
+  /* v5.39: **半荘数と着順から自動で出る分**。入力は要らない */
+  const fee   = -Math.round(n*c.gameFee);          /* ゲーム代(払う) */
+  /* v5.40【修正】**トップ賞は勝った側が追加で払う**(ユーザー指摘)。
+     トップだとゲーム代が 300+200=500円になる。v5.39で「もらう」と取り違えていた */
+  const top   = -Math.round((rank[1]||0)*c.topBonus);
+  const back  =  Math.round(n*c.feeBack);          /* ゲーム代バック(卓の外でもらう) */
+  const chipY = chip*c.chipUnit, umaY = uma*c.umaUnit, tobiY = tobi*c.tobiUnit;
+  /* **卓の中で金額が分かる分**。スコア分はここから逆算する(消去法)。
+     馬身とバックは**卓の外**でやり取りするので、卓の精算には含めない */
+  const known = chipY + tobiY + fee + top;
+  const settled = String(L.settle||"").trim()!=="";
+  const settle = num(L.settle);
+  const score = settled ? settle-known : 0;
+  return {n:n, rank:rank, uma:uma, chip:chip, tobi:tobi,
+          fee:fee, top:top, back:back, chipY:chipY, umaY:umaY, tobiY:tobiY,
+          known:known, settled:settled, settle:settle, score:score,
+          /* **最終収支 = 卓の精算 + 馬身 + バック** */
+          net: settled ? settle+umaY+back : 0, c:c};
 }
 function storeGroups(list){
   const groups=[], idxOf={};
