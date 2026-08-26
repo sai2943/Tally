@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.33 (localStorage保存・完全オフライン)
+   Tally 5.34 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -599,6 +599,8 @@ function applyData(d){
   /* v5.20: 給与試算の前提。**ホワイトリストに載せないと復元のたびに失われる**——
      v3.97のふるさと納税と全く同じ事故になるところを、不変量テストが止めた */
   S.payroll = (d.payroll && typeof d.payroll==="object") ? d.payroll : {};
+  /* v5.34: 半荘の記録。**ホワイトリストに載せないと復元のたびに失われる**(v3.97/v5.20と同じ事故) */
+  S.mjLog = (d.mjLog && typeof d.mjLog==="object") ? d.mjLog : {};
   S.invest = (d.invest && typeof d.invest==="object") ? d.invest : {policy:"",holdings:[],bufferTxns:[]};   /* v3.18: 投資台帳 */
   S.waterfall = (d.waterfall && typeof d.waterfall==="object") ? d.waterfall : {};   /* v3.23: 滝方式の定数(投資月額・目的積立月額) */
   /* v4.02: 旧goals(順次の梯子)の初期投入は廃止。目標は箱ごとに持つ。
@@ -847,7 +849,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.33";
+const APP_VERSION = "5.34";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -911,6 +913,8 @@ function subnavExtra(sc){
   /* v5.31: 振替の編集も保存は下バー(戻るの右)。削除は本文に置く——**危険な操作を定位置に置かない**。
      **編集対象が無いときは出さない**(描画スイープが「本文に届かない」で捕捉した) */
   if(sc==="tredit" && UI.trForm) return [["[data-te='save']",'更新する',SV]];
+  /* v5.34: 半荘の記録。**打ちながら押す**ので下バーの定位置に置く */
+  if(sc==="mjlog") return [["[data-ml='add']",'記録する',SV]];
   if(sc==="entry"){
     const f=UI.entryForm||{};
     const lb = f.type==="transfer" ? "振り替える" : (UI.editEntryId!==null ? "更新する" : "記録する");
@@ -1032,6 +1036,7 @@ function _renderScreen(app){
   if(UI.screen==="svdrill"){ app.innerHTML = viewSvDrill(); bindSvDrill(); return; }
   if(UI.screen==="payroll"){ app.innerHTML = viewPayroll(); bindPayroll(); return; }
   if(UI.screen==="tredit"){ app.innerHTML = viewTrEdit(); bindTrEdit(); return; }
+  if(UI.screen==="mjlog"){ app.innerHTML = viewMjLog(); bindMjLog(); return; }
   /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う */
   if(UI.screen==="monthly"){ app.innerHTML = viewMonthly(); bindMain(); return; }
   if(UI.screen==="summary"){ app.innerHTML = viewSummary(); bindMain(); return; }
@@ -1460,6 +1465,111 @@ function bindTrEdit(){
     };
   });
 }
+/* v5.34: 半荘ごとの記録画面。**打ちながら使う**ので、1半荘=着順タップ+点棒+(チップ)で確定 */
+function viewMjLog(){
+  const c=mjLogConf(), rows=mjLogRows(), t=mjLogTotals();
+  const f=UI.mjlForm||(UI.mjlForm={rank:0, ten:"", chip:"", uma:""});
+  let h='<div class="hdr"><button class="navbtn" data-ml="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">半荘の記録</div>'+
+    '<button class="navbtn" data-ml="conf" style="font-size:12px">単価</button></div>';
+  /* 今の合計——打っている最中に一番見たい数字 */
+  h+='<div class="card" style="margin-bottom:12px">'+
+    '<div class="row between" style="align-items:baseline">'+
+    '<span class="muted" style="font-size:12px">'+t.n+'半荘</span>'+
+    '<span class="mono '+clsPM(t.money)+'" style="font-size:26px;font-weight:700">'+signYen(t.money)+'</span></div>'+
+    '<div class="row between" style="font-size:11px;margin-top:6px">'+
+    '<span class="muted">点棒 <span class="mono">'+(t.ten>=0?'+':'−')+Math.abs(t.ten).toLocaleString("ja-JP")+'</span></span>'+
+    '<span class="muted">チップ <span class="mono">'+(t.chip>=0?'+':'−')+Math.abs(t.chip)+'</span></span>'+
+    (c.useUma?'<span class="muted">馬身 <span class="mono">'+(t.uma>=0?'+':'−')+Math.abs(t.uma)+'</span></span>':'')+
+    '</div>'+
+    (t.n? '<div class="row between" style="font-size:11px;margin-top:4px"><span class="muted">着順</span><span class="mono muted">'+
+      [1,2,3,4].slice(0,c.seats).map(k=>k+'着 '+(t.rank[k]||0)).join(' / ')+'</span></div>' : '')+
+    '</div>';
+  /* 入力 */
+  h+='<div class="card" style="margin-bottom:12px">'+
+    '<div class="fxl">着順</div>'+
+    '<div class="row" style="gap:6px;margin-bottom:10px">'+
+    [1,2,3,4].slice(0,c.seats).map(k=>
+      '<button class="btn'+(f.rank===k?' sel':'')+'" style="flex:1;padding:12px 0;font-size:15px;font-weight:700" '+
+      'data-ml="rank" data-v="'+k+'">'+k+'着</button>').join("")+
+    '</div>'+
+    '<div class="fxg">'+
+    '<div><div class="fxl">点棒<span class="muted" style="font-size:11px;margin-left:4px">下2桁は0</span></div>'+
+    '<input class="input mono r" type="number" inputmode="numeric" id="mjl-ten" placeholder="321" value="'+esc(f.ten)+'"></div>'+
+    '<div><div class="fxl">チップ</div>'+
+    '<input class="input mono r" type="number" inputmode="numeric" id="mjl-chip" placeholder="0" value="'+esc(f.chip)+'"></div>'+
+    '</div>'+
+    (c.useUma? '<div style="margin-top:10px"><div class="fxl">馬身</div>'+
+      '<input class="input mono r" type="number" inputmode="numeric" id="mjl-uma" placeholder="0" value="'+esc(f.uma)+'"></div>' : '')+
+    '</div>';
+  h+='<button style="display:none" data-ml="add">記録する</button>';
+  /* 記録した半荘(新しい順) */
+  if(rows.length){
+    h+=band("この卓の記録");
+    h+='<div class="card">'+rows.slice().reverse().map((r,ri)=>{
+      const i=rows.length-1-ri, v=mjLogCalc(r,c);
+      return '<div class="row between" style="align-items:baseline;padding:8px 0;font-size:12px'+
+        (ri?';border-top:1px solid var(--line)':'')+'">'+
+        '<span class="ellip" style="min-width:0">'+
+        '<span class="mono muted" style="margin-right:8px">'+(i+1)+'</span>'+
+        '<span style="font-weight:700">'+(r.rank||'-')+'着</span>'+
+        '<span class="mono muted" style="margin-left:8px">'+(v.ten>=0?'+':'−')+Math.abs(v.ten).toLocaleString("ja-JP")+'</span>'+
+        (num(r.chip)?'<span class="mono muted" style="margin-left:6px">チップ'+(num(r.chip)>0?'+':'')+num(r.chip)+'</span>':'')+
+        (num(r.uma)?'<span class="mono muted" style="margin-left:6px">馬身'+(num(r.uma)>0?'+':'')+num(r.uma)+'</span>':'')+
+        '</span>'+
+        '<span><span class="mono '+clsPM(v.money)+'" style="font-weight:700">'+signYen(v.money)+'</span>'+
+        '<span class="mono" style="color:var(--red);margin-left:10px;cursor:pointer" data-ml="del" data-v="'+i+'">✕</span></span></div>';
+    }).join("")+'</div>';
+  }
+  return h;
+}
+function bindMjLog(){
+  const f=UI.mjlForm||(UI.mjlForm={rank:0, ten:"", chip:"", uma:""});
+  /* v5.26の教訓: **`oninput`で`render()`を呼ばない**(テンキーが閉じる)。値を持つだけ */
+  [["ten","mjl-ten"],["chip","mjl-chip"],["uma","mjl-uma"]].forEach(([k,id])=>{
+    const el=document.getElementById(id); if(el) el.oninput=e=>{ f[k]=e.target.value; };
+  });
+  document.querySelectorAll("[data-ml]").forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset.ml, v=el.dataset.v;
+      if(a==="back"){ UI.screen="main"; render(); return; }
+      if(a==="rank"){ f.rank=num(v); render(); return; }
+      if(a==="conf"){
+        const c=mjLogConf();
+        const txt=prompt("単価と設定(1行に1つ。= の右だけ直す)",
+          "スコア単価(1000点あたり円)="+c.tenUnit+"\nチップ単価(円)="+c.chipUnit+
+          "\n馬身単価(円)="+c.umaUnit+"\n馬身を使う(1/0)="+(c.useUma?1:0)+"\n人数(3or4)="+c.seats);
+        if(txt===null) return;
+        const M={"スコア単価(1000点あたり円)":"tenUnit","チップ単価(円)":"chipUnit",
+                 "馬身単価(円)":"umaUnit","馬身を使う(1/0)":"useUma","人数(3or4)":"seats"};
+        const next=Object.assign({}, S.mjLog||{});
+        String(txt).split(/\r?\n/).forEach(ln=>{
+          const i=ln.indexOf("="); if(i<0) return;
+          const key=M[ln.slice(0,i).trim()]; if(!key) return;
+          const val=ln.slice(i+1).trim();
+          next[key] = key==="useUma" ? (num(val)===1) : fnum(val);
+        });
+        S.mjLog=next; save(); render(); return;
+      }
+      if(a==="del"){
+        const i=num(v); const rows=mjLogRows();
+        if(!rows[i]) return;
+        if(!confirm((i+1)+"半荘目を消しますか?")) return;
+        S.mjLog.rows=rows.filter((_,k)=>k!==i); save(); render(); return;
+      }
+      if(a==="add"){
+        if(!f.rank){ toast("着順を選んでください"); return; }
+        if(String(f.ten).trim()===""){ toast("点棒を入れてください"); return; }
+        S.mjLog=S.mjLog||{}; S.mjLog.rows=(S.mjLog.rows||[]).concat([
+          {rank:num(f.rank), ten:num(f.ten), chip:num(f.chip), uma:num(f.uma), at:todayStr()}]);
+        /* **次の半荘へすぐ入れる**ように入力を空にする(着順も外す) */
+        UI.mjlForm={rank:0, ten:"", chip:"", uma:""};
+        save(); render(); toast(mjLogRows().length+"半荘目を記録");
+        return;
+      }
+    };
+  });
+}
 function viewCatDrill(){
   const cat = UI.drillCat || "消費";
   const mk = monthKey();
@@ -1689,6 +1799,15 @@ function viewMain(){
         '<span><span class="mono '+clsPM(daidaNet)+'" style="font-size:14px;font-weight:700">'+signYen(daidaNet)+'</span>'+
         '<span class="muted" style="font-size:11px"> → 家計簿の副業へ</span></span></div>' : '')+
       '</div>';
+    /* v5.34: 半荘の記録への入口。**打っている最中に開く**ので遊技タブの上の方に置く */
+    {
+      const _mlt=mjLogTotals();
+      h += '<div class="card" data-a="mjlog" style="cursor:pointer;margin-bottom:12px">'+
+        '<div class="row between" style="align-items:center">'+
+        '<div><div style="font-size:13px;font-weight:600">半荘の記録</div>'+
+        (_mlt.n? '<div class="muted mono" style="font-size:11px;margin-top:2px">'+_mlt.n+'半荘 '+signYen(_mlt.money)+'</div>':'')+
+        '</div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
+    }
     h += viewGameSessions();
   }
 
@@ -4078,6 +4197,33 @@ function transferRows(d){
   });
   return out;
 }
+/* v5.34: **半荘ごとの記録**(ユーザー要望: フリーで打ちながらメモ代わりに最短で入れたい)。
+   **自分の分だけ**を記録する(全員分はスコア表の役目)。
+   **点棒は下2桁が常に0なので、それ以外だけ入力する**——`321`と打てば32,100点。
+   マイナスも同じ(`-105` = −10,500点)ので**トビに専用の欄が要らない**。
+   **馬身はやる時だけ**出す(常設しない)。単価はスコアとは別。
+   金額 = 点棒×スコア単価 + チップ×チップ単価 + 馬身×馬身単価。
+   **精算はまとめて来るが、記録は分けて持つ**——分けて持てばアプリが金額を出せる */
+function mjLogConf(){
+  const c=S.mjLog||{};
+  return {tenUnit:fnum(c.tenUnit)||30, chipUnit:fnum(c.chipUnit)||50,
+          umaUnit:fnum(c.umaUnit)||0, seats:num(c.seats)||4, useUma:!!c.useUma};
+}
+function mjLogRows(){ return (S.mjLog&&S.mjLog.rows)||[]; }
+function mjLogCalc(r, c){
+  c=c||mjLogConf();
+  const ten=num(r.ten)*100;                 /* 下2桁は常に0 */
+  return { ten:ten,
+           money: Math.round(ten*c.tenUnit/1000) + num(r.chip)*c.chipUnit + num(r.uma)*c.umaUnit };
+}
+function mjLogTotals(){
+  const c=mjLogConf(), rows=mjLogRows();
+  let ten=0, chip=0, uma=0, money=0; const rank={};
+  rows.forEach(r=>{ const v=mjLogCalc(r,c);
+    ten+=v.ten; chip+=num(r.chip); uma+=num(r.uma); money+=v.money;
+    if(r.rank) rank[r.rank]=(rank[r.rank]||0)+1; });
+  return {n:rows.length, ten:ten, chip:chip, uma:uma, money:money, rank:rank, c:c};
+}
 function storeGroups(list){
   const groups=[], idxOf={};
   (list||[]).forEach(e=>{
@@ -6052,6 +6198,7 @@ function bindMain(){
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
       else if(a==="svdrill"){ UI.screen="svdrill"; render(); }
       else if(a==="payroll"){ UI.screen="payroll"; render(); }
+      else if(a==="mjlog"){ UI.screen="mjlog"; render(); }
       else if(a==="catdrill"){ UI.drillCat=v; UI.drillOpenStore=null; UI.drillMode="chain"; UI.drillAssign=null; UI.drillVarOnly=(v==="消費"); UI.screen="catdrill"; render(); }
       else if(a==="setbudget"){ UI.screen="budget"; UI.budForm=null; render(); }
       else if(a==="setbudget_legacy"){ const cat=v;
