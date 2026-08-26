@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.46 (localStorage保存・完全オフライン)
+   Tally 5.47 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -792,6 +792,10 @@ const mjHanchan = m => mjRanks(m).reduce((a,b)=>a+b,0);
 const mjGameFee = m => m.category==="free"
   ? num(m.baseFee)*mjHanchan(m) + num(m.topBonus)*num((m.ranks||[])[0]) + num(m.drinkFee)
   : num(m.setFee);
+/* v5.47: **ゲーム代バックはゲーム代の払い戻し**(ユーザー指摘: 麻雀のみの収支に入ってしまっている)。
+   **馬身は麻雀の結果**なので麻雀のみ収支に入るが、**バックはゲーム代と対**になるもの。
+   半荘数×単価で出るので、既存の`baseFee`と同じ形で持たせる */
+const mjFeeBack = m => m.category==="free" ? num(m.feeBack)*mjHanchan(m) : 0;
 const mjScoreYen = m => Math.round(fnum(m.score)*fnum(m.scoreRate));
 const mjChipYen = m => Math.round(fnum(m.chips)*fnum(m.chipRate));
 /* v5.45: **卓の外でもらう金**(馬身・ゲーム代バックなど)。
@@ -801,7 +805,7 @@ const mjChipYen = m => Math.round(fnum(m.chips)*fnum(m.chipRate));
 const mjExtraTotal = m => ((m&&m.extras)||[]).reduce((a,e)=>a+num(e.amount),0);
 const mjRaw = m => mjScoreYen(m) + mjChipYen(m) + mjExtraTotal(m);   // ゲーム代抜き(麻雀のみの収支)
 const mjExpTotal = m => (m.expenses||[]).reduce((a,e)=>a+num(e.amount),0); // セット飲食等の私的経費
-const mjFinal = m => mjRaw(m) - mjGameFee(m) - mjExpTotal(m); // ゲーム代・経費込み(家計簿へ)
+const mjFinal = m => mjRaw(m) - mjGameFee(m) + mjFeeBack(m) - mjExpTotal(m); // ゲーム代・バック・経費込み(家計簿へ)
 const mjAvgRank = m => {
   const h = mjHanchan(m); if(!h) return null;
   const r = mjRanks(m);
@@ -854,7 +858,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.46";
+const APP_VERSION = "5.47";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1726,13 +1730,14 @@ function bindMjLog(){
           ranks:[rc[0]||"", rc[1]||"", rc[2]||"", rc[3]||""],
           /* **ゲーム代とトップ賞は既存の器にそのまま入れる**——半荘数と1着回数から
              既存側が同じ式で計算するので、二重に持たずに済む */
-          players:[], baseFee:String(c.gameFee), topBonus:String(c.topBonus), drinkFee:"", setFee:"",
+          /* v5.47: **バックはゲーム代側へ**(麻雀のみ収支に入れない) */
+          players:[], baseFee:String(c.gameFee), topBonus:String(c.topBonus),
+          feeBack:String(c.feeBack), drinkFee:"", setFee:"",
           expenses: [],
           /* v5.45: **卓の外は経費と分ける**(ユーザー指摘)。しかも**馬身とバックは別々の行**に——
              1行にまとめると内訳が読めない */
-          extras: [].concat(
-            t.umaY ? [{name:"馬身", amount:String(t.umaY)}] : [],
-            t.back ? [{name:"ゲーム代バック", amount:String(t.back)}] : []),
+          /* **馬身だけが卓の外**。バックはゲーム代側に渡した */
+          extras: t.umaY ? [{id:uid(), name:"馬身", amount:String(t.umaY)}] : [],
           memo:"半荘の記録から: "+t.n+"半荘 "+rc.join("-")+
                " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+
                " / 卓の精算"+signYen(t.settle),
@@ -6203,6 +6208,9 @@ function viewMj(){
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.baseFee)+'" data-in="mjf" data-v="baseFee"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">トップ賞(1着毎)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.topBonus)+'" data-in="mjf" data-v="topBonus"></div>'+
+      /* v5.47: **ゲーム代バックはここ**(ゲーム代と対になるもの)。半荘ごとにもらう額 */
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代バック(1半荘)</div>'+
+      '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.feeBack)+'" data-in="mjf" data-v="feeBack"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ドリンク/入場(1回)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.drinkFee)+'" data-in="mjf" data-v="drinkFee"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代(自動)</div>'+
@@ -6231,7 +6239,6 @@ function viewMj(){
     if(!(m.extras||[]).length){
       h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
         '<button class="btn" style="flex:1;padding:10px 0" data-a="mjepreset" data-v="馬身">＋ 馬身</button>'+
-        '<button class="btn" style="flex:1;padding:10px 0" data-a="mjepreset" data-v="ゲームバック">＋ ゲームバック</button>'+
         '</div>';
     }
     h += '<button class="btn dash full" data-a="mjeadd">＋ もらう分を追加</button>';
@@ -6303,6 +6310,8 @@ function mjSummary(m){
   h += '<div class="row between" style="font-size:13px;margin:4px 0"><span class="muted">麻雀のみ収支(ゲーム代抜)</span>'+
     '<span class="mono '+clsPM(mjRaw(m))+'" style="font-weight:700">'+signYen(mjRaw(m))+'</span></div>';
   h += srow("ゲーム代", -mjGameFee(m));
+  /* v5.47: **バックはゲーム代の直後**。麻雀のみ収支には入れない */
+  if(mjFeeBack(m)) h += srow("ゲーム代バック", mjFeeBack(m));
   if(mjExpTotal(m)) h += srow("経費(飲食など)", -mjExpTotal(m));
   h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>';
   h += srow("最終収支(家計簿へ連携)", mjFinal(m), true);
