@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.42 (localStorage保存・完全オフライン)
+   Tally 5.43 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -849,7 +849,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.42";
+const APP_VERSION = "5.43";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1623,14 +1623,17 @@ function viewMjLog(){
         '<div class="row between" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
         '<span style="font-size:13px;font-weight:700">最終収支</span>'+
         '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>'+
-        /* v5.41: **締めると家計簿へ反映される**。精算額が入って最終収支が出てから出す——
-           それ以前に押しても意味がないので、条件が揃うまで見せない */
-        '<div class="card" data-ml="close" style="cursor:pointer;margin-top:12px;border-color:var(--teal)">'+
-        '<div style="text-align:center;color:var(--teal);font-size:13px;font-weight:700">この卓を締める</div>'+
-        '<div class="muted" style="text-align:center;font-size:11px;margin-top:3px">家計簿の遊技に '+signYen(t.net)+' を計上します</div></div>'+
         '</div>'
       : '<div class="muted" style="font-size:11px;margin-top:8px">卓で払った/もらった額を入れるとスコア分が逆算されます</div>')+
     '</div>';
+  /* v5.42【バグ修正】**締めるボタンをカードの外に出す**(ユーザー指摘: 押せない)。
+     精算カードの内側に入れ子で置いていたため、親カードと重なってタップが通らなかった。
+     **押せるものはカードの入れ子にしない** */
+  if(t.settled && t.n){
+    h+='<button class="btn full" data-ml="close" style="margin-bottom:12px;padding:14px 0;'+
+      'border-color:var(--teal);color:var(--teal);font-size:14px;font-weight:700">'+
+      'この卓を締める &nbsp;'+signYen(t.net)+'</button>';
+  }
   /* 記録した半荘(新しい順) */
   if(rows.length){
     h+=band("この卓の記録");
