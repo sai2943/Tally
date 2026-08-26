@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.36 (localStorage保存・完全オフライン)
+   Tally 5.37 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -849,7 +849,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.36";
+const APP_VERSION = "5.37";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1466,6 +1466,19 @@ function bindTrEdit(){
     };
   });
 }
+/* v5.37: 符号ボタン付きの数値入力。**iOSの数値キーボードにマイナスキーが無い**ので、
+   押して反転させる。入力欄は絶対値だけを持ち、符号はボタンが持つ——
+   **キーボードで「-」を打てなくても必ず入れられる** */
+function _mjlNum(key, val, ph){
+  const raw=String(val==null?"":val);
+  const neg=raw.trim().charAt(0)==="-";
+  const abs=raw.replace(/^-/,"");
+  return '<div class="row" style="gap:6px">'+
+    '<button class="btn'+(neg?' sel':'')+'" style="width:46px;padding:10px 0;font-size:15px;font-weight:700'+
+      (neg?';color:var(--red);border-color:var(--red)':'')+'" data-ml="sign" data-v="'+key+'">'+(neg?'−':'+')+'</button>'+
+    '<input class="input mono r" type="number" inputmode="numeric" id="mjl-'+key+'" placeholder="'+ph+'" value="'+esc(abs)+'" style="flex:1">'+
+    '</div>';
+}
 /* v5.34: 半荘ごとの記録画面。**打ちながら使う**ので、1半荘=着順タップ+点棒+(チップ)で確定 */
 function viewMjLog(){
   const c=mjLogConf(), rows=mjLogRows(), t=mjLogTotals();
@@ -1500,14 +1513,18 @@ function viewMjLog(){
       '<button class="btn'+(f.rank===k?' sel':'')+'" style="flex:1;padding:12px 0;font-size:15px;font-weight:700" '+
       'data-ml="rank" data-v="'+k+'">'+k+'着</button>').join("")+
     '</div>'+
+    /* v5.37: **符号ボタンを付ける**(ユーザー指摘: チップと馬身のマイナスが入れられない)。
+       **iOSの数値キーボードにマイナスキーが無い**のが原因。点棒は打つ機会が多くて気づかなかったが、
+       同じ問題を3つとも抱えていた。**キーボードに頼らず、押せば符号が反転する**形にする。
+       今どちらかが一目で分かるよう、マイナスのときはボタンを赤くする */
     '<div class="fxg">'+
     '<div><div class="fxl">点棒<span class="muted" style="font-size:11px;margin-left:4px">下2桁は0</span></div>'+
-    '<input class="input mono r" type="number" inputmode="numeric" id="mjl-ten" placeholder="321" value="'+esc(f.ten)+'"></div>'+
+    _mjlNum("ten", f.ten, "321")+'</div>'+
     '<div><div class="fxl">チップ</div>'+
-    '<input class="input mono r" type="number" inputmode="numeric" id="mjl-chip" placeholder="0" value="'+esc(f.chip)+'"></div>'+
+    _mjlNum("chip", f.chip, "0")+'</div>'+
     '</div>'+
     (c.useUma? '<div style="margin-top:10px"><div class="fxl">馬身</div>'+
-      '<input class="input mono r" type="number" inputmode="numeric" id="mjl-uma" placeholder="0" value="'+esc(f.uma)+'"></div>' : '')+
+      _mjlNum("uma", f.uma, "0")+'</div>' : '')+
     '</div>';
   h+='<button style="display:none" data-ml="add">'+(_ed?'更新する':'記録する')+'</button>';
   /* 記録した半荘(新しい順) */
@@ -1534,15 +1551,27 @@ function viewMjLog(){
 }
 function bindMjLog(){
   const f=UI.mjlForm||(UI.mjlForm={rank:0, ten:"", chip:"", uma:""});
-  /* v5.26の教訓: **`oninput`で`render()`を呼ばない**(テンキーが閉じる)。値を持つだけ */
+  /* v5.26の教訓: **`oninput`で`render()`を呼ばない**(テンキーが閉じる)。値を持つだけ。
+     v5.37: 入力欄は**絶対値**を持ち、符号はボタンが持つ。保存時に組み立てる */
   [["ten","mjl-ten"],["chip","mjl-chip"],["uma","mjl-uma"]].forEach(([k,id])=>{
-    const el=document.getElementById(id); if(el) el.oninput=e=>{ f[k]=e.target.value; };
+    const el=document.getElementById(id);
+    if(el) el.oninput=e=>{
+      const neg=String(f[k]||"").trim().charAt(0)==="-";
+      const abs=String(e.target.value||"").replace(/^-/,"");
+      f[k] = abs==="" ? "" : ((neg?"-":"")+abs);
+    };
   });
   document.querySelectorAll("[data-ml]").forEach(el=>{
     el.onclick=()=>{
       const a=el.dataset.ml, v=el.dataset.v;
       if(a==="back"){ UI.screen="main"; render(); return; }
       if(a==="rank"){ f.rank=num(v); render(); return; }
+      /* v5.37: 符号を反転する。**空欄でも押せる**(先に符号を決めてから数字を打てる) */
+      if(a==="sign"){
+        const cur=String(f[v]||"");
+        f[v] = cur.trim().charAt(0)==="-" ? cur.replace(/^-/,"") : ("-"+cur.replace(/^-/,""));
+        render(); return;
+      }
       if(a==="conf"){
         const c=mjLogConf();
         const txt=prompt("単価と設定(1行に1つ。= の右だけ直す)",
