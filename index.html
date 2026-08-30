@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.50 (localStorage保存・完全オフライン)
+   Tally 5.51 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -860,7 +860,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.50";
+const APP_VERSION = "5.51";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1196,13 +1196,17 @@ function viewBudget(){
       '<button class="btn'+(sd?' sel':'')+'" style="flex:1;padding:12px 0;font-weight:700" data-bu="cyc" data-v="'+(sd||14)+'">給料日から</button>'+
       '</div>'+
       (sd
-        ? '<div class="fxl">開始日(毎月)</div>'+
+        ? '<div class="fxl">給料日(毎月)</div>'+
           '<input class="input mono r" type="number" inputmode="numeric" id="bu-cycday" value="'+sd+'">'+
-          '<div class="muted" style="font-size:11px;margin-top:6px">'+
-          (()=>{ const r=budgetRange(monthKey());
-            return '今の期間 <span class="mono">'+r[0]+' 〜 '+
-              (()=>{ const d=new Date(r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
-                return d.toISOString().slice(0,10); })()+'</span>'; })()+
+          /* v5.51: **土日祝なら前営業日**。実際に切れる日を出さないと確かめられない */
+          '<div class="muted" style="font-size:11px;margin-top:6px;line-height:1.7">'+
+          '土日祝・年末年始なら<b>前営業日</b>に繰り上げます。<br>'+
+          (()=>{ const W=["日","月","火","水","木","金","土"];
+            const dw=x=>W[new Date(x+"T12:00:00Z").getUTCDay()];
+            const r=budgetRange(monthKey());
+            const d=new Date(r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
+            const e=d.toISOString().slice(0,10);
+            return '今の期間 <span class="mono">'+r[0]+'('+dw(r[0])+') 〜 '+e+'('+dw(e)+')</span>'; })()+
           '</div>'
         : '<div class="muted" style="font-size:11px">1日から末日までで集計します。</div>')+
       '</div>';
@@ -2900,7 +2904,7 @@ function viewTool(){
      v5.49まで入口は「予算カード→内訳→予算変更」だけで、**期間を変えたいときに辿り着けない** */
   h += '<div class="card" data-a="setbudget" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">予算の設定</div>'+
     '<div class="muted" style="font-size:11px;margin-top:2px">'+
-    (cycleStartDay() ? '期間: 毎月'+cycleStartDay()+'日から' : '期間: 暦月')+'</div></div>'+
+    (cycleStartDay() ? '期間: 給料日('+cycleStartDay()+'日)から' : '期間: 暦月')+'</div></div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += '<div class="card" data-a="payroll" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">給与の試算</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += '<div class="card" data-a="wishlist" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">ほしい物</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
@@ -4520,16 +4524,63 @@ function storeGroups(list){
    `S.budgetCycle.startDay` が 0(既定)なら暦月、1〜28なら**その日から翌月の前日まで**。
    まずは判定を1箇所に集約する——**この時点では挙動は1ミリも変わらない**(既定=暦月)。 */
 function cycleStartDay(){ const c=S.budgetCycle||{}; const d=num(c.startDay); return (d>=1&&d<=28)?d:0; }
+/* v5.51: **給料日が土日祝なら前営業日**(ユーザー指摘)。金に関わるので祝日まで正確に見る。
+   春分・秋分は近似式(2000〜2099で有効)、ハッピーマンデー、振替休日、国民の休日まで扱う。
+   2026年の実際の祝日(5/6の振替休日・9/22の国民の休日を含む)と一致することを確認済み */
+const _JPH={};
+function jpHolidays(year){
+  if(_JPH[year]) return _JPH[year];
+  const H={}, put=(m,d)=>{ H[String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0")]=1; };
+  [[1,1],[2,11],[2,23],[4,29],[5,3],[5,4],[5,5],[8,11],[11,3],[11,23]].forEach(([m,d])=>put(m,d));
+  const nthMon=(m,n)=>{ const first=new Date(Date.UTC(year,m-1,1)).getUTCDay();
+    return 1 + ((8-first)%7) + (n-1)*7; };
+  put(1, nthMon(1,2)); put(7, nthMon(7,3)); put(9, nthMon(9,3)); put(10, nthMon(10,2));
+  put(3, Math.floor(20.8431+0.242194*(year-1980)-Math.floor((year-1980)/4)));
+  put(9, Math.floor(23.2488+0.242194*(year-1980)-Math.floor((year-1980)/4)));
+  const kk=t=>String(t.getUTCMonth()+1).padStart(2,"0")+"-"+String(t.getUTCDate()).padStart(2,"0");
+  /* 振替休日: 日曜の祝日 → 次の平日 */
+  Object.keys(H).slice().forEach(k=>{
+    const p=k.split("-").map(Number);
+    if(new Date(Date.UTC(year,p[0]-1,p[1])).getUTCDay()===0){
+      let t=new Date(Date.UTC(year,p[0]-1,p[1]+1));
+      while(H[kk(t)]) t=new Date(Date.UTC(year,t.getUTCMonth(),t.getUTCDate()+1));
+      put(t.getUTCMonth()+1, t.getUTCDate());
+    }
+  });
+  /* 国民の休日: 祝日に挟まれた平日(敬老の日と秋分の日の間など) */
+  for(let m=1;m<=12;m++) for(let d=2;d<=30;d++){
+    const k=String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+    if(H[k]) continue;
+    const cur=new Date(Date.UTC(year,m-1,d)), dow=cur.getUTCDay();
+    if(dow===0||dow===6) continue;
+    if(H[kk(new Date(Date.UTC(year,m-1,d-1)))] && H[kk(new Date(Date.UTC(year,m-1,d+1)))]) put(m,d);
+  }
+  _JPH[year]=H; return H;
+}
+/* 銀行が休みの日: 土日 + 祝日 + 年末年始(12/31・1/2・1/3) */
+function isBankHoliday(y, m, d){
+  const t=new Date(Date.UTC(y,m-1,d)), dow=t.getUTCDay();
+  if(dow===0||dow===6) return true;
+  const key=String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+  if(jpHolidays(y)[key]) return true;
+  return key==="12-31"||key==="01-02"||key==="01-03";
+}
+/* 給料日: 設定日が銀行休業なら**前営業日へ繰り上げ**。日付文字列を返す */
+function paydayOf(y, m, day){
+  let t=new Date(Date.UTC(y, m-1, day));
+  while(isBankHoliday(t.getUTCFullYear(), t.getUTCMonth()+1, t.getUTCDate()))
+    t=new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()-1));
+  return t.toISOString().slice(0,10);
+}
 /* mk("2026-08")が指す予算期間 [開始, 終了] を返す(終了は含む) */
 function budgetRange(mk){
   const sd=cycleStartDay();
   if(!sd) return [mk+"-01", mk+"-99"];          /* 暦月。"-99"で末日を含む */
   const y=parseInt(String(mk).slice(0,4),10), m=parseInt(String(mk).slice(5,7),10);
-  const pad=n=>String(n).padStart(2,"0");
-  const start=mk+"-"+pad(sd);
   const ny=(m===12)?y+1:y, nm=(m===12)?1:m+1;
-  /* 終了は「翌月の開始日の前日」。文字列比較で済ませるため、翌月の開始日を排他の上限として持つ */
-  return [start, ny+"-"+pad(nm)+"-"+pad(sd)];
+  /* v5.51: **土日祝なら前営業日**。開始も終了も同じ規則で繰り上げるので、
+     次の給料日が繰り上がれば**この期間の終わりもそのぶん早くなる**(ユーザー指摘) */
+  return [paydayOf(y, m, sd), paydayOf(ny, nm, sd)];   /* 終了は排他 */
 }
 /* 日付が予算期間に入るか。**暦月と給料日サイクルの両方をここだけで扱う** */
 function inBudget(date, mk){
