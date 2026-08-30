@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.49 (localStorage保存・完全オフライン)
+   Tally 5.50 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -860,7 +860,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.49";
+const APP_VERSION = "5.50";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2896,6 +2896,12 @@ function viewTool(){
   let h = band("家計簿");
   h += '<div class="card" data-a="fixed" style="cursor:pointer"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">固定費</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   /* v5.20: 給与の試算。**残業時間から手取りを先に読む**ので、給料日を待たずに今月の枠が組める */
+  /* v5.50: **予算の設定に管理タブから入れる**(ユーザー指摘: どこから期間を変えるの)。
+     v5.49まで入口は「予算カード→内訳→予算変更」だけで、**期間を変えたいときに辿り着けない** */
+  h += '<div class="card" data-a="setbudget" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">予算の設定</div>'+
+    '<div class="muted" style="font-size:11px;margin-top:2px">'+
+    (cycleStartDay() ? '期間: 毎月'+cycleStartDay()+'日から' : '期間: 暦月')+'</div></div>'+
+    '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += '<div class="card" data-a="payroll" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">給与の試算</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += '<div class="card" data-a="wishlist" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">ほしい物</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   /* v3.38: ふるさと納税 残枠カード。限度額の計算は外部シミュレーター(税制の毎年改正を追わない=時価不追随と同型)。
