@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.47 (localStorage保存・完全オフライン)
+   Tally 5.48 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -858,7 +858,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.47";
+const APP_VERSION = "5.48";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4206,8 +4206,10 @@ function nextIncomeDate(){
 function futureNet(mk){
   const t=todayStr();
   const nx=nextIncomeDate();
-  /* 窓の終わり: 次の収入の前日。無ければ月末まで */
-  const end=nx || (mk+"-31");
+  /* v5.48【バグ修正】窓の終わり: 次の収入の前日。無ければ**月末まで**。
+     `mk+"-31"`だと比較が`date < end`なので**31日の支出が漏れる**(実際に検査で発覚)。
+     月末を含めるため、終端は**翌月の1日**にする */
+  const end=nx || (mk+"-99");
   /* `isNetEntry`はこの位置から見えないので同じ判定を直に書く(遊技は軍資金の世界) */
   return (S.entries||[]).filter(e=>e.date&&e.date>t&&e.date<end
       &&!isNet(e))
@@ -6176,6 +6178,14 @@ function viewMj(){
       '<button class="btn '+(m.rule===v?"sel":"")+'" style="flex:1" data-a="mjrule" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
 
   h += band("スコア・チップ");
+  /* v5.48: **集計できなかったときは金額で直接入れられる**(ユーザー要望)。
+     半荘の記録から来ると単価1(=スコア欄が円そのもの)になるので、**どちらの意味か**を出す。
+     素点で入れたいなら単価をレートに直す——**入力欄はどちらでも受ける** */
+  h += '<div class="muted" style="font-size:11px;margin-bottom:6px;line-height:1.6">'+
+    (fnum(m.scoreRate)===1
+      ? '単価1なので<span class="mono">スコア欄=円</span>。素点で入れるならレート(例 30)に直してください。'
+      : '素点×レートで計算します。<span class="mono">金額で入れたいなら単価を1</span>に。')+
+    '</div>';
   h += mjSignedRow("トータルスコア", m.score, "score", "1スコア単価(円)", m.scoreRate, "scoreRate", true);
   h += mjSignedRow("トータルチップ"+(isFree?"(任意)":""), m.chips, "chips", "チップ1枚単価(円)", m.chipRate, "chipRate", false);
 
@@ -6231,7 +6241,14 @@ function viewMj(){
     (m.extras||[]).forEach(x=>{
       h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
         '<input class="input sm" placeholder="名前" value="'+esc(x.name||"")+'" style="flex:1.2" data-in="mjename" data-v="'+x.id+'">'+
-        '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="もらう額" value="'+esc(x.amount)+'" style="flex:1;min-width:82px" data-in="mjeamount" data-v="'+x.id+'">'+
+        /* v5.48: **符号ボタンを付ける**(ユーザー指摘: 馬身で負けたときにマイナス入力できない)。
+           **iOSの数値キーボードにマイナスキーが無い**——v5.37で半荘の記録に入れたのと同じ問題。
+           既にある`mjsign`/`mjabs`と同じ形にする(新しく作らない) */
+        (()=>{ const neg=String(x.amount||"").trim().charAt(0)==="-";
+          return '<button class="btn" style="width:38px;flex-shrink:0;padding:0;height:34px;font-weight:700;'+
+          'border-color:'+(neg?"var(--red)":"var(--line)")+';color:'+(neg?"var(--red)":"var(--muted)")+'" '+
+          'data-a="mjesign" data-v="'+x.id+'">'+(neg?"−":"＋")+'</button>'; })()+
+        '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="額" value="'+esc(String(x.amount||"").replace(/^-/,""))+'" style="flex:1;min-width:70px" data-in="mjeamount" data-v="'+x.id+'">'+
         '<button class="xbtn" data-a="mjedel" data-v="'+x.id+'">×</button></div>';
     });
     /* v5.46: **馬身の欄が無かった**(ユーザー指摘)。行が1つも無いときは、
@@ -6340,7 +6357,13 @@ function bindMj(){
       else if(kind==="mjename"||kind==="mjeamount"){
         const x = (m.extras||[]).find(e=>String(e.id)===String(v));
         if(!x) return;
-        if(kind==="mjename") x.name=el.value; else x.amount=el.value;
+        /* v5.48: 欄は**絶対値**を持ち、符号はボタンが持つ(v5.37と同じ形) */
+        if(kind==="mjename") x.name=el.value;
+        else {
+          const neg=String(x.amount||"").trim().charAt(0)==="-";
+          const abs=String(el.value||"").replace(/^-/,"");
+          x.amount = abs==="" ? "" : ((neg?"-":"")+abs);
+        }
         refreshMj();
       }
       else if(kind==="mjabs"){
@@ -6377,6 +6400,14 @@ function bindMj(){
         save(); UI.screen="main"; UI.mjDraft=null; render();
       }
       /* v5.45: 卓の外(もらう分)の追加・削除。経費と同じ形だが**符号の向きが逆** */
+      /* v5.48: 卓の外の符号を反転。**空欄でも押せる**(先に符号を決めてから数字を打てる) */
+      else if(a==="mjesign"){
+        const x=(UI.mjDraft.extras||[]).find(e=>String(e.id)===String(v));
+        if(!x) return;
+        const cur=String(x.amount||"");
+        x.amount = cur.trim().charAt(0)==="-" ? cur.replace(/^-/,"") : ("-"+cur.replace(/^-/,""));
+        render(); return;
+      }
       else if(a==="mjepreset"){
         UI.mjDraft.extras=(UI.mjDraft.extras||[]).concat([{id:uid(), name:String(v), amount:""}]);
         render(); return;
