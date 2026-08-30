@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.51 (localStorage保存・完全オフライン)
+   Tally 5.52 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -860,7 +860,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.51";
+const APP_VERSION = "5.52";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1077,7 +1077,11 @@ function renderKeepScroll(){
 }
 
 /* ---------- 共通部品 ---------- */
-const band = t => '<div class="band"><div class="tick"></div><div class="label">'+esc(t)+'</div><div class="rule"></div></div>';
+/* v5.52: 節の見出し。**右端に小さな補足**を置けるようにした(予算の期間など)。
+   第2引数はHTMLとして扱うので、呼ぶ側でescすること */
+const band = (t, sub) => '<div class="band"><div class="tick"></div><div class="label">'+esc(t)+'</div>'+
+  (sub ? '<div style="margin:0 8px;flex-shrink:0">'+sub+'</div>' : '')+
+  '<div class="rule"></div></div>';
 const monthNav = () =>
   '<div class="row" style="justify-content:center;margin-top:8px">'+
   '<button class="navbtn" style="font-size:22px;padding:0 12px" data-a="mprev">‹</button>'+
@@ -2209,7 +2213,21 @@ function viewLedgerBudget(mk){
   const expense = me.filter(e=>e.type==="expense").reduce((s,e)=>s+e.amount,0);
   const _sp62 = securedSplit(mk);
   let h="";
-  h += band("予算");
+  /* v5.52: **予算の期間を小さく出す**(ユーザー要望)。
+     暦月なら月表示と同じなので出さない——**同じことを二度言わない**。
+     サイクルのときだけ「どこからどこまでの話か」を出す */
+  {
+    const _r=budgetRange(mk);
+    if(cycleStartDay()){
+      /* 終わりは**次の給料日の前日**(_r[1]は排他の上限) */
+      const _e=(()=>{ const d=new Date(_r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
+        return d.toISOString().slice(0,10); })();
+      const _md=x=>x.slice(5).replace("-","/");
+      h += band("予算", '<span class="mono muted" style="font-size:11px">'+_md(_r[0])+' 〜 '+_md(_e)+'</span>');
+    } else {
+      h += band("予算");
+    }
+  }
   h += '<div class="card" style="margin-bottom:14px">';
   EXPENSE_CATS.filter(c=>c!=="承認").forEach((cat,i)=>{  /* 承認は予算バー対象外(承認プロセス自体が統制) */
     const _bv=(S.budgets||{})[cat];
