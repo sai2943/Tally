@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.48 (localStorage保存・完全オフライン)
+   Tally 5.49 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -601,6 +601,8 @@ function applyData(d){
   S.payroll = (d.payroll && typeof d.payroll==="object") ? d.payroll : {};
   /* v5.34: 半荘の記録。**ホワイトリストに載せないと復元のたびに失われる**(v3.97/v5.20と同じ事故) */
   S.mjLog = (d.mjLog && typeof d.mjLog==="object") ? d.mjLog : {};
+  /* v5.49: 予算の期間。**ホワイトリストに載せないと復元のたびに失われる**(v3.97/v5.20と同じ) */
+  S.budgetCycle = (d.budgetCycle && typeof d.budgetCycle==="object") ? d.budgetCycle : {};
   S.invest = (d.invest && typeof d.invest==="object") ? d.invest : {policy:"",holdings:[],bufferTxns:[]};   /* v3.18: 投資台帳 */
   S.waterfall = (d.waterfall && typeof d.waterfall==="object") ? d.waterfall : {};   /* v3.23: 滝方式の定数(投資月額・目的積立月額) */
   /* v4.02: 旧goals(順次の梯子)の初期投入は廃止。目標は箱ごとに持つ。
@@ -858,7 +860,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.48";
+const APP_VERSION = "5.49";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1182,6 +1184,29 @@ function viewBudget(){
     '<div class="muted" style="font-size:11px;margin-top:6px">今月の残り <span class="mono teal">¥'+ps.rest.toLocaleString("ja-JP")+'</span>'+
     ' → 貯金 ¥'+ps.sv.toLocaleString("ja-JP")+' / 投資 ¥'+ps.iv.toLocaleString("ja-JP")+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:6px">貯金が目標に達したら、この比を投資側へ移していきます。</div></div>';
+  /* v5.49: **予算の期間を選べる**(ユーザー提案: 予算の期間だけ設定できれば良いのでは)。
+     「収入を次の収入までどう使うか」が生活の実態。**明細・月別収支・税金は暦月のまま**なので、
+     切り替わるのは予算カード(可処分・枠・貯金目標・振替)だけ */
+  {
+    const sd=cycleStartDay();
+    h+=band("予算の期間");
+    h+='<div class="card" style="margin-bottom:12px">'+
+      '<div class="row" style="gap:6px;margin-bottom:10px">'+
+      '<button class="btn'+(sd?'':' sel')+'" style="flex:1;padding:12px 0;font-weight:700" data-bu="cyc" data-v="0">暦月</button>'+
+      '<button class="btn'+(sd?' sel':'')+'" style="flex:1;padding:12px 0;font-weight:700" data-bu="cyc" data-v="'+(sd||14)+'">給料日から</button>'+
+      '</div>'+
+      (sd
+        ? '<div class="fxl">開始日(毎月)</div>'+
+          '<input class="input mono r" type="number" inputmode="numeric" id="bu-cycday" value="'+sd+'">'+
+          '<div class="muted" style="font-size:11px;margin-top:6px">'+
+          (()=>{ const r=budgetRange(monthKey());
+            return '今の期間 <span class="mono">'+r[0]+' 〜 '+
+              (()=>{ const d=new Date(r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
+                return d.toISOString().slice(0,10); })()+'</span>'; })()+
+          '</div>'
+        : '<div class="muted" style="font-size:11px">1日から末日までで集計します。</div>')+
+      '</div>';
+  }
   h+='<button class="btn full sel" style="margin-top:6px;display:none" data-bu="save">保存する</button>';
   return h;
 }
@@ -1193,12 +1218,26 @@ function bindBudget(){
   ["sink","invest"].forEach(k=>{
     const el=document.getElementById("bud-"+k); if(el) el.oninput=e=>{ f[k]=e.target.value; };
   });
+  /* v5.49: 予算の期間の開始日。**入力中に再描画しない**(v5.26の教訓)。保存で効かせる */
+  { const el=document.getElementById("bu-cycday");
+    if(el) el.oninput=e=>{ f.cycday=e.target.value; }; }
   document.querySelectorAll("[data-bu]").forEach(el=>{
     el.onclick=()=>{
-      const a=el.dataset.bu;
+      const a=el.dataset.bu, v=el.dataset.v;
+      /* v5.49: 期間の切り替えは**押した瞬間に効く**(選んだ状態が見えるので確認が要らない) */
+      if(a==="cyc"){
+        S.budgetCycle=Object.assign({}, S.budgetCycle||{}, {startDay:num(v)});
+        delete UI.budForm.cycday;
+        save(); render(); return;
+      }
       if(a==="back"){ UI.budForm=null; UI.screen="main"; render(); }
       else if(a==="save"){
         const bg=S.budgets=S.budgets||{}, wf=S.waterfall||{};
+        /* v5.49: 予算の期間の開始日。1〜28だけ受ける(29〜31は無い月があるため) */
+        if(f.cycday!==undefined){
+          const d=num(f.cycday);
+          S.budgetCycle=Object.assign({}, S.budgetCycle||{}, {startDay:(d>=1&&d<=28)?d:0});
+        }
         const g=(k,s,cur)=>{ const pp=budParts(cur); return (f[k+"_"+s]!==undefined)?f[k+"_"+s]:(s==="amt"?pp.amt:pp.pct); };
         bg["消費"]=budJoin(g("varc","amt",bg["消費"]), g("varc","pct",bg["消費"]));
         bg["娯楽"]=budJoin(g("amuse","amt",bg["娯楽"]), g("amuse","pct",bg["娯楽"]));
@@ -2157,7 +2196,10 @@ function viewLedgerDetail(mk){
 /* v5.33【最適化②】**予算の節を独立させた**。意味は変えず移すだけ。
    依存は`mk`だけ——中で使う値は自分で用意する */
 function viewLedgerBudget(mk){
-  const me = monthEntries(mk);
+  /* v5.49: **予算カードだけ期間を切り替える**(ユーザー提案)。
+     明細は暦月のままなので`monthEntries`は使わず、**予算の期間で絞った並び**を使う */
+  const me = (S.entries||[]).filter(e=>inBudget(e.date, mk))
+    .sort((a,b)=> a.date<b.date?1 : a.date>b.date?-1 : (String(b.id)>String(a.id)?1:-1));
   const todayS = todayStr();
   const isNetEntry = isNet;
   const expense = me.filter(e=>e.type==="expense").reduce((s,e)=>s+e.amount,0);
@@ -4277,7 +4319,7 @@ function preSplit(mk){
      `svTx`があるもの(箱から出た)だけを除く。**箱に紐づけたかどうかは関係ない**——
      関係するのは金がどこから出たか。v4.99の「箱の有無で分ける」より線が単純で、
      v4.81の意図(フローから出た承認でバッファが薄くなるのを止める)も自然に満たす */
-  const _apr=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="expense"
+  const _apr=(S.entries||[]).filter(e=>inBudget(e.date,mk)&&e.type==="expense"
     &&e.category==="承認"&&!isNet(e)&&!String(e.svPot||"")).reduce((a,e)=>a+e.amount,0);
   const rest = Math.max(0, base - amuse - varc - _apr);
   const rs=Math.max(0, parseFloat(String(wf.sink||"").replace("%",""))||0);
@@ -4304,7 +4346,7 @@ function preSplit(mk){
    **その月の収入の過半が着弾したか**で見る。給与は当月収入の大半を占めるので、
    臨時収入では発火せず、給料が入った瞬間に発火する。カテゴリ名に依存しないのも利点 */
 function mainIncomeLanded(mk){
-  const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="income"&&!isNet(e));
+  const me=(S.entries||[]).filter(e=>inBudget(e.date,mk)&&e.type==="income"&&!isNet(e));
   const all=me.reduce((a,e)=>a+e.amount,0);
   if(all<=0) return false;
   const got=me.filter(e=>e.date<=todayStr()).reduce((a,e)=>a+e.amount,0);
@@ -4465,8 +4507,32 @@ function storeGroups(list){
   });
   return groups;
 }
+/* v5.49: **予算の期間を設定できるようにする**(ユーザー提案: 予算の期間だけ設定できれば良いのでは)。
+   「収入を次の収入までどう使うか」が生活の実態で、暦月は会計の都合——
+   ただし**明細・月別収支・税金・ふるさと納税は暦月のまま**が正しいので、
+   **予算の系統(可処分・枠・貯金目標・振替)だけ**を切り替える。
+   `S.budgetCycle.startDay` が 0(既定)なら暦月、1〜28なら**その日から翌月の前日まで**。
+   まずは判定を1箇所に集約する——**この時点では挙動は1ミリも変わらない**(既定=暦月)。 */
+function cycleStartDay(){ const c=S.budgetCycle||{}; const d=num(c.startDay); return (d>=1&&d<=28)?d:0; }
+/* mk("2026-08")が指す予算期間 [開始, 終了] を返す(終了は含む) */
+function budgetRange(mk){
+  const sd=cycleStartDay();
+  if(!sd) return [mk+"-01", mk+"-99"];          /* 暦月。"-99"で末日を含む */
+  const y=parseInt(String(mk).slice(0,4),10), m=parseInt(String(mk).slice(5,7),10);
+  const pad=n=>String(n).padStart(2,"0");
+  const start=mk+"-"+pad(sd);
+  const ny=(m===12)?y+1:y, nm=(m===12)?1:m+1;
+  /* 終了は「翌月の開始日の前日」。文字列比較で済ませるため、翌月の開始日を排他の上限として持つ */
+  return [start, ny+"-"+pad(nm)+"-"+pad(sd)];
+}
+/* 日付が予算期間に入るか。**暦月と給料日サイクルの両方をここだけで扱う** */
+function inBudget(date, mk){
+  if(!date) return false;
+  const r=budgetRange(mk);
+  return cycleStartDay() ? (date>=r[0] && date<r[1]) : String(date).startsWith(mk);
+}
 function disposableBase(mk){
-  const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
+  const me=(S.entries||[]).filter(e=>inBudget(e.date, mk));   /* v5.49: 予算の期間で絞る */
   const inc=me.filter(e=>e.type==="income"&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
   const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
   const fs=furusatoDue(mk);                      /* v3.99: 貯金で賄えない分(short)だけをフローから確保する */
@@ -4494,8 +4560,8 @@ function genreCapAmt(val, baseCap){
 function genreCapIsPct(val){ return /%$/.test(String(val==null?"":val).trim()); }
 function securedSplit(mk){
   let sv=0, iv=0;
-  ((S.invest||{}).holdings||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"").startsWith(mk)) iv+=num(b.amount); }));
-  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"").startsWith(mk)&&num(t.amount)>0) iv+=num(t.amount); });
+  ((S.invest||{}).holdings||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if(inBudget(b.date,mk)) iv+=num(b.amount); }));
+  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if(inBudget(t.date,mk)&&num(t.amount)>0) iv+=num(t.amount); });
   /* v4.84: **引き出しを差し引いた純額**にする(ユーザー指摘: 貯金を戻したのに超過が消えない)。
      v4.81で承認が振替目標を下げるようにしたので、**目標と実績が同じ額だけ動く**——
        ふるさと納税を貯金から使う: 承認で目標が¥60,000下がり、引き出しで実績も¥60,000下がる → **達成のまま**
@@ -4513,7 +4579,7 @@ function securedSplit(mk){
      内訳の合計が総額と合わなくなる。合わない内訳は無いより悪い */
   const byPot={};
   (((S.savings||{}).txns)||[]).forEach(t=>{
-    if(!(t.date||"").startsWith(mk)) return;
+    if(!inBudget(t.date,mk)) return;
     const pid=txPot(t);
     if(t.type==="deposit"){  sv+=num(t.amount); byPot[pid]=(byPot[pid]||0)+num(t.amount); }
     if(t.type==="withdraw" && !_svLink.has(String(t.id))){ sv-=num(t.amount); byPot[pid]=(byPot[pid]||0)-num(t.amount); }
@@ -4532,14 +4598,14 @@ function securedSplit(mk){
      箱同士の移動は片方が減って片方が増えるので正味ゼロ。手動の調整は入れない(v5.04)。
      **内訳が箱ごとに出せる**ので、貯金画面の進捗バーと突き合わせて確かめられる */
   (S.entries||[]).forEach(e=>{
-    if(!(e.date||"").startsWith(mk) || e.type!=="expense") return;
+    if(!inBudget(e.date,mk) || e.type!=="expense") return;
     if(!String(e.svPot||"") || e.svTx!=null) return;          /* 箱から払った分は進捗を動かさない */
     if(isNet(e)) return;
     sv += e.amount; byPot[String(e.svPot)] = (byPot[String(e.svPot)]||0) + e.amount;
   });
   /* v5.07: v5.06の`spent`/`kept`は廃止。実績は**貯金へ移した額**だけを指す(実在する数字に戻す)。
      フローから出た承認は目標側で引くようにしたので、差額(超過)は同じまま */
-  (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&(t.date||"").startsWith(mk)) sv+=num(t.amount); });
+  (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&inBudget(t.date,mk)) sv+=num(t.amount); });
   return {sv:sv, iv:iv, byPot:byPot};
 }
 function leakAgg(mk){
