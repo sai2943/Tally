@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.56 (localStorage保存・完全オフライン)
+   Tally 5.57 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -494,7 +494,8 @@ let UI = {
   draft:null, isNewSess:false,         // セッションドラフト
   entryForm:null, editEntryId:null,    // 家計簿ドラフト
   mdbForm:null,                        // 機種マスタドラフト
-  msg:""                               // backup画面メッセージ
+  msg:"",                              // backup画面メッセージ
+  detAsc:false                         // 明細の並び(v5.57・既定=新しい順。突合の時だけ古い順)
 };
 
 function migrateEntry(e){
@@ -860,7 +861,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.56";
+const APP_VERSION = "5.57";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2080,11 +2081,19 @@ function viewLedgerDetail(mk){
   const isNetEntry = isNet;
   const income = me.filter(e=>e.type==="income").reduce((s,e)=>s+e.amount,0);
   let h="";
-  h += band("明細");
+  /* v5.57: **並び順の切り替え**。既定は新しい順のまま——明細のゴール(v4.68)は
+     「上から3行で今日と昨日が読める」ことで、日々の用途はそちら。
+     古い順は**突合という別の仕事のための一時的な姿**なので`UI`に置く(保存しない)。
+     保存すると戻し忘れて、毎日逆さまの明細を見ることになる。開き直せば新しい順に戻る。 */
+  h += band("明細", '<span class="mono" style="font-size:11px;cursor:pointer;color:'+
+    (UI.detAsc?'var(--teal)':'var(--muted)')+'" data-a="detord">'+
+    (UI.detAsc?'古い順 ↑':'新しい順 ↓')+'</span>');
   const detEntries = me.filter(e=>!isNetEntry(e));
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
   const byDate = {};
   detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
+  /* v5.57: 日の中の並びも反転する(1日に複数件あると、日だけ揃えても突合の目が飛ぶ) */
+  Object.keys(byDate).forEach(d0=>{ byDate[d0]=detOrder(byDate[d0]); });
   const dayNetOf = list => list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
   const mdOf = d => d.slice(5).replace("-","/");
   /* v5.29: **同じ店をまとめる並べ方**。描画とまとめ操作の両方から呼ぶ。
@@ -2171,19 +2180,25 @@ function viewLedgerDetail(mk){
      **消さずに畳む**のは、手で入れた未来の予定支出が埋もれると困るため。畳んだ姿はv2.83の
      「🔒 X〜Y回戦 確定済み」バーと同じ語彙で、新しい概念を増やさない。
      **明細のゴール = 上から3行で今日と昨日が読めて、下へ行けば月全体を付け合わせできる。** */
-  const allDays = Object.entries(byDate).sort((a,b)=>a[0]<b[0]?1:-1);
+  /* v5.57: 日の並びも切り替える。**節の順番(予定/今日/過去)も一緒に入れ替える**——
+     日付だけ反転して節が「予定→今日→過去」のままだと、通しで読んだとき時間が2回巻き戻る */
+  const allDays = Object.entries(byDate).sort((a,b)=> UI.detAsc ? (a[0]<b[0]?-1:1) : (a[0]<b[0]?1:-1));
   const futDays = allDays.filter(x=>x[0]>todayS), pastDays = allDays.filter(x=>x[0]<=todayS);
+  /* 期間の表記は**並び順に依らず古い〜新しい**で出す(バーの中身は畳まれていて向きが見えないため) */
+  const spanOf = ds => { const a2=ds.map(x=>x[0]).slice().sort();
+    return a2.length>1 ? mdOf(a2[0])+'〜'+mdOf(a2[a2.length-1]) : mdOf(a2[0]); };
+  let hFut="", hToday="", hPast="";
   if(futDays.length){
     const fCnt=futDays.reduce((a2,x)=>a2+x[1].length,0);
     const fNet=futDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
     const fOpen=!!UI.futOpen;
-    const span=futDays.length>1 ? mdOf(futDays[futDays.length-1][0])+'〜'+mdOf(futDays[0][0]) : mdOf(futDays[0][0]);
-    h += '<div style="margin-bottom:8px">'+
+    const span=spanOf(futDays);
+    hFut += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ftoggle">'+
       '<span class="mono muted" style="font-size:11px">'+(fOpen?'▾':'▸')+' 予定 '+span+
       '<span style="margin-left:8px;font-size:11px">'+fCnt+'件</span></span>'+
       '<span class="mono '+clsPM(fNet)+'" style="font-size:13px;font-weight:700">'+signYen(fNet)+'</span></div></div>';
-    if(fOpen) futDays.forEach(x=>{ h += dayHtml(x); });
+    if(fOpen) futDays.forEach(x=>{ hFut += dayHtml(x); });
   }
   /* v5.18: **今日より前を1本に畳む**(ユーザー指摘: 1ヶ月分の日付が並んで縦が長すぎる)。
      v4.68で未来を1本にしたのに、**過去は日ごとに並んだまま**で扱いが揃っていなかった。
@@ -2192,20 +2207,21 @@ function viewLedgerDetail(mk){
      **今日の分は畳まない**(その日の記帳を確かめるのが日課の中心なので) */
   const todayDays = pastDays.filter(x=>x[0]===todayS);
   const prevDays  = pastDays.filter(x=>x[0]<todayS);
-  todayDays.forEach(x=>{ h += dayHtml(x); });
+  todayDays.forEach(x=>{ hToday += dayHtml(x); });
   if(prevDays.length){
     const pCnt=prevDays.reduce((a2,x)=>a2+x[1].length,0);
     const pNet=prevDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
     const pOpen=!!UI.pastOpen;
-    const span=prevDays.length>1 ? mdOf(prevDays[prevDays.length-1][0])+'〜'+mdOf(prevDays[0][0]) : mdOf(prevDays[0][0]);
-    h += '<div style="margin-bottom:8px">'+
+    const span=spanOf(prevDays);
+    hPast += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ptoggle">'+
       '<span class="mono muted" style="font-size:11px">'+(pOpen?'▾':'▸')+' '+span+
       '<span style="margin-left:8px;font-size:11px">'+pCnt+'件</span></span>'+
       '<span class="mono '+clsPM(pNet)+'" style="font-size:13px;font-weight:700">'+signYen(pNet)+'</span></div></div>';
-    if(pOpen) prevDays.forEach(x=>{ h += dayHtml(x); });
+    if(pOpen) prevDays.forEach(x=>{ hPast += dayHtml(x); });
   }
-  return h;
+  /* v5.57: 古い順のときは**過去 → 今日 → 予定**。時間が一方向に流れる並びにする */
+  h += UI.detAsc ? (hPast + hToday + hFut) : (hFut + hToday + hPast);
   return h;
 }
 
@@ -4540,6 +4556,11 @@ function mjLogTotals(){
           /* **最終収支 = 卓の精算 + 馬身 + バック** */
           net: settled ? settle+umaY+back : 0, c:c};
 }
+/* v5.57: **明細の並び順を決める唯一の関数**(ユーザー要望: デビットカードの明細と突合するとき順番を合わせたい)。
+   既定は新しい順(false)、突合のときだけ古い順(true)。
+   **描画とまとめ操作(stgdate/stgdel)の両方がここを通ること**——`storeGroups`の鍵は
+   `日付#並び順`なので、片方だけ反転させると**別の店を消す**(v5.29で実際にズレを検出している)。 */
+function detOrder(list){ return UI.detAsc ? (list||[]).slice().reverse() : (list||[]); }
 function storeGroups(list){
   const groups=[], idxOf={};
   (list||[]).forEach(e=>{
@@ -6764,6 +6785,9 @@ function bindMain(){
       else if(a==="ftoggle"){ UI.futOpen=!UI.futOpen; render(); }
       /* v5.18: 今日より前の開閉。既定は畳んだまま(UI.pastOpenの未定義=false) */
       else if(a==="ptoggle"){ UI.pastOpen=!UI.pastOpen; render(); }
+      /* v5.57: 明細の並び順。**古い順にした時は過去も開く**——古い順にする理由は突合しかなく、
+         突合には過去が要る。戻すときは触らない(閉じたい人は自分で閉じている) */
+      else if(a==="detord"){ UI.detAsc=!UI.detAsc; if(UI.detAsc) UI.pastOpen=true; renderKeepScroll(); }
       /* v5.30: **振替の修正・削除**(ユーザー要望: 間違えても直せない)。
          **対で作られた振替は両側を揃えて直す**——片方だけ動かすと残高が壊れる。
          保存先(sv/wl/bk)は行が覚えているので、3種類を同じ導線で扱える */
@@ -6789,7 +6813,8 @@ function bindMain(){
         const sp=String(v).split("#"), d0=sp[0], gi=parseInt(sp[1],10);
         const mk0=String(d0).slice(0,7);
         /* `isNetEntry`は描画関数のローカルなのでここからは見えない。同じ判定を直に書く */
-        const dayList=monthEntries(mk0).filter(e=>e.date===d0 && !isNet(e));
+        /* v5.57: **並び順の切り替えも同じ関数を通す**。描画だけ反転させると鍵がズレて別の店を消す */
+        const dayList=detOrder(monthEntries(mk0).filter(e=>e.date===d0 && !isNet(e)));
         const g=storeGroups(dayList)[gi];
         if(!g || !g.items.length) return;
         const nm=g.store||"この記録", n=g.items.length;
