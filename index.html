@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.57 (localStorage保存・完全オフライン)
+   Tally 5.58 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -495,7 +495,8 @@ let UI = {
   entryForm:null, editEntryId:null,    // 家計簿ドラフト
   mdbForm:null,                        // 機種マスタドラフト
   msg:"",                              // backup画面メッセージ
-  detAsc:false                         // 明細の並び(v5.57・既定=新しい順。突合の時だけ古い順)
+  detAsc:false,                        // 明細の並び(v5.57・既定=新しい順。突合の時だけ古い順)
+  recon:false, chk:{}, reconWal:null   // 照合モード(v5.58・保存しない。開き直せば消える)
 };
 
 function migrateEntry(e){
@@ -861,7 +862,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.57";
+const APP_VERSION = "5.58";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2085,15 +2086,46 @@ function viewLedgerDetail(mk){
      「上から3行で今日と昨日が読める」ことで、日々の用途はそちら。
      古い順は**突合という別の仕事のための一時的な姿**なので`UI`に置く(保存しない)。
      保存すると戻し忘れて、毎日逆さまの明細を見ることになる。開き直せば新しい順に戻る。 */
-  h += band("明細", '<span class="mono" style="font-size:11px;cursor:pointer;color:'+
-    (UI.detAsc?'var(--teal)':'var(--muted)')+'" data-a="detord">'+
-    (UI.detAsc?'古い順 ↑':'新しい順 ↓')+'</span>');
   const detEntries = me.filter(e=>!isNetEntry(e));
-  if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
   const byDate = {};
   detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
-  /* v5.57: 日の中の並びも反転する(1日に複数件あると、日だけ揃えても突合の目が飛ぶ) */
-  Object.keys(byDate).forEach(d0=>{ byDate[d0]=detOrder(byDate[d0]); });
+  /* v5.57: 日の中の並びも反転する(1日に複数件あると、日だけ揃えても突合の目が飛ぶ)
+     v5.58: 照合の財布絞り込みも同じ関数が行う。空になった日は落とす */
+  Object.keys(byDate).forEach(d0=>{ byDate[d0]=detOrder(byDate[d0]); if(!byDate[d0].length) delete byDate[d0]; });
+  const shown = Object.keys(byDate).reduce((a2,d0)=>a2.concat(byDate[d0]), []);
+  /* v5.58: **照合モード**(ユーザー要望: 金額が合わない時に直近から確認していく仕組みが要る)。
+     ・カード明細は**承認番号順**、Tallyは**記帳順**。承認番号を持っていない以上、
+       どんな規則でも行同士は揃わない——**順番で照合するのを諦める**のがこの機能の前提。
+     ・代わりに**消し込み**にする。銀行の明細を上から見て、対応する行をタップで消す。
+       **残った額が、Tallyにしか無い記録**(二重記帳・金額違い)。銀行にしか無い行=記帳漏れは
+       消えずに手元に残るので、両側から挟める。
+     ・状態は`UI`に置き**保存しない**。照合は一度きりの仕事で、翌日に持ち越すと嘘の✓が残る。 */
+  const rest = reconRest(shown);
+  h += band("明細",
+    '<span class="mono" style="font-size:11px;cursor:pointer;color:'+(UI.detAsc?'var(--teal)':'var(--muted)')+'" data-a="detord">'+
+    (UI.detAsc?'古い順 ↑':'新しい順 ↓')+'</span>'+
+    '<span class="mono" style="font-size:11px;cursor:pointer;margin-left:12px;color:'+(UI.recon?'var(--teal)':'var(--muted)')+'" data-a="recon">'+
+    (UI.recon?'照合を終える':'照合')+'</span>');
+  if(UI.recon){
+    const pots=walletPots();
+    h += '<div class="card" style="margin-bottom:10px;border-color:var(--teal)">'+
+      '<div class="row between" style="align-items:baseline">'+
+      '<span class="teal" style="font-size:12px;font-weight:700">照合中</span>'+
+      '<span><span class="mono muted" style="font-size:11px">残り '+rest.n+'件</span> '+
+      '<span class="mono teal" style="font-size:17px;font-weight:700">'+signYen(rest.net)+'</span></span></div>'+
+      /* 財布が1つしか無いなら絞り込みは出さない(押す先が1つのボタンは邪魔なだけ) */
+      (pots.length>1
+        ? '<div class="row" style="gap:6px;margin-top:9px;flex-wrap:wrap">'+
+          [{id:null,name:"すべて"}].concat(pots).map(pp=>
+            '<button class="btn'+((String(UI.reconWal||"")===String(pp.id||""))?' sel':'')+'" style="font-size:11px;padding:5px 10px" data-a="rwal" data-v="'+esc(pp.id==null?"all":pp.id)+'">'+esc(pp.name)+'</button>').join("")+
+          '</div>'
+        : '')+
+      '<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.7">'+
+      '銀行の明細を上から見て、対応する行をタップで消していきます。<br>'+
+      '消し終えて<b>残った額が、Tallyにしか無い記録</b>です。</div></div>';
+  }
+  if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
+  else if(!shown.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この財布の記録はこの月にありません。</div>';
   const dayNetOf = list => list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
   const mdOf = d => d.slice(5).replace("-","/");
   /* v5.29: **同じ店をまとめる並べ方**。描画とまとめ操作の両方から呼ぶ。
@@ -2102,12 +2134,15 @@ function viewLedgerDetail(mk){
     let h="";
     /* v3.46: 日別折り畳み(ユーザー発案)。既定=今日のみ展開、UI.dayOpenで明示開閉(セッション内保持・render()のscroll復元が効く) */
     const dayNet=dayNetOf(list);
-    const dOpen=(UI.dayOpen&&UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayS);
+    /* v5.58: 照合中は件数・純額を**残り**に差し替える(増やさず入れ替える)。
+       既定の開閉も逆にする——照合は全行を見る仕事なので、畳んでいると全部開く手間だけかかる */
+    const dRest=reconRest(list);
+    const dOpen=(UI.dayOpen&&UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(UI.recon?true:(d===todayS));
     h += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;'+(d>todayS?'opacity:.62;':'')+'" data-a="dtoggle" data-v="'+d+'">'+
       '<span class="mono muted" style="font-size:11px">'+(dOpen?'▾':'▸')+' '+d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')'+
-      '<span style="margin-left:8px;font-size:11px">'+list.length+'件</span></span>'+
-      '<span class="mono '+clsPM(dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(dayNet)+'</span></div>'+
+      '<span style="margin-left:8px;font-size:11px">'+(UI.recon?('残り '+dRest.n+'件'):(list.length+'件'))+'</span></span>'+
+      '<span class="mono '+clsPM(UI.recon?dRest.net:dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(UI.recon?dRest.net:dayNet)+'</span></div>'+
       (!dOpen?'':'<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
       (()=>{
         /* v5.00: **同じ店は1行にまとめ、タップで品目を出す**(ユーザー要望)。
@@ -2125,8 +2160,12 @@ function viewLedgerDetail(mk){
           const isFuture = e.date > todayS;
           const cc = e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
           const sep = row++ ? 'border-top:1px solid var(--line);' : '';
-          return '<div class="row" style="padding:10px 14px;cursor:pointer;'+sep+(isFuture?'opacity:.62;':'')+'" data-a="eedit" data-v="'+e.id+'">'+
+          /* v5.58: 照合中はタップの意味が変わる(✓の付け外し)。**編集は開かない**——
+             消し込みの最中に編集画面が開くと、指が滑るたびに作業が止まる */
+          const ck = UI.recon && !!((UI.chk||{})[String(e.id)]);
+          return '<div class="row" style="padding:10px 14px;cursor:pointer;'+sep+(isFuture?'opacity:.62;':'')+(ck?'opacity:.42;':'')+'" data-a="'+(UI.recon?'rchk':'eedit')+'" data-v="'+e.id+'">'+
           '<div style="flex:1;min-width:0"><div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
+          (UI.recon?'<span class="mono '+(ck?'teal':'muted')+'" style="font-size:13px;font-weight:700">'+(ck?'✓':'○')+'</span>':'')+
           '<span class="tag" style="border:1px solid '+cc+';color:'+cc+'">'+esc(e.category)+'</span>'+
           (e.src==="slot"||e.src==="mahjong"?'<span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:11px">連携</span>':'')+
           (e.src==="fixed"?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">定期</span>':'')+
@@ -2136,15 +2175,20 @@ function viewLedgerDetail(mk){
         };
         return groups.map((g,gi)=>{
           if(g.items.length<2) return entryRow(g.items[0]);
-          const key=d+"#"+gi, open=!!(UI.stOpen&&UI.stOpen[key]);
+          /* v5.58: 照合中は既定で開く(中の行を1件ずつ消すため)。
+             鍵の並びは detOrder() に一本化されているので絞り込み中でも描画と操作は一致する */
+          const key=d+"#"+gi;
+          const open=(UI.stOpen&&UI.stOpen[key]!==undefined)?UI.stOpen[key]:!!UI.recon;
           const net=dayNetOf(g.items);
           const sep = row++ ? 'border-top:1px solid var(--line);' : '';
           return '<div class="row between" style="padding:10px 14px;cursor:pointer;'+sep+'" data-a="stoggle" data-v="'+esc(key)+'">'+
             '<span class="ellip" style="flex:1;min-width:0"><span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+'</span> '+
             '<span style="font-size:12px">'+esc(g.store)+'</span>'+
-            '<span class="mono muted" style="font-size:11px;margin-left:6px">'+g.items.length+'件</span></span>'+
-            '<span class="mono '+clsPM(net)+'" style="font-size:14px">'+signYen(net)+'</span></div>'+
+            '<span class="mono muted" style="font-size:11px;margin-left:6px">'+(UI.recon?('残り '+reconRest(g.items).n+'件'):(g.items.length+'件'))+'</span></span>'+
+            '<span class="mono '+clsPM(UI.recon?reconRest(g.items).net:net)+'" style="font-size:14px">'+signYen(UI.recon?reconRest(g.items).net:net)+'</span></div>'+
             (open ? g.items.map(entryRow).join("")+
+              /* v5.58: **照合中はまとめ操作を出さない**。消し込みの最中に削除ボタンが並ぶのは危ない */
+              (UI.recon ? '' :
               /* v5.29: **開いたときだけ操作行を出す**(ユーザー要望: 日付を間違えたとき1件ずつ直すのが面倒)。
                  畳んだ状態に置くと押し間違いで消える。**固定費を含む店では削除を出さない**——
                  固定費は次回発生日やテンプレの扱いがあり、まとめて消すと壊れる(1件ずつなら既存の導線が面倒を見る) */
@@ -2152,7 +2196,7 @@ function viewLedgerDetail(mk){
               '<button class="btn" style="font-size:11px;padding:4px 10px" data-a="stgdate" data-v="'+esc(key)+'">日付をまとめて変える</button>'+
               (g.items.some(x=>x.fixedId!=null) ? ''
                 : '<button class="btn" style="font-size:11px;padding:4px 10px;color:var(--red)" data-a="stgdel" data-v="'+esc(key)+'">まとめて削除</button>')+
-              '</div>'
+              '</div>')
             : '');
         }).join("")+
         /* v5.30: **振替はその日の支出入の下に、線で区切って置く**(ユーザー要望)。
@@ -2191,13 +2235,14 @@ function viewLedgerDetail(mk){
   if(futDays.length){
     const fCnt=futDays.reduce((a2,x)=>a2+x[1].length,0);
     const fNet=futDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
+    const fRest=reconRest(futDays.reduce((a2,x)=>a2.concat(x[1]),[]));   /* v5.58 */
     const fOpen=!!UI.futOpen;
     const span=spanOf(futDays);
     hFut += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ftoggle">'+
       '<span class="mono muted" style="font-size:11px">'+(fOpen?'▾':'▸')+' 予定 '+span+
-      '<span style="margin-left:8px;font-size:11px">'+fCnt+'件</span></span>'+
-      '<span class="mono '+clsPM(fNet)+'" style="font-size:13px;font-weight:700">'+signYen(fNet)+'</span></div></div>';
+      '<span style="margin-left:8px;font-size:11px">'+(UI.recon?('残り '+fRest.n+'件'):(fCnt+'件'))+'</span></span>'+
+      '<span class="mono '+clsPM(UI.recon?fRest.net:fNet)+'" style="font-size:13px;font-weight:700">'+signYen(UI.recon?fRest.net:fNet)+'</span></div></div>';
     if(fOpen) futDays.forEach(x=>{ hFut += dayHtml(x); });
   }
   /* v5.18: **今日より前を1本に畳む**(ユーザー指摘: 1ヶ月分の日付が並んで縦が長すぎる)。
@@ -2208,16 +2253,21 @@ function viewLedgerDetail(mk){
   const todayDays = pastDays.filter(x=>x[0]===todayS);
   const prevDays  = pastDays.filter(x=>x[0]<todayS);
   todayDays.forEach(x=>{ hToday += dayHtml(x); });
-  if(prevDays.length){
+  /* v5.58: **中身が1日しかない時はバーを出さない**(ユーザーのスクショで発覚)。
+     同じ日付・同じ件数・同じ金額の行が2本並ぶだけで、畳む相手が1つなら畳む意味がない。
+     日のカード自体が▸/▾を持っているので、失われる機能は無い */
+  if(prevDays.length===1){ hPast += dayHtml(prevDays[0]); }
+  else if(prevDays.length){
     const pCnt=prevDays.reduce((a2,x)=>a2+x[1].length,0);
     const pNet=prevDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
+    const pRest=reconRest(prevDays.reduce((a2,x)=>a2.concat(x[1]),[]));   /* v5.58 */
     const pOpen=!!UI.pastOpen;
     const span=spanOf(prevDays);
     hPast += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ptoggle">'+
       '<span class="mono muted" style="font-size:11px">'+(pOpen?'▾':'▸')+' '+span+
-      '<span style="margin-left:8px;font-size:11px">'+pCnt+'件</span></span>'+
-      '<span class="mono '+clsPM(pNet)+'" style="font-size:13px;font-weight:700">'+signYen(pNet)+'</span></div></div>';
+      '<span style="margin-left:8px;font-size:11px">'+(UI.recon?('残り '+pRest.n+'件'):(pCnt+'件'))+'</span></span>'+
+      '<span class="mono '+clsPM(UI.recon?pRest.net:pNet)+'" style="font-size:13px;font-weight:700">'+signYen(UI.recon?pRest.net:pNet)+'</span></div></div>';
     if(pOpen) prevDays.forEach(x=>{ hPast += dayHtml(x); });
   }
   /* v5.57: 古い順のときは**過去 → 今日 → 予定**。時間が一方向に流れる並びにする */
@@ -4560,7 +4610,19 @@ function mjLogTotals(){
    既定は新しい順(false)、突合のときだけ古い順(true)。
    **描画とまとめ操作(stgdate/stgdel)の両方がここを通ること**——`storeGroups`の鍵は
    `日付#並び順`なので、片方だけ反転させると**別の店を消す**(v5.29で実際にズレを検出している)。 */
-function detOrder(list){ return UI.detAsc ? (list||[]).slice().reverse() : (list||[]); }
+function detOrder(list){
+  let a=(list||[]);
+  /* v5.58: 照合中に財布を絞ったら**ここで絞る**。並びと同じで、描画とまとめ操作が
+     同じ関数を通っていないと`日付#並び順`の鍵がズレて別の店を指す */
+  if(UI.recon && UI.reconWal) a=a.filter(e=>eWal(e)===String(UI.reconWal));
+  return UI.detAsc ? a.slice().reverse() : a;
+}
+/* v5.58: 未照合(チェックの付いていない)だけの件数と純額。照合の「残り」はこれで数える */
+function reconRest(list){
+  const c=UI.chk||{};
+  const rest=(list||[]).filter(e=>!c[String(e.id)]);
+  return {n:rest.length, net:rest.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0)};
+}
 function storeGroups(list){
   const groups=[], idxOf={};
   (list||[]).forEach(e=>{
@@ -6788,6 +6850,16 @@ function bindMain(){
       /* v5.57: 明細の並び順。**古い順にした時は過去も開く**——古い順にする理由は突合しかなく、
          突合には過去が要る。戻すときは触らない(閉じたい人は自分で閉じている) */
       else if(a==="detord"){ UI.detAsc=!UI.detAsc; if(UI.detAsc) UI.pastOpen=true; renderKeepScroll(); }
+      /* v5.58: 照合モード。**入る時に過去を開き、出る時にチェックを捨てる**——
+         照合は一度きりの仕事で、翌日に持ち越すと嘘の✓が残る(だからSにも保存しない) */
+      else if(a==="recon"){
+        UI.recon=!UI.recon;
+        if(UI.recon){ UI.pastOpen=true; UI.chk={}; }
+        else { UI.chk={}; UI.reconWal=null; }
+        renderKeepScroll();
+      }
+      else if(a==="rchk"){ UI.chk=UI.chk||{}; const k=String(v); if(UI.chk[k]) delete UI.chk[k]; else UI.chk[k]=true; renderKeepScroll(); }
+      else if(a==="rwal"){ UI.reconWal=(v==="all")?null:String(v); renderKeepScroll(); }
       /* v5.30: **振替の修正・削除**(ユーザー要望: 間違えても直せない)。
          **対で作られた振替は両側を揃えて直す**——片方だけ動かすと残高が壊れる。
          保存先(sv/wl/bk)は行が覚えているので、3種類を同じ導線で扱える */
