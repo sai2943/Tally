@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.58 (localStorage保存・完全オフライン)
+   Tally 5.59 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -862,7 +862,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.58";
+const APP_VERSION = "5.59";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2122,7 +2122,11 @@ function viewLedgerDetail(mk){
         : '')+
       '<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.7">'+
       '銀行の明細を上から見て、対応する行をタップで消していきます。<br>'+
-      '消し終えて<b>残った額が、Tallyにしか無い記録</b>です。</div></div>';
+      '消し終えて<b>残った額が、Tallyにしか無い記録</b>です。'+
+      /* v5.59: 予定が消えるのは仕様なので、**予定が実在する月にだけ**理由を書く
+         (無い月に出すと、何も起きていないことの説明になってしまう) */
+      (detEntries.some(e=>e.date>todayS) ? '<br>予定は相手がいないので伏せています。' : '')+
+      '</div></div>';
   }
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
   else if(!shown.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この財布の記録はこの月にありません。</div>';
@@ -4612,9 +4616,16 @@ function mjLogTotals(){
    `日付#並び順`なので、片方だけ反転させると**別の店を消す**(v5.29で実際にズレを検出している)。 */
 function detOrder(list){
   let a=(list||[]);
-  /* v5.58: 照合中に財布を絞ったら**ここで絞る**。並びと同じで、描画とまとめ操作が
-     同じ関数を通っていないと`日付#並び順`の鍵がズレて別の店を指す */
-  if(UI.recon && UI.reconWal) a=a.filter(e=>eWal(e)===String(UI.reconWal));
+  if(UI.recon){
+    /* v5.59【重要】**未来は照合できない**(ユーザー指摘)。まだ引き落とされていないので
+       銀行の明細に相手がいない。残したままだと**「残り」が永久に0にならず**、
+       残額がズレの正体を指すという照合カードの役目そのものが壊れる。 */
+    const t=todayStr();
+    a=a.filter(e=>e.date<=t);
+    /* v5.58: 財布の絞り込みも**ここで**。並びと同じで、描画とまとめ操作が
+       同じ関数を通っていないと`日付#並び順`の鍵がズレて別の店を指す */
+    if(UI.reconWal) a=a.filter(e=>eWal(e)===String(UI.reconWal));
+  }
   return UI.detAsc ? a.slice().reverse() : a;
 }
 /* v5.58: 未照合(チェックの付いていない)だけの件数と純額。照合の「残り」はこれで数える */
