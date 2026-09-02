@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.59 (localStorage保存・完全オフライン)
+   Tally 5.60 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -496,7 +496,7 @@ let UI = {
   mdbForm:null,                        // 機種マスタドラフト
   msg:"",                              // backup画面メッセージ
   detAsc:false,                        // 明細の並び(v5.57・既定=新しい順。突合の時だけ古い順)
-  recon:false, chk:{}, reconWal:null   // 照合モード(v5.58・保存しない。開き直せば消える)
+  recon:false, reconWal:null           // 照合モード(v5.58)。✓自体はエントリのe.chkに保存(v5.60)
 };
 
 function migrateEntry(e){
@@ -862,7 +862,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.59";
+const APP_VERSION = "5.60";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2126,7 +2126,13 @@ function viewLedgerDetail(mk){
       /* v5.59: 予定が消えるのは仕様なので、**予定が実在する月にだけ**理由を書く
          (無い月に出すと、何も起きていないことの説明になってしまう) */
       (detEntries.some(e=>e.date>todayS) ? '<br>予定は相手がいないので伏せています。' : '')+
-      '</div></div>';
+      '</div>'+
+      /* v5.60: ✓が保存されるようになったので**戻す道**が要る。
+         押し間違いを1件ずつ外すのは現実的でない。**照合済みが実在する時だけ出す** */
+      (detEntries.some(e=>e.chk)
+        ? '<div style="text-align:right;margin-top:8px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-a="rclr">この月の✓を消す</button></div>'
+        : '')+
+      '</div>';
   }
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
   else if(!shown.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この財布の記録はこの月にありません。</div>';
@@ -2166,7 +2172,7 @@ function viewLedgerDetail(mk){
           const sep = row++ ? 'border-top:1px solid var(--line);' : '';
           /* v5.58: 照合中はタップの意味が変わる(✓の付け外し)。**編集は開かない**——
              消し込みの最中に編集画面が開くと、指が滑るたびに作業が止まる */
-          const ck = UI.recon && !!((UI.chk||{})[String(e.id)]);
+          const ck = UI.recon && !!e.chk;
           return '<div class="row" style="padding:10px 14px;cursor:pointer;'+sep+(isFuture?'opacity:.62;':'')+(ck?'opacity:.42;':'')+'" data-a="'+(UI.recon?'rchk':'eedit')+'" data-v="'+e.id+'">'+
           '<div style="flex:1;min-width:0"><div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
           (UI.recon?'<span class="mono '+(ck?'teal':'muted')+'" style="font-size:13px;font-weight:700">'+(ck?'✓':'○')+'</span>':'')+
@@ -4628,10 +4634,13 @@ function detOrder(list){
   }
   return UI.detAsc ? a.slice().reverse() : a;
 }
-/* v5.58: 未照合(チェックの付いていない)だけの件数と純額。照合の「残り」はこれで数える */
+/* v5.58: 未照合だけの件数と純額。照合の「残り」はこれで数える。
+   v5.60: **照合済みは保存する**(ユーザー要望: 一度照合したやつはそのまま照合済にして欲しい)。
+   照合は一度きりの仕事ではなく**通帳と同じで積み上がる仕事**だった——毎回月初からやり直すなら道具にならない。
+   置き場所は`e.chk`(エントリ自身)。**消えた記録の✓が残らない**し、同期もバックアップも
+   エントリごと運ばれるので、別表を持って孤児を掃除する必要が無い。 */
 function reconRest(list){
-  const c=UI.chk||{};
-  const rest=(list||[]).filter(e=>!c[String(e.id)]);
+  const rest=(list||[]).filter(e=>!e.chk);
   return {n:rest.length, net:rest.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0)};
 }
 function storeGroups(list){
@@ -6865,12 +6874,26 @@ function bindMain(){
          照合は一度きりの仕事で、翌日に持ち越すと嘘の✓が残る(だからSにも保存しない) */
       else if(a==="recon"){
         UI.recon=!UI.recon;
-        if(UI.recon){ UI.pastOpen=true; UI.chk={}; }
-        else { UI.chk={}; UI.reconWal=null; }
+        if(UI.recon) UI.pastOpen=true; else UI.reconWal=null;
         renderKeepScroll();
       }
-      else if(a==="rchk"){ UI.chk=UI.chk||{}; const k=String(v); if(UI.chk[k]) delete UI.chk[k]; else UI.chk[k]=true; renderKeepScroll(); }
+      /* v5.60: ✓は**保存する**。次に照合を開いた時、前回消し込んだ分は消えたままで、
+         新しく増えた分だけが「残り」に出る(通帳の続きから見るのと同じ) */
+      else if(a==="rchk"){
+        const e0=(S.entries||[]).find(x=>String(x.id)===String(v));
+        if(!e0) return;
+        if(e0.chk) delete e0.chk; else e0.chk=true;
+        save(); renderKeepScroll();
+      }
       else if(a==="rwal"){ UI.reconWal=(v==="all")?null:String(v); renderKeepScroll(); }
+      else if(a==="rclr"){
+        const mk0=monthKey();
+        const n0=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk0)&&e.chk).length;
+        if(!n0){ toast("この月に照合済みはありません"); return; }
+        if(!confirm("この月の照合済み "+n0+"件を未照合に戻しますか?")) return;
+        (S.entries||[]).forEach(e=>{ if(e.date&&e.date.startsWith(mk0)) delete e.chk; });
+        save(); render(); toast(n0+"件を未照合に戻しました");
+      }
       /* v5.30: **振替の修正・削除**(ユーザー要望: 間違えても直せない)。
          **対で作られた振替は両側を揃えて直す**——片方だけ動かすと残高が壊れる。
          保存先(sv/wl/bk)は行が覚えているので、3種類を同じ導線で扱える */
@@ -6907,7 +6930,8 @@ function bindMain(){
           if(nd===null) return;
           const t=String(nd).trim();
           if(!/^\d{4}-\d{2}-\d{2}$/.test(t)){ toast("日付の形が違います(YYYY-MM-DD)"); return; }
-          g.items.forEach(e=>{ e.date=t; });
+          /* v5.60: 日付が動けば照合の前提が崩れるので✓も落とす(編集画面と同じ規則) */
+          g.items.forEach(e=>{ e.date=t; delete e.chk; });
           save(); render(); toast(nm+" の "+n+"件を "+t+" に移しました");
           return;
         }
@@ -7631,8 +7655,16 @@ function bindEntry(){
           }
         }
         if(UI.editEntryId!==null){
-          S.entries = S.entries.map(x=>x.id===UI.editEntryId ?
-            Object.assign({},x,{date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal}) : x);
+          S.entries = S.entries.map(x=>{
+            if(x.id!==UI.editEntryId) return x;
+            const y=Object.assign({},x,{date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal});
+            /* v5.60: **照合済みの中身が変わったら✓を落とす**。金額・日付・財布・種別が変われば
+               「銀行と一致していた」という事実がもう成り立たない。**品目やメモの直しでは落とさない**——
+               誤字を直すたびに照合をやり直すことになると、記録を直す動機そのものを削る */
+            if(y.chk && (String(x.date)!==String(y.date) || num(x.amount)!==num(y.amount)
+                || String(x.wal||"")!==String(y.wal||"") || String(x.type)!==String(y.type))) delete y.chk;
+            return y;
+          });
           const _e = S.entries.find(x=>x.id===UI.editEntryId);
           if(_e) entrySvSync(_e, svPot, amt, f.date, wal, svDraw);
         } else {
