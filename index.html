@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.55 (localStorage保存・完全オフライン)
+   Tally 5.56 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -860,7 +860,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.55";
+const APP_VERSION = "5.56";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1149,7 +1149,7 @@ function budJoin(amt, pct){
 }
 function viewBudget(){
   const bg=S.budgets||{}, wf=S.waterfall||{};
-  const base=disposableBase(monthKey());
+  const base=disposableBase(curBudgetMk());   /* v5.56: 今走っている期間で試算する */
   const f=UI.budForm||{};
   const row=(label, key, cur, hint)=>{
     const pp=budParts(cur);
@@ -1172,7 +1172,7 @@ function viewBudget(){
     return '<div style="flex:1"><div class="fxl">'+label+'</div>'+
       '<input class="input mono r" type="number" inputmode="numeric" id="bud-'+key+'" placeholder="0" value="'+esc(v)+'"></div>';
   };
-  const ps=preSplit(monthKey());
+  const ps=preSplit(curBudgetMk());
   let h='<div class="hdr"><button class="navbtn" data-bu="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">予算の設定</div><div style="width:44px"></div></div>';
   h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:12px">'+
@@ -1207,7 +1207,7 @@ function viewBudget(){
           '土日祝・年末年始なら<b>前営業日</b>に繰り上げます。<br>'+
           (()=>{ const W=["日","月","火","水","木","金","土"];
             const dw=x=>W[new Date(x+"T12:00:00Z").getUTCDay()];
-            const r=budgetRange(monthKey());
+            const r=budgetRange(curBudgetMk());   /* v5.56: 「今の期間」なので今日が属する期間 */
             const d=new Date(r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
             const e=d.toISOString().slice(0,10);
             return '今の期間 <span class="mono">'+r[0]+'('+dw(r[0])+') 〜 '+e+'('+dw(e)+')</span>'; })()+
@@ -1819,10 +1819,12 @@ function bindMjLog(){
 }
 function viewCatDrill(){
   const cat = UI.drillCat || "消費";
-  const mk = monthKey();
+  /* v5.56: **入口である予算バーと同じ期間で数える**。ここが暦月のままだと、
+     バーが¥53,000でも内訳を開くと¥2,000しか無い(給料日サイクルの月初)という食い違いが出る */
+  const mk = budgetMk(monthKey());
   const parts = mk.split("-");
   const isNetEntry = isNet;   /* v5.32: グローバルの判定を使う */
-  const list = S.entries.filter(e=> e.date.startsWith(mk) && e.type==="expense" && e.category===cat && !isNetEntry(e) && (!UI.drillVarOnly || !isFixedCost(e)));
+  const list = S.entries.filter(e=> inBudget(e.date, mk) && e.type==="expense" && e.category===cat && !isNetEntry(e) && (!UI.drillVarOnly || !isFixedCost(e)));
   const cap = budgetAmt((S.budgets||{})[cat], disposableBase(mk))||0;   /* v3.73: 割合対応 */
   const spent = list.reduce((a,e)=>a+e.amount,0);
   const pct = cap>0 ? Math.min(100, spent/cap*100) : 0;
@@ -1856,7 +1858,13 @@ function viewCatDrill(){
 
   let h = '<div class="row" style="align-items:center;margin-bottom:10px">'+
     '<button class="navbtn" data-a="drillback" style="font-size:14px">‹ 戻る</button>'+
-    '<div style="flex:1;text-align:center;font-weight:700;font-size:15px">'+(UI.drillVarOnly&&cat==="消費"?"変動消費":esc(cat))+'の内訳 <span class="muted" style="font-size:11px">'+num(parts[0])+'年'+num(parts[1])+'月</span></div>'+
+    '<div style="flex:1;text-align:center;font-weight:700;font-size:15px">'+(UI.drillVarOnly&&cat==="消費"?"変動消費":esc(cat))+'の内訳 <span class="muted" style="font-size:11px">'+(()=>{
+      /* v5.56: サイクル中は「◯年◯月」が期間と一致しないので、予算カードと同じ日付範囲を出す */
+      if(!cycleStartDay()) return num(parts[0])+'年'+num(parts[1])+'月';
+      const r=budgetRange(mk), d=new Date(r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
+      const _md=x=>x.slice(5).replace("-","/");
+      return _md(r[0])+' 〜 '+_md(d.toISOString().slice(0,10));
+    })()+'</span></div>'+
     '<button class="navbtn" data-a="setbudget" data-v="'+esc(cat)+'" style="font-size:12px;color:var(--teal)">予算変更</button></div>';
   h += '<div class="card" style="margin-bottom:12px">';
   if(cap>0){
@@ -1968,8 +1976,8 @@ function bindCatDrill(){
            あわせてstopPropagationで親行への伝播を止める(枠設定と行の開閉が同時に起きるのを防ぐ) */
         if(ev&&ev.stopPropagation) ev.stopPropagation();
         const gn=v; const cur=String((S.genreCaps||{})[gn]||"");
-        const _mk=monthKey();
-        const unassigned=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(_mk)&&e.type==="expense"
+        const _mk=budgetMk(monthKey());   /* v5.56: 枠の話なので予算期間で数える */
+        const unassigned=(S.entries||[]).filter(e=>e.date&&inBudget(e.date,_mk)&&e.type==="expense"
           &&e.category==="消費"&&!isFixedCost(e)&&e.src!=="slot"&&e.src!=="mahjong"
           &&!((S.genres||{})[chainKeyOf(e.store)])).reduce((a2,e)=>a2+e.amount,0);
         const warn=unassigned>0 ? "\n\n※未分類の店が ¥"+unassigned.toLocaleString("ja-JP")+" あります。\n先にジャンルを割り当てると枠が正確になります。" : "";
@@ -2366,6 +2374,9 @@ function viewLedgerBudget(mk){
 
 function viewLedger(){
   const mk = monthKey();
+  /* v5.56: **予算の系統だけ「今日が属する期間」で見る**(明細・内訳は暦月のまま)。
+     給料日サイクルでは月初〜給料日前日は前月に始まった期間の中にいる */
+  const bmk = budgetMk(mk);
   const me = monthEntries(mk);
   /* 収支カテゴリ(純額で見る独立セクション): 勝ち負けする活動。将来の投資もここに追加できる */
   const isNetEntry = isNet;   /* v5.32: グローバルの判定を使う */
@@ -2383,7 +2394,7 @@ function viewLedger(){
   /* v3.62: 見出しを「当月残金」へ(ユーザー提案)。収支は純資産の増分だが、先取り分は生活口座に残らないため
      「いくら残るか」を答えられていなかった。**先取りはmax(実績,目標)で引く**——実績だけだと月初は過大に見え
      入金した瞬間に急落する(財務状況は不変なのに数字が暴れる)。支出が予定込みなのと同じ扱いに揃える */
-  const _sp62=securedSplit(mk);
+  const _sp62=securedSplit(bmk);
   /* v3.72【設計バグ修正】max(実績,目標)は進行中の月にだけ正しい規則だった。
      終わった月に「実行されなかった計画」を引くのは事実の歪曲(7月は貯金していないのに50,000引かれて残金が−30,634になっていた)。
      過去の月は実績のみ、当月・未来は予定込み——アプリ全体の「過去は事実/未来は予定」の原則に揃える */
@@ -2398,18 +2409,18 @@ function viewLedger(){
      収支と内訳は残す(支出の見直しには要る)が、位置は下げて折りたたむ。
      ※遊技タブの月次収支は逆に主役のまま——あちらは負けが自分の判断やEVを疑う契機になる */
   let h = "";
-  h += viewLedgerBudget(mk);
+  h += viewLedgerBudget(bmk);
   /* v3.91: **先取りは常設をやめ、給料日に催促して終わったら消える**(ユーザー設計)。
      先取りは月に一度やれば終わる仕事なので、済んだ後も居座るのは計器でなく雑音。
      出す条件 = 表示中が今月 かつ (当月の収入が着弾済み or 既に一部実行済み) かつ 未達。
      達成した瞬間にカードごと消える=「終わった」ことが最も強い報酬になる。
      ※プッシュ通知は却下済み(§8)——画面上の出し分けが同じ役割を果たす。
      ※設定入口が消える件はv3.67の教訓に抵触しない: 按分比の正規の入口は予算設定画面(v3.75) */
-  const _ps74=preSplit(mk);
+  const _ps74=preSplit(bmk);
   {
-    const _fs98=furusatoDue(mk);
-    const _isCur = (mk === todayStr().slice(0,7));
-    const _incomeLanded = mainIncomeLanded(mk);   /* v4.17: 臨時収入では発火させない */
+    const _fs98=furusatoDue(mk);   /* v5.56: ふるさと納税は**暦月のまま**(年内が期限なので12月判定を動かさない) */
+    const _isCur = (bmk === curBudgetMk());
+    const _incomeLanded = mainIncomeLanded(bmk);   /* v4.17: 臨時収入では発火させない */
     /* v5.07: 判定は`sv`に戻す(実績の定義が「貯金へ移した額」に戻ったため)。**2箇所の基準は必ず揃える** */
     const _left = Math.max(0,_ps74.sv-_sp62.sv) + Math.max(0,_ps74.iv-_sp62.iv);
     const _anyDone = (_sp62.sv+_sp62.iv) > 0;
@@ -2490,12 +2501,12 @@ function viewLedger(){
        このバンド        = 済んだ月・過去の月   → 「やったか」を確認する
      過去の月は着弾を問わず出す(振り返りとして意味がある)。未来の月は出さない */
   {
-    const _p=preSplit(mk), _d=securedSplit(mk);
-    const _isCurM = (mk === todayStr().slice(0,7));
-    const _isFutM = (mk > todayStr().slice(0,7));
+    const _p=preSplit(bmk), _d=securedSplit(bmk);
+    const _isCurM = (bmk === curBudgetMk());
+    const _isFutM = (bmk > curBudgetMk());
     const _remain = Math.max(0,_p.sv-_d.sv) + Math.max(0,_p.iv-_d.iv);
-    const _nagging = _isCurM && mainIncomeLanded(mk) && _remain > 0;   /* 催促カードが出ている状態 */
-    const _show = !_isFutM && !_nagging && (!_isCurM || mainIncomeLanded(mk));
+    const _nagging = _isCurM && mainIncomeLanded(bmk) && _remain > 0;   /* 催促カードが出ている状態 */
+    const _show = !_isFutM && !_nagging && (!_isCurM || mainIncomeLanded(bmk));
     const _row=(nm,plan,done,bd)=>{
       if(plan<=0) return "";
       /* v4.84: 純額なので done は負になりうる。バーの幅を下限0で止める */
@@ -4279,7 +4290,11 @@ function futureNet(mk){
   /* v5.48【バグ修正】窓の終わり: 次の収入の前日。無ければ**月末まで**。
      `mk+"-31"`だと比較が`date < end`なので**31日の支出が漏れる**(実際に検査で発覚)。
      月末を含めるため、終端は**翌月の1日**にする */
-  const end=nx || (mk+"-99");
+  /* v5.56: 無いときの終端は**その期間の終わり**。`mk+"-99"`固定だと、給料日サイクルで
+     mkが前月キー(月初〜給料日前日)になった瞬間に終端が今日より前になり、窓が空になって
+     確定済みの支出が所持金に織り込まれなくなる。暦月モードでは`budgetRange`が
+     `mk+"-99"`を返すので**従来と1バイトも変わらない** */
+  const end=nx || budgetRange(mk)[1];
   /* `isNetEntry`はこの位置から見えないので同じ判定を直に書く(遊技は軍資金の世界) */
   return (S.entries||[]).filter(e=>e.date&&e.date>t&&e.date<end
       &&!isNet(e))
@@ -4606,6 +4621,22 @@ function inBudget(date, mk){
   const r=budgetRange(mk);
   return cycleStartDay() ? (date>=r[0] && date<r[1]) : String(date).startsWith(mk);
 }
+/* v5.56【重要な修正】**今日がどの期間にいるか**を暦月キーから引くのをやめる(ユーザー報告で発覚)。
+   `budgetRange(mk)`は「mkの月に**始まる**期間」なので、給料日15日なら
+   9/2に`budgetRange("2026-09")`は **09/15〜10/14** ——まだ始まっていない次の期間を返す。
+   予算カードが月初から給料日前日まで「使った ¥0・残り満額」を出していた(9/1〜9/14の14日間)。
+   **月初〜給料日前日は、前月に始まった期間の中にいる**。 */
+function curBudgetMk(){
+  const t=todayStr(), mk=t.slice(0,7);
+  if(!cycleStartDay()) return mk;
+  if(t >= budgetRange(mk)[0]) return mk;
+  const y=parseInt(mk.slice(0,4),10), m=parseInt(mk.slice(5,7),10);
+  return (m===1) ? (y-1)+"-12" : y+"-"+String(m-1).padStart(2,"0");
+}
+/* 表示中の月mkに対応する予算期間のキー。**直すのは今月だけ**——
+   過去・未来の月は「その月に始まる期間」の定義のままにする(月送りで期間が飛ばない)。
+   暦月モードでは常にmkを返すので**挙動は1ミリも変わらない**。 */
+function budgetMk(mk){ return (mk===todayStr().slice(0,7)) ? curBudgetMk() : mk; }
 function disposableBase(mk){
   const me=(S.entries||[]).filter(e=>inBudget(e.date, mk));   /* v5.49: 予算の期間で絞る */
   const inc=me.filter(e=>e.type==="income"&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
