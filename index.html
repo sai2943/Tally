@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.60 (localStorage保存・完全オフライン)
+   Tally 5.61 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -862,7 +862,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.60";
+const APP_VERSION = "5.61";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -7476,7 +7476,10 @@ function viewEntry(){
     (isTr ? '' : walHtml + svHtml + pasteHtml + transHtml + (composerHtml || (fieldsHtml + extraHtml))) +
     /* v4.40: 保存は下バー(display:noneの担い手経由)、削除はヘッダ右端。
        固定費への登録は稀なので、ボタンの箱を持たない**テキストリンク**で本文の末尾に置く */
-    (UI.editEntryId!==null?'<div style="text-align:center;margin-top:18px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-a="tofixed">この内容で固定費に登録</button></div>':'')+
+    (UI.editEntryId!==null?'<div class="row" style="justify-content:center;gap:20px;margin-top:18px">'+
+      '<button class="navbtn" style="color:var(--teal);font-size:11px;text-decoration:underline" data-a="edup">複製して新規に</button>'+
+      '<button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-a="tofixed">この内容で固定費に登録</button>'+
+      '</div>':'')+
     '<div style="display:none"><button data-a="esave">保存</button></div>';
 }
 function bindEntry(){
@@ -7557,6 +7560,25 @@ function bindEntry(){
       else if(a==="tkf"){ f.tfrom=el.dataset.v; render(); }
       else if(a==="tkt"){ f.tto=el.dataset.v; render(); }
       else if(a==="tkp"){ f.tplace=el.dataset.v; render(); }
+      /* v5.61: 明細の複製(ユーザー要望: 複製して日付を変えて使い回す)。
+         **その場では保存せず、同じ内容の「新規」としてフォームを開き直す**——
+         先に実体を作ってしまうと、日付を直す前の重複が一瞬でも実データに乗る
+         (照合の残りにも資産にも出て、直す前に見たら嘘になる)。
+         日付は**今日**を既定にする。使い回すのはこれから起きたことの記録が大半で、
+         元の日付のまま出すと毎回必ず直させることになる。 */
+      else if(a==="edup"){
+        const f0=UI.entryForm||{};
+        UI.editEntryId=null;
+        UI.entryForm={
+          date: todayStr(), type: f0.type, category: f0.category,
+          amount: String(f0.amount||""), store: f0.store||"", item: f0.item||"",
+          memo: f0.memo||"", wal: f0.wal||"",
+          /* **貯金の箱からの補填は引き継がない**。黙って箱からもう一度引くのは事故になる。
+             毎回そこから出すものなら、複製ではなく固定費にするのが筋 */
+          svPot: "", svDraw: true
+        };
+        render(); toast("複製しました。日付は今日です");
+      }
       else if(a==="tofixed"){
         const day = num((f.date||todayStr()).slice(8,10)) || 1;
         UI.fixForm = { type:f.type||"expense", name:(f.item||f.memo||"").trim(), store:(f.store||"").trim(),
