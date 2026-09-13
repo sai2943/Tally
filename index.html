@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.62 (localStorage保存・完全オフライン)
+   Tally 5.63 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -885,7 +885,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.62";
+const APP_VERSION = "5.63";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3129,7 +3129,8 @@ function summaryText(){
   const ivBook=((S.invest&&S.invest.holdings)||[]).reduce((a,x)=>a+num(x.cost),0);
   L.push("総資産 "+yen(walletBalance()+bankBalance()+savingsBalance())+"  ※投資の積立額は含めない");
   L.push("- 所持金 "+yen(walletBalance())+"  ("+wp.map(w=>w.name+" "+yen(walletBalance(null,w.id))).join(" / ")+")");
-  L.push("- 軍資金 "+yen(bankBalance())+"  (振替目安 "+yen(num(S.bank.ceiling)||300000)+" / 今月の振替(入) "+yen(bankRefillUsed())+" of "+yen(bankRefillCap())+")");
+  /* v5.63: 差引は負になりうるので`yen()`(絶対値)ではなく`signYen`で出す */
+  L.push("- 軍資金 "+yen(bankBalance())+"  (振替目安 "+yen(num(S.bank.ceiling)||300000)+" / 今月の振替(入−出) "+signYen(bankRefillUsed())+" of "+yen(bankRefillCap())+")");
   L.push("- 貯金 "+yen(savingsBalance()));
   potProgress().forEach(pt=>L.push("    - "+pt.name+" "+yen(pt.bal)+
     (pt.hasTarget?("  目標 "+yen(pt.target)+" / 残り "+yen(pt.short)+
@@ -5253,10 +5254,19 @@ function bankTransfer(mk){
   const out=tx.filter(t=>(t.type==="sweep"||t.type==="return")&&hit(t)).reduce((a,t)=>a+num(t.amount),0);
   return {inn:inn, out:out, net:out-inn};
 }
+/* v5.63【修正】**出金を数えていなかった**(ユーザー報告)。
+   軍資金→所持金に¥2,000戻したあと¥1,672入れると「今月の振替(入) ¥1,672」と出ていたが、
+   外から実際に入った金は**差引 −¥328**——むしろ返している。
+   topupだけ数えると**出し入れするたびに枠だけが減る**ので、
+   一度出した金を戻すことが「生活費を削って遊技に回す行為」と同じ扱いになっていた。
+   枠の意味は「**今月、外の金でどれだけ軍資金を太らせたか**」なので、差引で見るのが正しい。
+   `bankTransfer()`が最初から入(topup)と出(return/sweep)を両方持っていたので、**そちらに合わせる**。
+   sweep(軍資金→貯金の箱)を出に含めるのは、家計の側から見ても辻褄が合うため——
+   勝ち分¥50,000を箱に仕舞って¥80,000入れたなら、家計から出た正味は¥30,000で枠ちょうど。 */
 function bankRefillUsed(mk){
   const m = mk || todayStr().slice(0,7);
-  return ((S.bank&&S.bank.txns)||[]).filter(t=>t.type==="topup" && String(t.date||"").startsWith(m))
-    .reduce((a,t)=>a+num(t.amount),0);
+  const t = bankTransfer(m);
+  return t.inn - t.out;   /* = -t.net */
 }
 function bankRefillCap(){ const v=num((S.bank||{}).refillCap); return v>0?v:30000; }
 /* v4.15: **集計開始日を撤去**(ユーザー指摘)。月別で見る方針にしたのに、残高だけが
@@ -5525,7 +5535,8 @@ function viewBank(){
     '<div class="row between" style="margin-bottom:5px"><span class="muted">振替 累計</span>'+
       '<span class="mono '+clsPM(tAll.net)+'" style="font-weight:700">'+signYen(tAll.net)+'</span></div>'+
     /* v4.11: 補充枠は**使い切る前に見えていないと意味がない**ので常設で出す */
-    '<div class="row between"><span class="muted">今月の振替(入)</span><span class="mono '+(rUsed>=rCap?"red":rUsed>0?"amber":"muted")+'">¥'+rUsed.toLocaleString("ja-JP")+' / ¥'+rCap.toLocaleString("ja-JP")+'</span></div></div>';
+    /* v5.63: 差引になったので**負になりうる**。`yen()`は絶対値を返すので符号が消える——ここはsignYenで出す */
+    '<div class="row between"><span class="muted">今月の振替(入−出)</span><span class="mono '+(rUsed>=rCap?"red":rUsed>0?"amber":"muted")+'">'+signYen(rUsed)+' / ¥'+rCap.toLocaleString("ja-JP")+'</span></div></div>';
   /* v4.12: 月別の増減内訳。1行目=その月の残高変化、2行目=その内訳 */
   const mon=bankMonthly();
   if(mon.length){
@@ -7689,8 +7700,9 @@ function bindEntry(){
               const why = isWalAcc(fa.id)
                 ? "生活費を削って遊技に回す行為です。"
                 : "目的を決めて取り分けた金を崩す行為です。";
+              /* v5.63: usedは差引(入−出)なので負になりうる。「すでに¥-328振り替え済み」では読めない */
               const msg = "今月の振替枠 ¥"+cap.toLocaleString("ja-JP")+" を超えます。"+
-                "\n\n今月すでに ¥"+used.toLocaleString("ja-JP")+" 振り替え済み"+
+                "\n\n今月ここまでの差引 "+signYen(used)+"(入−出)"+
                 "\n今回 ¥"+amt.toLocaleString("ja-JP")+" → 枠を ¥"+over.toLocaleString("ja-JP")+" 超過"+
                 "\n現在の軍資金 ¥"+bankBalance().toLocaleString("ja-JP")+
                 "\n\n"+why+"\n負けを外の金で埋めるのが、あなたの20年来の漏れです。"+
