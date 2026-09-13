@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.61 (localStorage保存・完全オフライン)
+   Tally 5.62 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -810,6 +810,29 @@ const mjExtraTotal = m => ((m&&m.extras)||[]).reduce((a,e)=>a+num(e.amount),0);
 const mjRaw = m => mjScoreYen(m) + mjChipYen(m) + mjExtraTotal(m);   // ゲーム代抜き(麻雀のみの収支)
 const mjExpTotal = m => (m.expenses||[]).reduce((a,e)=>a+num(e.amount),0); // セット飲食等の私的経費
 const mjFinal = m => mjRaw(m) - mjGameFee(m) + mjFeeBack(m) - mjExpTotal(m); // ゲーム代・バック・経費込み(家計簿へ)
+/* v5.62: **過去の卓からルールを引く**(ユーザー要望: ルールを過去歴から引っ張れるようにして欲しい)。
+   ルール名で1件にまとめ、**最後にその名前で打った時の設定**を採る。
+   `S.rates`は「最後に使った1つ」しか持てないので、店を行き来すると毎回入れ直しになる。
+   `feeBack`(ゲーム代バック)に至っては`S.rates`にも入っていないので、**ここでしか復元できない**。 */
+function mjRuleHints(){
+  const m={};
+  (S.mjSessions||[]).slice()
+    .sort((a,b)=>String(a.date||"")<String(b.date||"")?-1:1)   /* 古い順に舐めて、後から来た方で上書き */
+    .forEach(s=>{
+      const n=String(s.store||"").trim(); if(!n) return;
+      m[n]={name:n, date:String(s.date||""), category:s.category||"free", rule:String(s.rule||"4"),
+        scoreRate:s.scoreRate, chipRate:s.chipRate,
+        baseFee:s.baseFee, topBonus:s.topBonus, feeBack:s.feeBack, drinkFee:s.drinkFee};
+    });
+  return Object.keys(m).map(k=>m[k]).sort((a,b)=>a.date<b.date?1:-1).slice(0,4);
+}
+/* ルールだけを draft に載せる。**スコア・着順・同卓者・経費には触らない** */
+function mjApplyRule(m, r){
+  m.store=r.name; m.category=r.category; m.rule=r.rule;
+  m.scoreRate=r.scoreRate; m.chipRate=r.chipRate;
+  m.baseFee=r.baseFee; m.topBonus=r.topBonus; m.feeBack=r.feeBack; m.drinkFee=r.drinkFee;
+  return m;
+}
 const mjAvgRank = m => {
   const h = mjHanchan(m); if(!h) return null;
   const r = mjRanks(m);
@@ -862,7 +885,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.61";
+const APP_VERSION = "5.62";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -6440,6 +6463,14 @@ function viewMj(){
   h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
     '<input class="input" type="date" id="mj-date" value="'+esc(m.date)+'" style="flex:1">'+
     '<input class="input" id="mj-store" placeholder="ルール名(例:4麻赤有)" value="'+esc(m.store)+'" style="flex:1.4"></div>';
+  /* v5.62: 過去のルール。**履歴が無いうちは何も出さない**(空の棚を置かない) */
+  { const _rh=mjRuleHints();
+    if(_rh.length){
+      h += '<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">'+
+        '<span class="muted" style="font-size:11px">過去のルール</span>'+
+        _rh.map(r=>'<button class="chip'+(String(m.store||"").trim()===r.name?' sel':'')+'" data-a="mjrhint" data-v="'+esc(r.name)+'">'+esc(r.name)+'</button>').join("")+
+        '</div>';
+    } }
   h += '<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">'+
     '<span class="muted" style="font-size:12px;width:74px">実働</span>'+
     '<input class="input mono" type="time" id="mj-tstart" value="'+esc(m.startAt||"")+'" style="flex:1">'+
@@ -6654,6 +6685,23 @@ function bindMj(){
     el.onclick = ()=>{
       const a=el.dataset.a, v=el.dataset.v;
       if(a==="back"){ UI.screen="main"; UI.mjDraft=null; render(); }
+      /* v5.62: 過去のルールを反映。**単価が変われば入っている金額の意味も変わる**ので、
+         金額が入っている時だけ 変更前→変更後 を見せて確かめる——
+         半荘の記録から来た卓は単価1(スコア欄=円)で、そこにレート30を当てると**黙って30倍**になる */
+      else if(a==="mjrhint"){
+        const r=mjRuleHints().find(x=>x.name===String(v)); if(!r) return;
+        const hasNum=(String(m.score||"").trim()!=="" || String(m.chips||"").trim()!=="");
+        if(hasNum){
+          const before=mjFinal(m);
+          const after=mjFinal(mjApplyRule(Object.assign({},m), r));
+          if(before!==after && !confirm(r.name+" を反映すると金額が変わります。\n\n"+
+             signYen(before)+" → "+signYen(after)+"\n\n反映しますか?")) return;
+        }
+        mjApplyRule(m, r);
+        render();
+        toast(r.name+" を反映("+r.rule+"麻・"+(r.category==="free"?"フリー":"セット")+
+          "・単価"+(r.scoreRate||"-")+"/チップ"+(r.chipRate||"-")+")");
+      }
       else if(a==="mjcat"){ m.category=v; render(); }
       else if(a==="mjrule"){ m.rule=v; render(); }
       else if(a==="mjsign"){
