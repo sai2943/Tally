@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.63 (localStorage保存・完全オフライン)
+   Tally 5.65 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -802,14 +802,35 @@ const mjGameFee = m => m.category==="free"
 const mjFeeBack = m => m.category==="free" ? num(m.feeBack)*mjHanchan(m) : 0;
 const mjScoreYen = m => Math.round(fnum(m.score)*fnum(m.scoreRate));
 const mjChipYen = m => Math.round(fnum(m.chips)*fnum(m.chipRate));
+/* v5.65: **金額で入れる卓**(ユーザー設計)。雀荘は「チップを買って最後に換金」。
+   1万買って13,000戻れば手元は+3,000。道中でゲーム代を10半荘×300=3,000払っているので、
+   それを戻すと**麻雀のみ +6,000**——**素点を知らなくても必ず立つ算数**。
+   素点・チップ・馬身は、その6,000の**内訳として分かる分だけ**入れる(金額には効かせない)。
+   これで「金額を素点の器に入れる(単価1)」という無理が要らなくなる。
+   **既存の卓は`calc`を持たないので従来式のまま**——過去の家計簿の数字を動かさない。 */
+const mjIsCash = m => !!(m && m.calc==="cash");
+const mjCashNet = m => num(m&&m.outAmt) - num(m&&m.inAmt);   /* 回収 − 投資 */
 /* v5.45: **卓の外でもらう金**(馬身・ゲーム代バックなど)。
    ユーザー指摘「ゲームバックは経費と分けるべきでは?」——**経費は出ていく金の欄**なので、
    もらう金をマイナスで混ぜると意味が壊れる。**別の器を持たせる**。
    `[{name,amount}]` の形は経費と同じだが、**符号の向きが逆**(プラスがもらう) */
 const mjExtraTotal = m => ((m&&m.extras)||[]).reduce((a,e)=>a+num(e.amount),0);
-const mjRaw = m => mjScoreYen(m) + mjChipYen(m) + mjExtraTotal(m);   // ゲーム代抜き(麻雀のみの収支)
+/* v5.64: **その卓のスコア欄が素点かどうか**(ユーザー指摘: 集計でスコアが異様に高くなる)。
+   単価1は「スコア欄=円」の意味で使っていた(半荘の記録から反映した卓・金額直入れの卓)。
+   素点の卓(単価30など)と混ぜて平均を出すと、**円が点として合流して桁が跳ねる**。
+   例: 6,450円の卓が16半荘なら、それだけで平均+403pt——素点なら1半荘+403ptはあり得ない数字。
+   v5.65: **金額で入れる卓のスコア欄は常に素点**(金額は投資・回収が持つ)ので、単価の条件を外す。 */
+const mjScoreIsPt = m => String(m&&m.score||"").trim()!=="" && (mjIsCash(m) || fnum(m&&m.scoreRate)!==1);
+/* 内訳として分かっている分の合計。**金額で入れる卓では、これは収支を決めない** */
+const mjBreakdown = m => mjScoreYen(m) + mjChipYen(m) + mjExtraTotal(m);
 const mjExpTotal = m => (m.expenses||[]).reduce((a,e)=>a+num(e.amount),0); // セット飲食等の私的経費
-const mjFinal = m => mjRaw(m) - mjGameFee(m) + mjFeeBack(m) - mjExpTotal(m); // ゲーム代・バック・経費込み(家計簿へ)
+/* 麻雀のみの収支(ゲーム代抜き)。金額の卓は**払ったゲーム代を差額に戻して**求める */
+const mjRaw = m => mjIsCash(m) ? (mjCashNet(m) + mjGameFee(m) - mjFeeBack(m)) : mjBreakdown(m);
+/* 家計簿へ行く数字。金額の卓は**回収−投資−経費**——素点を知らなくても確定する */
+const mjFinal = m => mjIsCash(m) ? (mjCashNet(m) - mjExpTotal(m))
+                                 : (mjBreakdown(m) - mjGameFee(m) + mjFeeBack(m) - mjExpTotal(m));
+/* 内訳に落とせていない分。0でなければ「まだ説明できていない金」がある */
+const mjUnknown = m => mjIsCash(m) ? (mjRaw(m) - mjBreakdown(m)) : 0;
 /* v5.62: **過去の卓からルールを引く**(ユーザー要望: ルールを過去歴から引っ張れるようにして欲しい)。
    ルール名で1件にまとめ、**最後にその名前で打った時の設定**を採る。
    `S.rates`は「最後に使った1つ」しか持てないので、店を行き来すると毎回入れ直しになる。
@@ -885,7 +906,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.63";
+const APP_VERSION = "5.65";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1795,6 +1816,9 @@ function bindMjLog(){
         const rc=[1,2,3,4].slice(0,c.seats).map(k=>String(t.rank[k]||0));
         UI.mjDraft={
           id:uid(), date:todayStr(), store:"", category:"free", rule:String(c.seats),
+          /* v5.65: 半荘の記録は**卓の精算額**を持っていて、買った額・換金額は知らない。
+             無い数字を作らず、この経路は素点(=金額)モードのままにする */
+          calc:"score", inAmt:"", outAmt:"",
           startAt:"", endAt:"",
           /* **スコア分をそのまま円で**(レート1)。素点は持っていないので金額を直接載せる */
           score:String(t.score), scoreRate:"1",
@@ -2805,7 +2829,11 @@ function mjAgg(list, mk){
   let w=0; for(let i=0;i<4;i++) w+=(i+1)*rankSums[i];
   return {H:H, days:L.length, rc:rc, rankSums:rankSums, avgRank:w/H,
     final:L.reduce((a,s)=>a+mjFinal(s),0), raw:L.reduce((a,s)=>a+mjRaw(s),0),
-    fee:L.reduce((a,s)=>a+mjGameFee(s),0), score:L.reduce((a,s)=>a+fnum(s.score),0),
+    fee:L.reduce((a,s)=>a+mjGameFee(s),0),
+    /* v5.64: スコアは**素点の卓だけ**を、**その卓の半荘数だけ**で割る。
+       母数をHのままにすると、素点不明の卓のぶん平均が薄まって別の嘘になる */
+    score:L.filter(mjScoreIsPt).reduce((a,s)=>a+fnum(s.score),0),
+    scoreH:L.filter(mjScoreIsPt).reduce((a,s)=>a+mjHanchan(s),0),
     chips:L.reduce((a,s)=>a+fnum(s.chips),0)};
 }
 function mjAggHtml(A){
@@ -2829,7 +2857,11 @@ function mjAggHtml(A){
     mjStatRow("平均収支(ゲーム代込)", Math.round(A.final/A.H), true)+
     mjStatRow("平均収支(ゲーム代抜)", Math.round(A.raw/A.H), true)+
     mjStatRow("平均ゲーム代", -Math.round(A.fee/A.H), true)+
-    mjStatRow("平均スコア", (A.score/A.H), false, true, "pt")+
+    /* v5.64: 素点の分かる卓が1つも無いなら**行ごと出さない**(0ptは事実ではない)。
+       一部だけ分かるときは**母数がHと違う**ことを添える——黙って出すと全体の平均に見える */
+    (A.scoreH>0
+      ? mjStatRow("平均スコア"+(A.scoreH<A.H?"(素点の分かる"+A.scoreH+"半荘)":""), (A.score/A.scoreH), false, true, "pt")
+      : '')+
     mjStatRow("平均チップ", (A.chips/A.H), false, true, "枚")+
     '</div>';
 }
@@ -6494,17 +6526,39 @@ function viewMj(){
     [["4","4麻"],["3","3麻"]].map(([v,l])=>
       '<button class="btn '+(m.rule===v?"sel":"")+'" style="flex:1" data-a="mjrule" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
 
-  h += band("スコア・チップ");
+  /* v5.65: **入れ方の切り替え**。既定は金額(投資・回収)。
+     素点は半荘の記録から反映した卓と、昔の卓のためのモード */
+  const _cash = mjIsCash(m);
+  h += '<div class="row" style="gap:8px;margin-bottom:12px">'+
+    [["cash","金額で入れる"],["score","素点で入れる"]].map(([v,l])=>
+      '<button class="btn '+((_cash?"cash":"score")===v?"sel":"")+'" style="flex:1;font-size:12px" data-a="mjcalc" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
+
+  if(_cash){
+    h += band("投資・回収");
+    h += '<div class="muted" style="font-size:11px;margin-bottom:8px;line-height:1.7">'+
+      'チップを買った額と、最後に換金した額。<br>'+
+      'ゲーム代は<b>道中で払っている分</b>なので、差額に戻すと麻雀だけの勝ち負けが出ます。</div>';
+    h += '<div class="grid2" style="margin-bottom:6px">'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">投資(買った額)</div>'+
+      '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(m.inAmt||"")+'" data-in="mjf" data-v="inAmt"></div>'+
+      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">回収(換金した額)</div>'+
+      '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(m.outAmt||"")+'" data-in="mjf" data-v="outAmt"></div></div>';
+  }
+
+  h += band(_cash ? "内訳(分かる分だけ)" : "スコア・チップ");
   /* v5.48: **集計できなかったときは金額で直接入れられる**(ユーザー要望)。
      半荘の記録から来ると単価1(=スコア欄が円そのもの)になるので、**どちらの意味か**を出す。
-     素点で入れたいなら単価をレートに直す——**入力欄はどちらでも受ける** */
+     素点で入れたいなら単価をレートに直す——**入力欄はどちらでも受ける**
+     v5.65: 金額の卓では、この節は**記録用で金額に効かない**ことをはっきり書く */
   h += '<div class="muted" style="font-size:11px;margin-bottom:6px;line-height:1.6">'+
-    (fnum(m.scoreRate)===1
-      ? '単価1なので<span class="mono">スコア欄=円</span>。素点で入れるならレート(例 30)に直してください。'
-      : '素点×レートで計算します。<span class="mono">金額で入れたいなら単価を1</span>に。')+
+    (_cash
+      ? '<b>金額には効きません。</b>分かっているものだけ入れてください。最後に「内訳に落とせていない分」が出ます。'
+      : (fnum(m.scoreRate)===1
+        ? '単価1なので<span class="mono">スコア欄=円</span>。素点で入れるならレート(例 30)に直してください。'
+        : '素点×レートで計算します。<span class="mono">金額で入れたいなら単価を1</span>に。'))+
     '</div>';
-  h += mjSignedRow("トータルスコア", m.score, "score", "1スコア単価(円)", m.scoreRate, "scoreRate", true);
-  h += mjSignedRow("トータルチップ"+(isFree?"(任意)":""), m.chips, "chips", "チップ1枚単価(円)", m.chipRate, "chipRate", false);
+  h += mjSignedRow("トータルスコア"+(_cash?"(素点・任意)":""), m.score, "score", "1スコア単価(円)", m.scoreRate, "scoreRate", true);
+  h += mjSignedRow("トータルチップ"+((_cash||isFree)?"(任意)":""), m.chips, "chips", "チップ1枚単価(円)", m.chipRate, "chipRate", false);
 
   h += band("着順(回数)");
   h += '<div class="row" style="gap:6px;margin-bottom:6px">';
@@ -6636,7 +6690,31 @@ function mjSummary(m){
   const srow=(l,v,big)=>'<div class="row between" style="'+(big?"align-items:baseline":"font-size:13px;margin:4px 0")+'">'+
     '<span '+(big?'style="font-size:12px;font-weight:700"':'class="muted"')+'>'+l+'</span>'+
     '<span class="mono '+clsPM(v)+'" style="'+(big?"font-size:20px;font-weight:700":"")+'">'+signYen(v)+'</span></div>';
-  let h = srow("スコア収支", mjScoreYen(m));
+  let h = "";
+  if(mjIsCash(m)){
+    /* v5.65: **足し算が縦に閉じるように2つに分ける**。
+       上は財布の動き(投資・回収・経費 → 最終収支)、下は参考の内訳。
+       ゲーム代は回収額に**既に効いている**ので、上の並びに混ぜると読者が二重に引く */
+    h += srow("投資(買った額)", -num(m.inAmt));
+    h += srow("回収(換金した額)", num(m.outAmt));
+    if(mjExpTotal(m)) h += srow("経費(飲食など)", -mjExpTotal(m));
+    h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>';
+    h += srow("最終収支(家計簿へ連携)", mjFinal(m), true);
+    h += '<div style="height:1px;background:var(--line);margin:10px 0 8px"></div>';
+    h += '<div class="muted" style="font-size:11px;margin-bottom:4px">内訳(参考・金額には効きません)</div>';
+    h += '<div class="row between" style="font-size:13px;margin:4px 0"><span class="muted">麻雀のみ収支(ゲーム代抜)</span>'+
+      '<span class="mono '+clsPM(mjRaw(m))+'" style="font-weight:700">'+signYen(mjRaw(m))+'</span></div>';
+    if(mjGameFee(m)) h += srow("　うち戻したゲーム代", mjGameFee(m));
+    if(mjFeeBack(m)) h += srow("　うちバック", -mjFeeBack(m));
+    if(mjScoreYen(m)) h += srow("　スコア", mjScoreYen(m));
+    if(mjChipYen(m)) h += srow("　チップ", mjChipYen(m));
+    ((m.extras||[]).forEach(x=>{ if(num(x.amount)) h += srow("　"+(x.name||"卓の外"), num(x.amount)); }));
+    /* 内訳が1つでも入っているときだけ残差を出す。**何も入れていない卓に「不明」は出さない**
+       ——分かっていないのではなく、まだ入れていないだけなので */
+    if(mjBreakdown(m)!==0) h += srow("　内訳に落とせていない分", mjUnknown(m));
+    return h;
+  }
+  h += srow("スコア収支", mjScoreYen(m));
   if(num(m.chips)||fnum(m.chipRate)) h += srow("チップ収支", mjChipYen(m));
   /* v5.46: **卓の外(馬身・バック)も内訳に出す**(ユーザー指摘: 表示したい)。
      `mjRaw`に含まれているのに行が無いと、**合計だけ増えて理由が読めない** */
@@ -6712,6 +6790,15 @@ function bindMj(){
         render();
         toast(r.name+" を反映("+r.rule+"麻・"+(r.category==="free"?"フリー":"セット")+
           "・単価"+(r.scoreRate||"-")+"/チップ"+(r.chipRate||"-")+")");
+      }
+      /* v5.65: 入れ方の切り替え。**金額が変わるなら変更前→変更後を見せて確かめる** */
+      else if(a==="mjcalc"){
+        const cur = mjIsCash(m) ? "cash" : "score";
+        if(cur===v) return;
+        const before=mjFinal(m), after=mjFinal(Object.assign({},m,{calc:v}));
+        if(before!==after && !confirm("入れ方を変えると金額が変わります。\n\n"+
+           signYen(before)+" → "+signYen(after)+"\n\n変えますか?")) return;
+        m.calc=v; render();
       }
       else if(a==="mjcat"){ m.category=v; render(); }
       else if(a==="mjrule"){ m.rule=v; render(); }
@@ -6904,6 +6991,7 @@ function bindMain(){
       }
       else if(a==="mjnew"){ UI.tab="games"; 
           UI.mjDraft={id:uid(),date:todayStr(),store:"",category:"free",rule:"4",startAt:"",endAt:"",
+            calc:"cash", inAmt:"", outAmt:"",   /* v5.65: 新規は金額で入れるのが既定 */
             score:S.rates.mjScore!==undefined?"":"", chips:"",
             scoreRate:S.rates.mjScore||"", chipRate:S.rates.mjChip||"",
             ranks:["","","",""], players:[], baseFee:S.rates.mjBase||"", topBonus:S.rates.mjTop||"", drinkFee:S.rates.mjDrink||"",
