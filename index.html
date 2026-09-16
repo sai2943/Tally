@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.65 (localStorage保存・完全オフライン)
+   Tally 5.66 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -906,7 +906,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.65";
+const APP_VERSION = "5.66";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -6692,26 +6692,47 @@ function mjSummary(m){
     '<span class="mono '+clsPM(v)+'" style="'+(big?"font-size:20px;font-weight:700":"")+'">'+signYen(v)+'</span></div>';
   let h = "";
   if(mjIsCash(m)){
-    /* v5.65: **足し算が縦に閉じるように2つに分ける**。
-       上は財布の動き(投資・回収・経費 → 最終収支)、下は参考の内訳。
-       ゲーム代は回収額に**既に効いている**ので、上の並びに混ぜると読者が二重に引く */
-    h += srow("投資(買った額)", -num(m.inAmt));
-    h += srow("回収(換金した額)", num(m.outAmt));
-    if(mjExpTotal(m)) h += srow("経費(飲食など)", -mjExpTotal(m));
-    h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>';
+    /* v5.66【作り直し】(ユーザー指摘: 戻したゲーム代って何? / レイアウトが汚い / 内訳の説明が分からない)。
+       v5.65は**導出の途中式をそのまま並べていた**ので読めなかった。
+       「戻したゲーム代」は麻雀のみ収支を出すための内部の操作で、**画面に出す筋のものではない**。
+       ユーザーの読み筋どおりに組み直す:
+         麻雀のみ収支 +12,450  (その内訳)
+         ゲーム代     −3,800   (その内訳)
+         ────────────
+         最終収支     +8,650
+       **各ブロックが縦に閉じ、ブロックの和が最終収支になる**。数字を目で追えば必ず合う。 */
+    const H=mjHanchan(m), top=num((m.ranks||[])[0]);
+    const fee=mjGameFee(m), back=mjFeeBack(m);
+    const head=(l,v)=>'<div class="row between" style="font-size:13px;margin:10px 0 1px">'+
+      '<span style="font-weight:700">'+l+'</span>'+
+      '<span class="mono '+clsPM(v)+'" style="font-weight:700">'+signYen(v)+'</span></div>';
+    const sub=(l,v)=>'<div class="row between" style="font-size:12px;margin:2px 0;padding-left:14px">'+
+      '<span class="muted">'+l+'</span><span class="mono '+clsPM(v)+'">'+signYen(v)+'</span></div>';
+
+    h += '<div class="muted mono" style="font-size:11px">投資 ¥'+num(m.inAmt).toLocaleString("ja-JP")+
+      ' → 回収 ¥'+num(m.outAmt).toLocaleString("ja-JP")+'</div>';
+
+    h += head("麻雀のみ収支", mjRaw(m));
+    if(mjScoreYen(m)) h += sub("スコア "+fnum(m.score)+"×"+fnum(m.scoreRate), mjScoreYen(m));
+    if(mjChipYen(m)) h += sub("チップ "+fnum(m.chips)+"枚×"+fnum(m.chipRate), mjChipYen(m));
+    ((m.extras||[]).forEach(x=>{ if(num(x.amount)) h += sub(x.name||"卓の外", num(x.amount)); }));
+    /* 内訳を1つでも入れていて、なお残りがあるときだけ出す。
+       **何も入れていない卓に「未入力」は出さない**(分かっていないのではなく、まだ入れていないだけ)。
+       ぴったり埋まったときも出さない——0円の行は読む手を止めるだけ */
+    if(mjBreakdown(m)!==0 && mjUnknown(m)!==0) h += sub("まだ入れていない分", mjUnknown(m));
+
+    if(fee||back){
+      h += head("ゲーム代", back-fee);
+      if(m.category==="free"){
+        if(num(m.baseFee)&&H) h += sub("基本 "+num(m.baseFee)+"×"+H+"半荘", -num(m.baseFee)*H);
+        if(num(m.topBonus)&&top) h += sub("トップ賞 "+num(m.topBonus)+"×"+top+"回", -num(m.topBonus)*top);
+        if(num(m.drinkFee)) h += sub("ドリンク/入場", -num(m.drinkFee));
+        if(num(m.feeBack)&&H) h += sub("バック "+num(m.feeBack)+"×"+H+"半荘", num(m.feeBack)*H);
+      }
+    }
+    if(mjExpTotal(m)) h += head("経費(飲食など)", -mjExpTotal(m));
+    h += '<div style="height:1px;background:var(--line);margin:12px 0 8px"></div>';
     h += srow("最終収支(家計簿へ連携)", mjFinal(m), true);
-    h += '<div style="height:1px;background:var(--line);margin:10px 0 8px"></div>';
-    h += '<div class="muted" style="font-size:11px;margin-bottom:4px">内訳(参考・金額には効きません)</div>';
-    h += '<div class="row between" style="font-size:13px;margin:4px 0"><span class="muted">麻雀のみ収支(ゲーム代抜)</span>'+
-      '<span class="mono '+clsPM(mjRaw(m))+'" style="font-weight:700">'+signYen(mjRaw(m))+'</span></div>';
-    if(mjGameFee(m)) h += srow("　うち戻したゲーム代", mjGameFee(m));
-    if(mjFeeBack(m)) h += srow("　うちバック", -mjFeeBack(m));
-    if(mjScoreYen(m)) h += srow("　スコア", mjScoreYen(m));
-    if(mjChipYen(m)) h += srow("　チップ", mjChipYen(m));
-    ((m.extras||[]).forEach(x=>{ if(num(x.amount)) h += srow("　"+(x.name||"卓の外"), num(x.amount)); }));
-    /* 内訳が1つでも入っているときだけ残差を出す。**何も入れていない卓に「不明」は出さない**
-       ——分かっていないのではなく、まだ入れていないだけなので */
-    if(mjBreakdown(m)!==0) h += srow("　内訳に落とせていない分", mjUnknown(m));
     return h;
   }
   h += srow("スコア収支", mjScoreYen(m));
