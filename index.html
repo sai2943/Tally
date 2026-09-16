@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.66 (localStorage保存・完全オフライン)
+   Tally 5.67 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -906,7 +906,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.66";
+const APP_VERSION = "5.67";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -6636,7 +6636,7 @@ function viewMj(){
     }
   }
   /* ----- 経費(私的・スコア表には出さない) ----- */
-  h += band("経費(飲食など)");
+  h += band("経費");
   (m.expenses||[]).forEach(x=>{
     h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
       '<input class="input sm" placeholder="店名" value="'+esc(x.store||"")+'" style="flex:1" data-in="mjxstore" data-v="'+x.id+'">'+
@@ -6719,7 +6719,7 @@ function mjSummary(m){
     /* 内訳を1つでも入れていて、なお残りがあるときだけ出す。
        **何も入れていない卓に「未入力」は出さない**(分かっていないのではなく、まだ入れていないだけ)。
        ぴったり埋まったときも出さない——0円の行は読む手を止めるだけ */
-    if(mjBreakdown(m)!==0 && mjUnknown(m)!==0) h += sub("まだ入れていない分", mjUnknown(m));
+    if(mjBreakdown(m)!==0 && mjUnknown(m)!==0) h += sub("未入力", mjUnknown(m));
 
     if(fee||back){
       h += head("ゲーム代", back-fee);
@@ -6730,7 +6730,18 @@ function mjSummary(m){
         if(num(m.feeBack)&&H) h += sub("バック "+num(m.feeBack)+"×"+H+"半荘", num(m.feeBack)*H);
       }
     }
-    if(mjExpTotal(m)) h += head("経費(飲食など)", -mjExpTotal(m));
+    if(mjExpTotal(m)){
+      h += head("経費", -mjExpTotal(m));
+      /* v5.67: **経費も内訳を出す**(ユーザー指摘)。中身が見えれば「(飲食など)」という
+         但し書きは要らなくなる——実際に入っているのは交通費だったりする。
+         名前は 店名+品目(古い記録は`label`)。どちらも空なら「経費」 */
+      (m.expenses||[]).forEach(x=>{
+        if(!num(x.amount)) return;
+        const it=(x.item!=null? x.item : (x.label||""));
+        const nm=[x.store||"", it||""].filter(Boolean).join(" ") || "経費";
+        h += sub(nm, -num(x.amount));
+      });
+    }
     h += '<div style="height:1px;background:var(--line);margin:12px 0 8px"></div>';
     h += srow("最終収支(家計簿へ連携)", mjFinal(m), true);
     return h;
@@ -6745,7 +6756,7 @@ function mjSummary(m){
   h += srow("ゲーム代", -mjGameFee(m));
   /* v5.47: **バックはゲーム代の直後**。麻雀のみ収支には入れない */
   if(mjFeeBack(m)) h += srow("ゲーム代バック", mjFeeBack(m));
-  if(mjExpTotal(m)) h += srow("経費(飲食など)", -mjExpTotal(m));
+  if(mjExpTotal(m)) h += srow("経費", -mjExpTotal(m));
   h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>';
   h += srow("最終収支(家計簿へ連携)", mjFinal(m), true);
   return h;
