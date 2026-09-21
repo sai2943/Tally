@@ -243,11 +243,11 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.68 (localStorage保存・完全オフライン)
+   Tally 5.69 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
-const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
-const INCOME_CATS = ["給与","賞与","副業","臨時","家庭内"];  /* 家庭内=配偶者からの生活費等の世帯内移転(v3.32)。salary集計はカテゴリ不問の全収入なので滝原資に乗る——支出側が既に家計混在のため対称で正しい */
+const EXPENSE_CATS = ["消費","娯楽","承認","立替"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
+const INCOME_CATS = ["給与","賞与","副業","臨時","家庭内","立替精算"];  /* 家庭内=配偶者からの生活費等の世帯内移転(v3.32)。salary集計はカテゴリ不問の全収入なので滝原資に乗る——支出側が既に家計混在のため対称で正しい */
 const UNIT_LABEL = {medal:"枚", ball:"玉", yen:"円"};
 const WD = ["日","月","火","水","木","金","土"];
 
@@ -259,6 +259,22 @@ const WD = ["日","月","火","水","木","金","土"];
    **グローバルに置くので、どの関数からでも同じ判定が使える** */
 const NET_SRCS = ["slot","mahjong"];
 const isNet = e => !!e && NET_SRCS.indexOf(e.src) >= 0;
+/* v5.69: **立替**(ユーザー要望: 出張の新幹線代を立て替えている。精算は給与とは別に振り込まれる)。
+   会社の金を自分の財布で一時的に払っているだけで、**自分の支出でも収入でもない**。
+   ・所持金・明細・照合には**出す**——実際に財布から出て、銀行の明細にも載る
+   ・予算・可処分・月別収支・給料の着金判定には**数えない**——数えると往復で2回嘘が入る
+     (払った時に変動消費の枠を食い、戻った時に可処分を膨らませる)
+   ・承認で代用しない——承認は振替目標を下げる(v4.81)ので**先取り貯金が立替の分だけ減る**
+   遊技(isNet)と違って明細から消さないので、**別の判定**にする。 */
+const ADV_EXP = "立替", ADV_INC = "立替精算";
+const isAdv = e => !!e && (e.category===ADV_EXP || e.category===ADV_INC);
+/* 未精算=会社に貸している額。今日までに払った立替 − 戻った精算。
+   **件ごとに紐づけない**——出張2回分がまとめて1回で振り込まれることもあり、残高で見る方が現実に合う */
+function advOutstanding(){
+  const t=todayStr();
+  return (S.entries||[]).filter(e=>e.date&&e.date<=t&&isAdv(e))
+    .reduce((a,e)=>a+(e.category===ADV_EXP? e.amount : -e.amount),0);
+}
 const num = v => { const n = parseInt(v,10); return isNaN(n)?0:n; };
 const fnum = v => { const n = parseFloat(v); return isNaN(n)?0:n; };
 const yen = n => "¥" + Math.abs(n).toLocaleString("ja-JP");
@@ -906,7 +922,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.68";
+const APP_VERSION = "5.69";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2215,7 +2231,8 @@ function viewLedgerDetail(mk){
         const entryRow=(e)=>{
           const signedAmt = e.type==="income" ? e.amount : -e.amount;
           const isFuture = e.date > todayS;
-          const cc = e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
+          /* v5.69: 立替・立替精算は**自分の金ではない**ので、良し悪しの色を付けない(枠だけ無彩色) */
+          const cc = isAdv(e) ? "var(--muted)" : e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
           const sep = row++ ? 'border-top:1px solid var(--line);' : '';
           /* v5.58: 照合中はタップの意味が変わる(✓の付け外し)。**編集は開かない**——
              消し込みの最中に編集画面が開くと、指が滑るたびに作業が止まる */
@@ -2360,7 +2377,7 @@ function viewLedgerBudget(mk){
     }
   }
   h += '<div class="card" style="margin-bottom:14px">';
-  EXPENSE_CATS.filter(c=>c!=="承認").forEach((cat,i)=>{  /* 承認は予算バー対象外(承認プロセス自体が統制) */
+  EXPENSE_CATS.filter(c=>c!=="承認"&&c!==ADV_EXP).forEach((cat,i)=>{  /* 承認は予算バー対象外(承認プロセス自体が統制)。立替も対象外(v5.69) */
     const _bv=(S.budgets||{})[cat];
     const monthCap = budgetAmt(_bv, disposableBase(mk));   /* v3.73: 割合対応 */
     const capIsPct = budgetIsPct(_bv);
@@ -2736,6 +2753,22 @@ function viewLedger(){
         '</div>';
     }
   }
+  /* v5.69: **立替の未精算**。残っている時だけ出す(0なら言うことがない)。
+     行動が変わる数字——請求し忘れ・振り込まれ忘れの両方に気付ける。
+     色は琥珀(=中間/保留)。自分の損得ではなく「まだ戻っていない」状態なので赤でも緑でもない。
+     月の切り替えとは無関係に**通算**で出す(貸しは月をまたいで残るため) */
+  { const _adv=advOutstanding();
+    if(_adv!==0){
+      h += '<div class="card" style="margin-bottom:12px;padding:11px 14px">'+
+        '<div class="row between" style="align-items:baseline">'+
+        '<span style="font-size:13px;font-weight:700">立替 '+(_adv>0?'未精算':'精算が多い')+'</span>'+
+        '<span class="mono amber" style="font-size:17px;font-weight:700">'+yen(_adv)+'</span></div>'+
+        '<div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">'+
+        (_adv>0
+          ? '振り込まれたら、収入の「立替精算」で記録すると0に戻ります。'
+          : '立替の記録より精算の方が多くなっています。立替の記帳漏れか、精算の重複かもしれません。')+
+        '</div></div>';
+    } }
   h += viewLedgerDetail(mk);
   return h;
 }
@@ -3149,7 +3182,7 @@ function summaryText(){
   L.push("## この数字の読み方");
   L.push("- 所持金 = 帳簿上の残高。カード払いの決済ズレは反映しないので実口座とは差が出る");
   L.push("- 軍資金 = 遊技専用の資金。生活費・貯金とは分離しており、勝ち負けはこの中だけで増減する");
-  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外)");
+  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外) / 立替=会社の経費を一時的に払ったもの(収入の「立替精算」で戻る。収支・予算に数えない)");
   L.push("- 遊技の収支は当月収支に含まれるが、**所持金ではなく軍資金**を増減させる");
   L.push("- 振替(財布間・貯金へ・軍資金へ)は収支ではない。総資産は動かない");
   L.push("- 「確定」= 今日までに発生した分。「予定込」= 未来日の固定費・定期収入を含む見込み");
@@ -3237,6 +3270,7 @@ function monthlyRows(){
     const mk=String(e.date||"").slice(0,7); if(!mk) return;
     const b=by[mk]=by[mk]||{mk:mk,inc:0,exp:0,live:0,fun:0,game:0};
     if(isNet(e)){ b.game += (e.type==="income"?e.amount:-e.amount); return; }
+    if(isAdv(e)) return;   /* v5.69: 立替は月の収入・支出のどちらでもない */
     if(e.type==="income") b.inc+=e.amount;
     else { b.exp+=e.amount;
       if(LIVING_CATS.indexOf(e.category)>=0) b.live+=e.amount;
@@ -4421,8 +4455,9 @@ function leakMonths(){
    未来に収入が1件も無ければ従来どおり月末まで(それ以上は推測になる)。 */
 function nextIncomeDate(){
   const t=todayStr();
+  /* v5.69: 立替精算は「次の収入」ではない(窓が精算日で切れて、確定済みの支出を取りこぼす) */
   const ds=(S.entries||[]).filter(e=>e.date&&e.date>t&&e.type==="income"
-      &&!isNet(e)).map(e=>e.date).sort();
+      &&!isNet(e)&&!isAdv(e)).map(e=>e.date).sort();
   return ds.length ? ds[0] : null;
 }
 function futureNet(mk){
@@ -4530,7 +4565,8 @@ function preSplit(mk){
    **その月の収入の過半が着弾したか**で見る。給与は当月収入の大半を占めるので、
    臨時収入では発火せず、給料が入った瞬間に発火する。カテゴリ名に依存しないのも利点 */
 function mainIncomeLanded(mk){
-  const me=(S.entries||[]).filter(e=>inBudget(e.date,mk)&&e.type==="income"&&!isNet(e));
+  /* v5.69: 立替精算で「給料が入った」と判定しない(先取りの催促が早まる) */
+  const me=(S.entries||[]).filter(e=>inBudget(e.date,mk)&&e.type==="income"&&!isNet(e)&&!isAdv(e));
   const all=me.reduce((a,e)=>a+e.amount,0);
   if(all<=0) return false;
   const got=me.filter(e=>e.date<=todayStr()).reduce((a,e)=>a+e.amount,0);
@@ -4807,7 +4843,7 @@ function curBudgetMk(){
 function budgetMk(mk){ return (mk===todayStr().slice(0,7)) ? curBudgetMk() : mk; }
 function disposableBase(mk){
   const me=(S.entries||[]).filter(e=>inBudget(e.date, mk));   /* v5.49: 予算の期間で絞る */
-  const inc=me.filter(e=>e.type==="income"&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
+  const inc=me.filter(e=>e.type==="income"&&!isNet(e)&&!isAdv(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69: 立替精算は収入ではない */
   const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
   const fs=furusatoDue(mk);                      /* v3.99: 貯金で賄えない分(short)だけをフローから確保する */
   return Math.max(0, inc-fx-(fs.active?fs.short:0));
@@ -4885,8 +4921,8 @@ function securedSplit(mk){
 function leakAgg(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
   /* v5.32: グローバルの isNet を使う */
-  const salary=me.filter(e=>e.type==="income"&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
-  const spend=me.filter(e=>e.type==="expense"&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
+  const salary=me.filter(e=>e.type==="income"&&!isNet(e)&&!isAdv(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69 */
+  const spend=me.filter(e=>e.type==="expense"&&!isNet(e)&&!isAdv(e)).reduce((a,e)=>a+e.amount,0);
   const gnet=me.filter(isNet).reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
   const _ss=securedSplit(mk); const secured=_ss.sv+_ss.iv;
   return {mk:mk, salary:salary, spend:spend, gnet:gnet, secured:secured};
@@ -6261,10 +6297,10 @@ function viewFixed(){
     if(f.type==="expense"){
       h += '<div class="muted" style="font-size:11px;margin:0 2px 6px">分類</div>'+
         '<div class="row" style="gap:8px;margin-bottom:10px">'+
-        EXPENSE_CATS.map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="flex:1;padding:10px 2px;font-size:13px" data-fa="fcat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>';
+        EXPENSE_CATS.filter(c=>c!==ADV_EXP).map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="flex:1;padding:10px 2px;font-size:13px" data-fa="fcat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>';
     } else {
       h += '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
-        INCOME_CATS.map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-fa="fcat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>';
+        INCOME_CATS.filter(c=>c!==ADV_INC).map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-fa="fcat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>';
     }
     /* 頻度 */
     const freq = f.freq || "monthly";
