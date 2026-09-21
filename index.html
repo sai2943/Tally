@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.67 (localStorage保存・完全オフライン)
+   Tally 5.68 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制) */
@@ -906,7 +906,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.67";
+const APP_VERSION = "5.68";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3867,10 +3867,16 @@ function viewMjTable(){
       : '<button class="btn primary full" style="margin-bottom:10px;padding:11px 0;font-weight:700" data-mt="tokakei">★ '+esc(t.players[t.meIdx]||"自分")+'の成績を家計簿に反映</button>';
   }
   h += '<button class="btn tealb full" style="margin-bottom:8px;padding:11px 0;font-weight:700" data-mt="tosheet">精算シートを表示(みんなに見せる)</button>';
-
-  h += mjtKeypadHtml(t);
-  h += '<div style="height:40px"></div>';
   }
+  /* v5.68【修正】**チップ数が入れられなかった**(ユーザー報告)。
+     テンキーの呼び出しが`if(UI.feesOpen){…}`の**中**にあった——v2.99で「家計簿・共有」を
+     精算・共有の区画に畳み込んだとき、閉じ括弧がテンキーの後ろに置かれ、**テンキーまで巻き込まれた**。
+     チップのセルはタップで選択(黄枠)まではできるのに、精算・共有を開かない限りテンキーが出ない。
+     しかも精算・共有は**既定で畳まれている**(mjtnew/mjtopenの初期化)ので、普通に使うと必ずこうなる。
+     テンキーは**選択中のセルの持ち主**に従う: 設定画面でテンキーを使うのはチップ(開始/終了)だけなので、
+     プレイヤー・チップが開いている時に出す。position:stickyなので置き場所は末尾で下端に貼り付く。 */
+  if(UI.chipsOpen) h += mjtKeypadHtml(t);
+  h += '<div style="height:40px"></div>';
   return h;
 }
 
@@ -4085,7 +4091,10 @@ function bindMjTable(){
         saveMjt(false); renderKeepScroll();
       }
       else if(a==="pdelmode"){ UI.pdelMode=!UI.pdelMode; renderKeepScroll(); }
-      else if(a==="sect"){ const k=el.dataset.v; if(k==="rules")UI.rulesOpen=!UI.rulesOpen; else if(k==="chips")UI.chipsOpen=!UI.chipsOpen; else if(k==="fees")UI.feesOpen=!UI.feesOpen; renderKeepScroll(); }
+      else if(a==="sect"){ const k=el.dataset.v; if(k==="rules")UI.rulesOpen=!UI.rulesOpen; else if(k==="chips")UI.chipsOpen=!UI.chipsOpen; else if(k==="fees")UI.feesOpen=!UI.feesOpen;
+        /* v5.68: チップ欄を畳んだら、その欄のセル選択も外す(見えないセルに向けたテンキーを残さない) */
+        if(k==="chips" && !UI.chipsOpen && UI.mjtCell && (UI.mjtCell.k==="cs"||UI.mjtCell.k==="ce")) UI.mjtCell=null;
+        renderKeepScroll(); }
       else if(a==="plock"){
         if(!t.playersLocked){ if(confirm("メンバーを確定しますか?(確定後はプレイヤーを削除できません。追加は可能)")){ t.playersLocked=true; saveMjt(false); renderKeepScroll(); } }
         else if(confirm("メンバー確定を解除しますか?")){ t.playersLocked=false; saveMjt(false); renderKeepScroll(); }
