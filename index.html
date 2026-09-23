@@ -243,7 +243,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.73 (localStorage保存・完全オフライン)
+   Tally 5.74 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -939,7 +939,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.73";
+const APP_VERSION = "5.74";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4275,7 +4275,7 @@ function mjtToKakei(){
   const rc=mjtRankCounts(t,pi);
   /* 同じスコア表からの過去の反映を差し替え(二重計上を防ぐ) */
   const prev=S.mjSessions.filter(s=>s.fromTable===t.id);
-  prev.forEach(ps=>{ S.entries=S.entries.filter(e=>e.id!=="mj-"+ps.id); });
+  prev.forEach(ps=>{ S.entries=S.entries.filter(e=>!isLinkOf(e,"mj-"+ps.id)); });   /* v5.74: 分け先の行も */
   const wasReflected=prev.length>0;
   if(!t.endAt) t.endAt = nowHM();   /* 終了時刻: 初回反映の時刻を表に記録(以後は表の値を尊重) */
   S.mjSessions=S.mjSessions.filter(s=>s.fromTable!==t.id);
@@ -4292,16 +4292,18 @@ function mjtToKakei(){
     startAt:t.startAt||"",
     endAt:t.endAt||"",
     memo:(prev[0]&&prev[0].memo)||"",
+    /* v5.74: 置き場(と分け先)も私的フィールドとして引き継ぐ。
+       これまで置き場を選んでも、表から反映し直すと**先頭の置き場に戻っていた**(同じ穴を一緒に塞ぐ) */
+    bwal:(prev[0]&&prev[0].bwal)||undefined,
+    splits:(prev[0]&&prev[0].splits)||undefined,
     fromTable:t.id };
   S.mjSessions.push(sess);
   const fin=mjFinal(sess);
   const linkId="mj-"+sess.id;
-  if(fin!==0){
-    S.entries.push({id:linkId, date:sess.date, src:"mahjong",
-      type: fin>0?"income":"expense", category:"遊技", amount:Math.abs(fin),
-      bwal: String(sess.bwal || bankPots()[0].id),   /* v4.57: どの置き場の金か */
-      memo:"麻雀(セット・"+sess.rule+"麻)"+(sess.store?" @"+sess.store:"")});
-  }
+  if(!sess.bwal) delete sess.bwal;
+  if(!sess.splits) delete sess.splits;
+  writeGameEntries(linkId, {date:sess.date, src:"mahjong", category:"遊技",
+    memo:"麻雀(セット・"+sess.rule+"麻)"+(sess.store?" @"+sess.store:"")}, fin, sess);   /* v5.74 */
   t.reflectedKey = pi+":"+c.net;   /* 反映済みキー: スコア/チップ/レート編集で自動的に未反映へ戻る */
   save();
   render();
@@ -5421,6 +5423,75 @@ function bankPots(){
   return p.length ? p : [{id:"b_main", name:"軍資金", seed:String(num((S.bank||{}).seed)||0)}];
 }
 function bankName(id){ const p=bankPots().find(x=>String(x.id)===String(id)); return p?p.name:"軍資金"; }
+/* v5.74: **精算の置き場を分ける**(ユーザー設計: 複数の箱に金額を指定して精算。複数人の貸し借りに対応)。
+   v4.57の「貸しも借りも置き場で、符号が違うだけ」の上に、**1つの稼働を複数の置き場に割る**ことだけを足す。
+   ・分け先には金額を指定(＋=相手に貸し/もらう予定、−=借り/払う予定)。**残りは主の置き場へ自動**——
+     分け先に何を入れても、置き場の合計は必ず最終収支に一致する(手で残りを計算させない)
+   ・帳簿上は置き場ごとに別の連携エントリ(`<linkId>~<n>`)。遊技収支の合計・遊技タブ・ウィジェットは
+     entriesを足すだけなので何も変わらない。稼働の真実の所在は今まで通りセッション(家計簿の行は派生物) */
+const gspVal = x => (x && x.neg ? -1 : 1) * num(x && x.amt);
+function gspList(sess){ return (sess && sess.splits) || []; }
+function gspPrimary(sess){ return String((sess && sess.bwal) || bankPots()[0].id); }
+function gspRest(sess, fin){ return fin - gspList(sess).reduce((a,x)=>a+gspVal(x),0); }
+function gspRestHtml(sess, fin){
+  const r=gspRest(sess, fin);
+  return '残り → '+esc(bankName(gspPrimary(sess)))+' <span class="mono '+clsPM(r)+'" style="font-weight:700">'+signYen(r)+'</span>';
+}
+function gspHtml(sess, fin){
+  const pb=gspPrimary(sess), list=gspList(sess);
+  const used=new Set(list.map(x=>String(x.bwal)).concat([pb]));
+  const avail=bankPots().filter(p=>!used.has(String(p.id)));
+  let h='';
+  list.forEach((x,i)=>{
+    h+='<div class="row" style="gap:6px;align-items:center;margin-bottom:6px">'+
+      '<span class="ellip" style="flex:1;min-width:0;font-size:13px">'+esc(bankName(x.bwal))+'</span>'+
+      '<button class="btn" data-a="gspsign" data-v="'+i+'" style="width:44px;min-height:40px;padding:0;font-weight:700;color:'+(x.neg?'var(--red)':'var(--teal)')+'">'+(x.neg?'−':'＋')+'</button>'+
+      '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(x.amt||"")+'" data-in="gsp" data-v="'+i+'" style="width:120px">'+
+      '<button class="navbtn" data-a="gspdel" data-v="'+i+'" style="color:var(--muted);padding:0 6px;font-size:16px">×</button></div>';
+  });
+  if(UI.gspPick && avail.length){
+    h+='<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">'+
+      avail.map(p=>'<button class="chip" data-a="gsppick" data-v="'+esc(p.id)+'">'+esc(p.name)+'</button>').join("")+'</div>';
+  }
+  if(avail.length) h+='<button class="btn dash full" data-a="gspadd" style="margin-bottom:8px;font-size:12px;padding:9px 0">'+(UI.gspPick?'やめる':'＋ 分けて入れる')+'</button>';
+  if(list.length){
+    h+='<div class="muted" id="gsp-rest" style="font-size:12px;text-align:right;margin:2px 0 4px">'+gspRestHtml(sess, fin)+'</div>'+
+       '<div class="muted" style="font-size:11px;line-height:1.6;margin-bottom:12px">相手に貸し(もらう予定)は＋、借り(払う予定)は−。残りは上で選んだ置き場に入ります。</div>';
+  }
+  return h;
+}
+/* クリック操作。処理したら true(呼び側で再描画) */
+function gspAction(sess, a, v){
+  if(a==="gspadd"){ UI.gspPick=!UI.gspPick; return true; }
+  if(a==="gsppick"){ sess.splits=gspList(sess).concat([{bwal:String(v), amt:"", neg:false}]); UI.gspPick=false; return true; }
+  if(a==="gspdel"){ const i=num(v); sess.splits=gspList(sess).filter((_,k)=>k!==i); return true; }
+  if(a==="gspsign"){ const x=gspList(sess)[num(v)]; if(x) x.neg=!x.neg; return true; }
+  return false;
+}
+/* 金額の入力。**再描画しない**(キーボードが閉じる・v3系で繰り返した事故)。残りの行だけ書き換える */
+function gspInput(sess, i, val, fin){
+  const x=gspList(sess)[i]; if(x) x.amt=val;
+  const el=document.getElementById("gsp-rest"); if(el) el.innerHTML=gspRestHtml(sess, fin);
+}
+/* 保存前の掃除: 金額0・主と同じ置き場・消えた置き場を落とす */
+function gspClean(sess){
+  const pb=gspPrimary(sess), ok=new Set(bankPots().map(p=>String(p.id)));
+  const sp=gspList(sess).filter(x=>x && ok.has(String(x.bwal)) && String(x.bwal)!==pb && gspVal(x)!==0)
+    .map(x=>({bwal:String(x.bwal), amt:String(Math.abs(num(x.amt))), neg:!!x.neg}));
+  if(sp.length) sess.splits=sp; else delete sess.splits;
+}
+/* その稼働の連携エントリか(本体 or 分け先) */
+function isLinkOf(e, linkId){ const id=String(e&&e.id); return id===linkId || id.indexOf(linkId+"~")===0; }
+/* 連携エントリを書き直す。古い本体・分け先は**全部消してから**書く(分け先を減らした時に残骸を残さない) */
+function writeGameEntries(linkId, base, fin, sess){
+  S.entries = S.entries.filter(e=>!isLinkOf(e, linkId));
+  const sp=gspList(sess).filter(x=>x && x.bwal && gspVal(x)!==0);
+  const rest=fin - sp.reduce((a,x)=>a+gspVal(x),0);
+  const mk=(id,amt,bw,suf)=>({id:id, date:base.date, src:base.src, type:amt>0?"income":"expense",
+    category:base.category, amount:Math.abs(amt), bwal:String(bw), memo:base.memo+(suf||"")});
+  if(rest!==0) S.entries.push(mk(linkId, rest, gspPrimary(sess), ""));
+  sp.forEach((x,i)=>S.entries.push(mk(linkId+"~"+(i+1), gspVal(x), x.bwal, " → "+bankName(x.bwal))));
+}
 function eBWal(e){ return String(e.bwal || bankPots()[0].id); }
 function tBWal(t){ return String(t.bwal || bankPots()[0].id); }
 function bankSeed(bw){
@@ -5749,6 +5820,12 @@ function bindBank(){
         (S.entries||[]).forEach(e=>{ if(isNet(e) && String(e.bwal)===String(v)) e.bwal=String(other.id); });   /* v5.73 */
         (S.bank.txns||[]).forEach(t=>{ if(String(t.bwal)===String(v)) t.bwal=String(other.id); });
         (S.entries||[]).forEach(e=>{ if(String(e.bkSrc||"")===String(v)) e.bkSrc=String(other.id); });   /* v5.70: 軍資金から払った記録の出所も付け替える */
+        /* v5.74: **稼働が持つ置き場・分け先も付け替える**。これまでは連携エントリだけ付け替えて稼働側を放置していたので、
+           その稼働を開いて保存し直すと、**消えた置き場へ書き戻す**潜在バグだった */
+        (S.mjSessions||[]).concat(S.sessions||[]).forEach(ss=>{
+          if(String(ss.bwal||"")===String(v)) ss.bwal=String(other.id);
+          (ss.splits||[]).forEach(x=>{ if(String(x.bwal)===String(v)) x.bwal=String(other.id); });
+        });
         other.seed=String(num(other.seed)+num(p.seed));
         S.bank.pots=pots.filter(x=>String(x.id)!==String(v));
         save(); render(); return; }
@@ -6770,6 +6847,7 @@ function viewMj(){
         return '<button class="btn '+(cb===String(p.id)?"sel":"")+'" data-a="mjbwal" data-v="'+esc(p.id)+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
         '<span class="ellip" style="display:block">'+esc(p.name)+'</span>'+
         '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:11px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
+    h += '<div style="margin-top:8px">'+gspHtml(m, mjFinal(m))+'</div>';   /* v5.74: 置き場を分ける */
   }
   h += '<input class="input" placeholder="メモ(任意)" value="'+esc(m.memo||"")+'" style="margin:14px 0" data-in="mjf" data-v="memo">';
   h += '<div style="display:none"><button data-a="mjsave">保存</button></div>';
@@ -6819,9 +6897,17 @@ function mjSummary(m){
     const sub=(l,v)=>'<div class="row between" style="font-size:12px;margin:2px 0;padding-left:14px">'+
       '<span class="muted">'+l+'</span><span class="mono '+clsPM(v)+'">'+signYen(v)+'</span></div>';
 
-    h += '<div class="muted mono" style="font-size:11px">投資 ¥'+num(m.inAmt).toLocaleString("ja-JP")+
+    /* v5.74: **投資も回収も空なら、麻雀のみ・ゲーム代の2ブロックは出さない**(ユーザーのスクショで発覚)。
+       式の上では 0−0+ゲーム代 で「麻雀のみ +¥350 / ゲーム代 −¥350」が立つが、何も入れていない卓で
+       「麻雀で350円勝った」と読めてしまう——**入力が無いところに数字を作らない** */
+    const _hasCash = String(m.inAmt||"").trim()!=="" || String(m.outAmt||"").trim()!=="";
+    if(!_hasCash){
+      h += '<div class="muted" style="font-size:12px;line-height:1.7">投資と回収を入れると、麻雀のみの収支とゲーム代の内訳が出ます。</div>';
+    }
+    else h += '<div class="muted mono" style="font-size:11px">投資 ¥'+num(m.inAmt).toLocaleString("ja-JP")+
       ' → 回収 ¥'+num(m.outAmt).toLocaleString("ja-JP")+'</div>';
 
+    if(_hasCash){
     h += head("麻雀のみ収支", mjRaw(m));
     if(mjScoreYen(m)) h += sub("スコア "+fnum(m.score)+"×"+fnum(m.scoreRate), mjScoreYen(m));
     if(mjChipYen(m)) h += sub("チップ "+fnum(m.chips)+"枚×"+fnum(m.chipRate), mjChipYen(m));
@@ -6840,6 +6926,7 @@ function mjSummary(m){
         if(num(m.feeBack)&&H) h += sub("バック "+num(m.feeBack)+"×"+H+"半荘", num(m.feeBack)*H);
       }
     }
+    }   /* v5.74: _hasCash */
     if(mjExpTotal(m)){
       h += head("経費", -mjExpTotal(m));
       /* v5.67: **経費も内訳を出す**(ユーザー指摘)。中身が見えれば「(飲食など)」という
@@ -6882,6 +6969,7 @@ function bindMj(){
     const kind=el.dataset.in, v=el.dataset.v;
     el.oninput = ()=>{
       if(kind==="mjf"){ m[v]=el.value; refreshMj(); }
+      else if(kind==="gsp"){ gspInput(m, num(v), el.value, mjFinal(m)); }   /* v5.74 */
       else if(kind==="mjxstore"||kind==="mjxitem"||kind==="mjxamount"){
         const x = (m.expenses||[]).find(e=>String(e.id)===String(v));
         if(!x) return;
@@ -6958,7 +7046,7 @@ function bindMj(){
       else if(a==="mjpdel"){ (m.players=m.players||[]).splice(num(v),1); render(); }
       else if(a==="mjdel"){
         if(!confirm("この麻雀記録を削除しますか?")) return;
-        S.entries = S.entries.filter(e=>e.id!=="mj-"+m.id);
+        S.entries = S.entries.filter(e=>!isLinkOf(e,"mj-"+m.id));   /* v5.74 */
         S.mjSessions = (S.mjSessions||[]).filter(x=>x.id!==m.id);
         save(); UI.screen="main"; UI.mjDraft=null; render();
       }
@@ -6997,7 +7085,9 @@ function bindMj(){
         const e=(S.entries||[]).find(x=>String(x.id)===String(v));
         if(e){ (m.expenses=m.expenses||[]).push({id:uid(), store:e.store||"", item:(e.item||e.memo||e.category||"支出"), amount:String(num(e.amount)), fromEntry:e.id, fromData:Object.assign({},e)}); UI.xferOpen=false; render(); }
       }
-      else if(a==="mjbwal"){ UI.mjDraft.bwal=String(v); render(); }
+      /* v5.74: 主の置き場を選び直したら、同じ置き場の分け先は外す(主と分け先を兼ねない) */
+      else if(a==="mjbwal"){ UI.mjDraft.bwal=String(v); UI.mjDraft.splits=gspList(UI.mjDraft).filter(x=>String(x.bwal)!==String(v)); UI.gspPick=false; render(); }
+      else if(String(a).indexOf("gsp")===0){ if(gspAction(UI.mjDraft, a, v)) render(); }
       else if(a==="mjsave") saveMj();
     };
   });
@@ -7009,6 +7099,8 @@ function refreshMj(){
   const hn=document.getElementById("mj-hanchan"); if(hn) hn.textContent="半荘数 "+mjHanchan(m)+(mjAvgRank(m)!==null?" / 平均着順 "+mjAvgRank(m).toFixed(2):"");
   const ff=document.getElementById("mj-feeformula"); if(ff) ff.textContent=mjFeeFormula(m);
   const fa=document.getElementById("mj-feeauto"); if(fa) fa.textContent="¥"+mjGameFee(m).toLocaleString("ja-JP");
+  /* v5.74: 最終収支が動けば「残り」も動く(スコアや投資を直しながら分け先を見ても嘘にならないように) */
+  const gr=document.getElementById("gsp-rest"); if(gr) gr.innerHTML=gspRestHtml(m, mjFinal(m));
 }
 
 function saveMj(){
@@ -7016,6 +7108,7 @@ function saveMj(){
   if(!m.date) return;
   const cleaned = Object.assign({}, m);
   const _rs = cleaned._restore||[]; delete cleaned._restore;
+  gspClean(cleaned); UI.gspPick=false;   /* v5.74 */
   const rc = mjRankCount(cleaned);
   cleaned.ranks = (cleaned.ranks||["","","",""]).slice(0,4).map((x,i)=> i<rc ? x : "");
   cleaned.players = (cleaned.players||[]).map(p=>(p||"").trim()).filter(Boolean).slice(0,5);
@@ -7038,15 +7131,9 @@ function saveMj(){
   }
   const linkId = "mj-"+m.id;
   const fin = mjFinal(cleaned);
-  S.entries = S.entries.filter(e=>e.id!==linkId);
-  if(fin!==0){
-    S.entries.push({id:linkId, date:cleaned.date, src:"mahjong",
-      type: fin>0?"income":"expense",
-      category: "遊技",
-      amount: Math.abs(fin),
-      bwal: String(cleaned.bwal || bankPots()[0].id),   /* v4.57: どの置き場の金か */
-      memo: "麻雀"+(cleaned.category==="free"?"(フリー":"(セット")+"・"+cleaned.rule+"麻)"+(cleaned.store?" @"+cleaned.store:"")});
-  }
+  /* v5.74: 置き場を分けていれば分け先ごとに書く(分けていなければ従来と同じ1行) */
+  writeGameEntries(linkId, {date:cleaned.date, src:"mahjong", category:"遊技",
+    memo:"麻雀"+(cleaned.category==="free"?"(フリー":"(セット")+"・"+cleaned.rule+"麻)"+(cleaned.store?" @"+cleaned.store:"")}, fin, cleaned);
   /* 家計簿からの振替: 選択元の記録をここで削除(保存とワンセット) */
   const _xf = new Set((cleaned.expenses||[]).map(x=>String(x.fromEntry)).filter(x=>x!=="undefined"&&x!=="null"));
   if(_xf.size) S.entries = S.entries.filter(e=>!_xf.has(String(e.id)));
@@ -7247,11 +7334,11 @@ function bindMain(){
            分岐漏れのままだと汎用記帳フォームが開き、そこでの編集が次のセッション保存で静かに上書きされる潜在バグだった。
            これによりユーザー提案の「家計簿の収入→代打へ飛ぶ動線」も同時に成立する */
         if(e.src==="slot"||e.src==="daida"){
-          const s = S.sessions.find(x=>"slot-"+x.id===e.id);
+          const s = S.sessions.find(x=>isLinkOf(e,"slot-"+x.id));   /* v5.74: 分け先の行からも稼働へ */
           if(s){ UI.draft=JSON.parse(JSON.stringify(s)); UI.isNewSess=false; UI.tab="games"; UI.screen="session"; render(); return; }
         }
         if(e.src==="mahjong"){
-          const s = (S.mjSessions||[]).find(x=>"mj-"+x.id===e.id);
+          const s = (S.mjSessions||[]).find(x=>isLinkOf(e,"mj-"+x.id));
           if(s){ UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.tab="games"; UI.screen="mahjong-edit"; render(); return; }
         }
         UI.editEntryId=e.id;
@@ -8214,6 +8301,7 @@ function viewSession(){
         return '<button class="btn '+(cb===String(p.id)?"sel":"")+'" data-a="sbwal" data-v="'+esc(p.id)+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
         '<span class="ellip" style="display:block">'+esc(p.name)+'</span>'+
         '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:11px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
+    h += gspHtml(s, finalOwn(s));   /* v5.74: 置き場を分ける */
   }
   /* ----- 台データ(貯玉方式) ----- */
   if(s.mode==="nori"){
@@ -8663,6 +8751,7 @@ function bindSession(){
     el.oninput = ()=>{
       if(kind==="fee"){ s.fee=el.value; refreshSummary(); }
       else if(kind==="smemo"){ s.memo=el.value; }
+      else if(kind==="gsp"){ gspInput(s, num(v), el.value, finalOwn(s)); }   /* v5.74 */
       else if(kind==="exchange"){ s.exchange=el.value; refreshSlot(); }
       else if(kind==="pexchange"){ s.pExchange=el.value; refreshSlot(); }
 
@@ -8848,12 +8937,13 @@ function bindSessionActions(){
       }
       else if(a==="sdel"){
         if(!confirm("この稼働記録を削除しますか?(家計簿の連携分も消えます)")) return;
-        S.entries = S.entries.filter(e=>e.id!=="slot-"+s.id);
+        S.entries = S.entries.filter(e=>!isLinkOf(e,"slot-"+s.id));   /* v5.74 */
         S.sessions = S.sessions.filter(x=>x.id!==s.id);
         save(); UI.screen="main"; UI.draft=null; render();
       }
       else if(a==="swal"){ UI.draft.wal=String(v); render(); }
-      else if(a==="sbwal"){ UI.draft.bwal=String(v); render(); }
+      else if(a==="sbwal"){ UI.draft.bwal=String(v); UI.draft.splits=gspList(UI.draft).filter(x=>String(x.bwal)!==String(v)); UI.gspPick=false; render(); }
+      else if(String(a).indexOf("gsp")===0){ if(gspAction(UI.draft, a, v)) render(); }   /* v5.74 */
       else if(a==="ssave") saveSession();
     };
   });
@@ -8867,6 +8957,8 @@ function saveSession(){
   });
   const _rs = cleaned._restore||[]; delete cleaned._restore;
   delete cleaned.own; delete cleaned.partner; delete cleaned.results;
+  if(cleaned.mode==="dai") delete cleaned.splits; else gspClean(cleaned);   /* v5.74: 代打は所持金へ入るので分けない */
+  UI.gspPick=false;
   if(UI.isNewSess) S.sessions.push(cleaned);
   else S.sessions = S.sessions.map(x=>x.id===s.id?cleaned:x);
   /* レート記憶 */
@@ -8878,8 +8970,13 @@ function saveSession(){
   const linkId = "slot-"+s.id;
   const fin = finalOwn(cleaned);
   const isDai = cleaned.mode==="dai";
-  S.entries = S.entries.filter(e=>e.id!==linkId);
-  if(fin!==0){
+  /* v5.74: 乗打/単独は置き場を分けられる。代打は従来どおり1行(所持金の財布へ) */
+  if(!isDai){
+    writeGameEntries(linkId, {date:cleaned.date, src:"slot", category:"遊技",
+      memo:modeLabel(cleaned.mode)+(cleaned.store?" @"+cleaned.store:"")}, fin, cleaned);
+  }
+  else S.entries = S.entries.filter(e=>!isLinkOf(e, linkId));
+  if(isDai && fin!==0){
     /* v4.56: **代打報酬をどの財布で受け取ったか**を持たせる(ユーザー指摘)。
        現金で受け取ることが多いのに、未設定だと移行で先頭の財布(口座)に寄ってしまい実態とズレる。
        遊技(乗打/単独)は軍資金で完結し所持金に触れないので財布は不要——代打のときだけ効く */
