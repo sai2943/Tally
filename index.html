@@ -243,10 +243,10 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.72 (localStorage保存・完全オフライン)
+   Tally 5.73 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
-const EXPENSE_CATS = ["消費","娯楽","承認","立替","麻雀","パチスロ"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
+const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
 const INCOME_CATS = ["給与","賞与","副業","臨時","家庭内","立替精算"];  /* 家庭内=配偶者からの生活費等の世帯内移転(v3.32)。salary集計はカテゴリ不問の全収入なので滝原資に乗る——支出側が既に家計混在のため対称で正しい */
 const UNIT_LABEL = {medal:"枚", ball:"玉", yen:"円"};
 const WD = ["日","月","火","水","木","金","土"];
@@ -257,7 +257,7 @@ const WD = ["日","月","火","水","木","金","土"];
    これまで7通りの書き方で17箇所に散っており、**扱いを変えるとき漏れなく直せない**状態だった。
    実際このセッションで3回、関数のローカル定義が見えずスコープ外参照で詰まっている。
    **グローバルに置くので、どの関数からでも同じ判定が使える** */
-const NET_SRCS = ["slot","mahjong"];
+const NET_SRCS = ["slot","mahjong","gexp"];   /* v5.73: gexp=遊技経費(家計簿から入れた遊技の経費) */
 const isNet = e => !!e && NET_SRCS.indexOf(e.src) >= 0;
 /* v5.71: **遊技の経費を家計簿の分類で入れる**(ユーザー設計:
    「消費とか娯楽の区分に麻雀とパチスロを追加する。そこに入れたのは遊技の収支に出せば良い。
@@ -265,7 +265,12 @@ const isNet = e => !!e && NET_SRCS.indexOf(e.src) >= 0;
    **保存時に`src`を付けるだけ**で、既存の`isNet`の世界にそのまま乗る——
    可処分・予算・月別収支・所持金からは自動で外れ、軍資金(`bankGameNet`)と遊技タブの月次に自動で入る。
    セッションの経費欄と違い、卓に紐づけず**日付だけで月次に効く**。 */
-const GAME_CATS = {"麻雀":"mahjong","パチスロ":"slot"};
+/* v5.73: **麻雀・パチスロの区分をやめて「遊技経費」1つに**(ユーザー提案: 区分すら不要かも。すっきりする)。
+   経費はその日の稼働の隣に並ぶので、どちらの遊技のものかは**位置で分かる**。ラベルで二重に言う必要がない。
+   名前を「経費」だけにしなかったのは、家計簿の分類の並び(消費/娯楽/承認/立替/…)で**立替(=会社の経費)と紛れる**ため。
+   遊技タブのセッション欄では文脈が明らかなので「経費」とだけ出す。
+   srcは新設の`gexp`——slot/mahjongどちらかに寄せると、その遊技の月次が経費の分だけ嘘になる。 */
+const GAME_CATS = {"遊技経費":"gexp"};
 const isGameCat = e => !!e && Object.prototype.hasOwnProperty.call(GAME_CATS, String(e.category||""));
 /* v5.69: **立替**(ユーザー要望: 出張の新幹線代を立て替えている。精算は給与とは別に振り込まれる)。
    会社の金を自分の財布で一時的に払っているだけで、**自分の支出でも収入でもない**。
@@ -533,6 +538,10 @@ function migrateEntry(e){
     ne = Object.assign({}, ne, {category:"副業"});
   if(e.type==="income" && ne.category==="その他収入")
     ne = Object.assign({}, ne, {category:"臨時"});
+  /* v5.73: v5.71〜5.72の「麻雀」「パチスロ」分類(家計簿から入れた遊技の経費)を「遊技経費」へ寄せる。
+     セッションが作る行は category=遊技 なので巻き込まない */
+  if(e.type==="expense" && (ne.category==="麻雀"||ne.category==="パチスロ"))
+    ne = Object.assign({}, ne, {category:"遊技経費", src:"gexp"});
   return ne;
 }
 function applyData(d){
@@ -553,7 +562,7 @@ function applyData(d){
   if(!S.bank.pots.length) S.bank.pots=[{id:"b_main", name:"軍資金", seed:String(num(S.bank.seed)||0)}];
   {
     const fb=String(S.bank.pots[0].id);
-    (S.entries||[]).forEach(e=>{ if((e.src==="slot"||e.src==="mahjong") && (e.bwal==null||e.bwal==="")) e.bwal=fb; });
+    (S.entries||[]).forEach(e=>{ if(isNet(e) && (e.bwal==null||e.bwal==="")) e.bwal=fb; });   /* v5.73: isNetに寄せた(gexpも含む) */
     (S.bank.txns||[]).forEach(t=>{ if(t.bwal==null||t.bwal==="") t.bwal=fb; });
   }   /* v4.11: refillCap=月あたりの補充許容枠。v4.15: switchは撤去 */
   S.savings = Object.assign({goals:[],txns:[],pots:[]}, d.savings||{});   /* v4.47: pot.auto=生活費の何ヶ月分(自動目標) */
@@ -930,7 +939,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.72";
+const APP_VERSION = "5.73";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2106,22 +2115,29 @@ function viewMain(){
   if(UI.tab==="games"){
     const gmk = monthKey();
     const gme = S.entries.filter(e=>e.date.startsWith(gmk));
-    const slotNet = gme.filter(e=>e.src==="slot").reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
-    const mjNet = gme.filter(e=>e.src==="mahjong").reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
-    const gambleNet = slotNet + mjNet;
+    const _net = src => gme.filter(e=>e.src===src).reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
+    const slotNet = _net("slot"), mjNet = _net("mahjong");
+    const expNet = _net("gexp");   /* v5.73: 家計簿から入れた遊技経費 */
+    const gambleNet = slotNet + mjNet + expNet;
     /* v3.52: 代打報酬(src=daida)は遊技収支に含めない設計だが、カードが沈黙すると一覧の代打行が浮く。
        従属行として金額と行き先を明記し「遊技収支の外」を位置で示す */
     const daidaNet = gme.filter(e=>e.src==="daida").reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
-    const hasSlot = gme.some(e=>e.src==="slot"), hasMj = gme.some(e=>e.src==="mahjong");
-    const both = hasSlot && hasMj;
+    /* v5.73: **内訳は、あるものが2つ以上の時に出す**。経費がどちらの遊技にも属さない以上、
+       麻雀だけの月でも経費があれば「麻雀 +14,900 / 経費 −100」と割らないと、
+       大きい数字(+14,800)がセッション欄のどの数字とも一致せず説明がつかない */
+    const parts = [["パチスロ",slotNet,gme.some(e=>e.src==="slot")],
+                   ["麻雀",mjNet,gme.some(e=>e.src==="mahjong")],
+                   ["経費",expNet,gme.some(e=>e.src==="gexp")]].filter(x=>x[2]);
+    const both = parts.length>=2;
     h += '<div class="card" style="margin-top:10px;margin-bottom:12px">'+
       '<div style="text-align:center;padding:2px 0 '+((both||daidaNet!==0)?"12px":"2px")+'">'+
         '<div class="muted" style="font-size:12px;letter-spacing:.1em;margin-bottom:3px">当月の遊技収支</div>'+
         '<div class="mono '+clsPM(gambleNet)+'" style="font-size:34px;font-weight:700;line-height:1.15">'+signYen(gambleNet)+'</div></div>'+
       (both ? '<div class="row" style="border-top:1px solid var(--line);padding-top:11px">'+
-        '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">パチスロ</div><div class="mono '+clsPM(slotNet)+'" style="font-size:18px;font-weight:700">'+signYen(slotNet)+'</div></div>'+
-        '<div style="width:1px;background:var(--line)"></div>'+
-        '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">麻雀</div><div class="mono '+clsPM(mjNet)+'" style="font-size:18px;font-weight:700">'+signYen(mjNet)+'</div></div></div>' : '')+
+        parts.map((x,i)=>(i?'<div style="width:1px;background:var(--line)"></div>':'')+
+          '<div style="flex:1;text-align:center"><div class="muted" style="font-size:11px;margin-bottom:3px">'+x[0]+'</div>'+
+          '<div class="mono '+clsPM(x[1])+'" style="font-size:18px;font-weight:700">'+signYen(x[1])+'</div></div>').join("")+
+        '</div>' : '')+
       (daidaNet!==0 ? '<div class="row between" style="border-top:1px solid var(--line);margin-top:'+(both?"11":"0")+'px;padding-top:9px;align-items:baseline">'+
         '<span class="muted" style="font-size:11px">代打報酬</span>'+
         '<span><span class="mono '+clsPM(daidaNet)+'" style="font-size:14px;font-weight:700">'+signYen(daidaNet)+'</span>'+
@@ -2832,15 +2848,14 @@ function gameRowMj(s, first){
    タップで記録の編集へ(直す場所はここ)。どこから出たかを1行で添える——
    所持金から払ったのか軍資金から出したのかで、減った場所が違うため */
 function gameRowExp(e, first){
-  const kind = e.category==="パチスロ" ? "パチスロ" : "麻雀";
+  /* v5.73: タグは「経費」1つ(区分をやめたので、麻雀/パチスロのタグと二重に言わない) */
   const from = (e.gtTx!=null) ? (walletPots().find(w=>String(w.id)===String(e.wal))||{name:"所持金"}).name+"から"
                               : (bankPots().length>1 ? "軍資金:"+bankName(eBWal(e))+"から" : "軍資金から");
   const nm = [e.store||"", (e.item!=null?e.item:"")].filter(Boolean).join(" ") || "経費";
   return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="eedit" data-v="'+e.id+'">'+
     '<div style="flex:1;min-width:0">'+
     '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
-    '<span class="tag" style="border:1px solid var(--amber);color:var(--amber)">'+kind+'</span>'+
-    '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">経費</span></div>'+
+    '<span class="tag" style="border:1px solid var(--amber);color:var(--amber)">経費</span></div>'+
     '<div class="muted ellip" style="font-size:11px">'+esc(nm)+'</div>'+
     '<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+esc(from)+'</div>'+
     '</div>'+
@@ -3218,7 +3233,7 @@ function summaryText(){
   L.push("## この数字の読み方");
   L.push("- 所持金 = 帳簿上の残高。カード払いの決済ズレは反映しないので実口座とは差が出る");
   L.push("- 軍資金 = 遊技専用の資金。生活費・貯金とは分離しており、勝ち負けはこの中だけで増減する");
-  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外) / 立替=会社の経費を一時的に払ったもの(収入の「立替精算」で戻る。収支・予算に数えない) / 麻雀・パチスロ=遊技の経費(所持金か軍資金から出て遊技収支に入る。家計の収支・予算には数えない)");
+  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外) / 立替=会社の経費を一時的に払ったもの(収入の「立替精算」で戻る。収支・予算に数えない) / 遊技経費=遊技の経費(所持金か軍資金から出て遊技収支に入る。家計の収支・予算には数えない)");
   L.push("- 遊技の収支は当月収支に含まれるが、**所持金ではなく軍資金**を増減させる");
   L.push("- 振替(財布間・貯金へ・軍資金へ)は収支ではない。総資産は動かない");
   L.push("- 「確定」= 今日までに発生した分。「予定込」= 未来日の固定費・定期収入を含む見込み");
@@ -5412,7 +5427,8 @@ function bankSeed(bw){
   return bankPots().filter(p=>bw==null||String(p.id)===String(bw)).reduce((a,p)=>a+num(p.seed),0);
 }
 function bankGameNet(bw){
-  return (S.entries||[]).filter(e=>(e.src==="slot"||e.src==="mahjong") && (bw==null||eBWal(e)===String(bw)))
+  /* v5.73: 遊技の世界の定義を`isNet`1箇所に寄せる(gexpが増えても、ここを直し忘れない) */
+  return (S.entries||[]).filter(e=>isNet(e) && (bw==null||eBWal(e)===String(bw)))
     .reduce((a,e)=> a + (e.type==="income"?e.amount:-e.amount), 0);
 }
 /* v3.81: 所持金(論理残高)。実際の銀行残高ではなく帳簿上の位置——カード払いの決済ズレは吸収しない。
@@ -5730,7 +5746,7 @@ function bindBank(){
         const other=pots.find(x=>String(x.id)!==String(v));
         if(!confirm(p.name+" を削除します。\n\n記録は「"+other.name+"」に移ります(残高は変わりません)。")) return;
         /* 削除は**記録を移す**——消すと総額が変わる。所持金の財布と同じ扱い */
-        (S.entries||[]).forEach(e=>{ if((e.src==="slot"||e.src==="mahjong") && String(e.bwal)===String(v)) e.bwal=String(other.id); });
+        (S.entries||[]).forEach(e=>{ if(isNet(e) && String(e.bwal)===String(v)) e.bwal=String(other.id); });   /* v5.73 */
         (S.bank.txns||[]).forEach(t=>{ if(String(t.bwal)===String(v)) t.bwal=String(other.id); });
         (S.entries||[]).forEach(e=>{ if(String(e.bkSrc||"")===String(v)) e.bkSrc=String(other.id); });   /* v5.70: 軍資金から払った記録の出所も付け替える */
         other.seed=String(num(other.seed)+num(p.seed));
@@ -7817,7 +7833,7 @@ function viewEntry(){
         '<div class="muted" style="font-size:11px;margin:0 2px 6px">支出の分類</div>'+
         /* v5.71: 分類が6つになったので**折り返す等幅グリッド**へ(財布・箱と同じ仕組み・v4.38)。
            1行に詰めると「パチスロ」が潰れ、押す位置も毎回ずれる */
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:8px;margin-bottom:12px">'+
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(60px,1fr));gap:8px;margin-bottom:12px">'+   /* v5.73: 5つが1行に収まる幅 */
         EXPENSE_CATS.map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="padding:2px;font-size:13px;min-height:44px" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>')
       : '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
         INCOME_CATS.map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>'+
