@@ -243,10 +243,10 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.70 (localStorage保存・完全オフライン)
+   Tally 5.72 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
-const EXPENSE_CATS = ["消費","娯楽","承認","立替"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
+const EXPENSE_CATS = ["消費","娯楽","承認","立替","麻雀","パチスロ"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
 const INCOME_CATS = ["給与","賞与","副業","臨時","家庭内","立替精算"];  /* 家庭内=配偶者からの生活費等の世帯内移転(v3.32)。salary集計はカテゴリ不問の全収入なので滝原資に乗る——支出側が既に家計混在のため対称で正しい */
 const UNIT_LABEL = {medal:"枚", ball:"玉", yen:"円"};
 const WD = ["日","月","火","水","木","金","土"];
@@ -259,6 +259,14 @@ const WD = ["日","月","火","水","木","金","土"];
    **グローバルに置くので、どの関数からでも同じ判定が使える** */
 const NET_SRCS = ["slot","mahjong"];
 const isNet = e => !!e && NET_SRCS.indexOf(e.src) >= 0;
+/* v5.71: **遊技の経費を家計簿の分類で入れる**(ユーザー設計:
+   「消費とか娯楽の区分に麻雀とパチスロを追加する。そこに入れたのは遊技の収支に出せば良い。
+   結局経費は日付さえ分かれば良いんだから、この方法なら入力もいつも通りだから楽ちん」)。
+   **保存時に`src`を付けるだけ**で、既存の`isNet`の世界にそのまま乗る——
+   可処分・予算・月別収支・所持金からは自動で外れ、軍資金(`bankGameNet`)と遊技タブの月次に自動で入る。
+   セッションの経費欄と違い、卓に紐づけず**日付だけで月次に効く**。 */
+const GAME_CATS = {"麻雀":"mahjong","パチスロ":"slot"};
+const isGameCat = e => !!e && Object.prototype.hasOwnProperty.call(GAME_CATS, String(e.category||""));
 /* v5.69: **立替**(ユーザー要望: 出張の新幹線代を立て替えている。精算は給与とは別に振り込まれる)。
    会社の金を自分の財布で一時的に払っているだけで、**自分の支出でも収入でもない**。
    ・所持金・明細・照合には**出す**——実際に財布から出て、銀行の明細にも載る
@@ -922,7 +930,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.70";
+const APP_VERSION = "5.72";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2059,7 +2067,7 @@ function bindCatDrill(){
       else if(a==="drilledit"){
         const e=S.entries.find(x=>String(x.id)===String(v)); if(!e) return;
         UI.editEntryId=e.id;
-        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:e.svPot||"",svDraw:(e.svTx!=null),bkSrc:e.bkSrc||""};
+        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:e.svPot||"",svDraw:(e.svTx!=null),bkSrc:(e.bkSrc||((isGameCat(e)&&e.gtTx==null)?(e.bwal||""):""))};
         UI.entryReturn="catdrill";
         UI.screen="entry"; render();
       }
@@ -2149,7 +2157,10 @@ function viewLedgerDetail(mk){
      「上から3行で今日と昨日が読める」ことで、日々の用途はそちら。
      古い順は**突合という別の仕事のための一時的な姿**なので`UI`に置く(保存しない)。
      保存すると戻し忘れて、毎日逆さまの明細を見ることになる。開き直せば新しい順に戻る。 */
-  const detEntries = me.filter(e=>!isNetEntry(e));
+  /* v5.72: 遊技の経費は**明細に出さず、遊技タブのセッション欄に出す**(ユーザー判断)。
+     v5.71で明細に残したのは「直す場所が無くなる」からだったが、セッション欄から直せるようにしたので理由が消えた。
+     **例外は照合の時だけ**——所持金から払った遊技の経費は銀行の明細に載っているので、消し込めないと照合が閉じない */
+  const detEntries = me.filter(e=>!isNetEntry(e) || (UI.recon && isGameCat(e) && e.gtTx!=null));
   const byDate = {};
   detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
   /* v5.57: 日の中の並びも反転する(1日に複数件あると、日だけ揃えても突合の目が飛ぶ)
@@ -2232,7 +2243,7 @@ function viewLedgerDetail(mk){
           const signedAmt = e.type==="income" ? e.amount : -e.amount;
           const isFuture = e.date > todayS;
           /* v5.69: 立替・立替精算は**自分の金ではない**ので、良し悪しの色を付けない(枠だけ無彩色) */
-          const cc = isAdv(e) ? "var(--muted)" : e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
+          const cc = isAdv(e) ? "var(--muted)" : isGameCat(e) ? "var(--amber)" : e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
           const sep = row++ ? 'border-top:1px solid var(--line);' : '';
           /* v5.58: 照合中はタップの意味が変わる(✓の付け外し)。**編集は開かない**——
              消し込みの最中に編集画面が開くと、指が滑るたびに作業が止まる */
@@ -2380,7 +2391,7 @@ function viewLedgerBudget(mk){
     }
   }
   h += '<div class="card" style="margin-bottom:14px">';
-  EXPENSE_CATS.filter(c=>c!=="承認"&&c!==ADV_EXP).forEach((cat,i)=>{  /* 承認は予算バー対象外(承認プロセス自体が統制)。立替も対象外(v5.69) */
+  EXPENSE_CATS.filter(c=>c!=="承認"&&c!==ADV_EXP&&!GAME_CATS[c]).forEach((cat,i)=>{   /* v5.71: 麻雀・パチスロも予算の外(遊技の世界) */  /* 承認は予算バー対象外(承認プロセス自体が統制)。立替も対象外(v5.69) */
     const _bv=(S.budgets||{})[cat];
     const monthCap = budgetAmt(_bv, disposableBase(mk));   /* v3.73: 割合対応 */
     const capIsPct = budgetIsPct(_bv);
@@ -2815,11 +2826,33 @@ function gameRowMj(s, first){
     '</div>'+
     '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
 }
+/* v5.72: **遊技の経費の行**(ユーザー判断: 明細には出さずセッション欄にだけ出す)。
+   家計簿の分類(麻雀・パチスロ)で入れた経費を、その日の稼働と並べて見せる。
+   卓に紐づけないので**その日のセッションの後ろ**に置く(同じ日付の枠の中)。
+   タップで記録の編集へ(直す場所はここ)。どこから出たかを1行で添える——
+   所持金から払ったのか軍資金から出したのかで、減った場所が違うため */
+function gameRowExp(e, first){
+  const kind = e.category==="パチスロ" ? "パチスロ" : "麻雀";
+  const from = (e.gtTx!=null) ? (walletPots().find(w=>String(w.id)===String(e.wal))||{name:"所持金"}).name+"から"
+                              : (bankPots().length>1 ? "軍資金:"+bankName(eBWal(e))+"から" : "軍資金から");
+  const nm = [e.store||"", (e.item!=null?e.item:"")].filter(Boolean).join(" ") || "経費";
+  return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="eedit" data-v="'+e.id+'">'+
+    '<div style="flex:1;min-width:0">'+
+    '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
+    '<span class="tag" style="border:1px solid var(--amber);color:var(--amber)">'+kind+'</span>'+
+    '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">経費</span></div>'+
+    '<div class="muted ellip" style="font-size:11px">'+esc(nm)+'</div>'+
+    '<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+esc(from)+'</div>'+
+    '</div>'+
+    '<div class="mono red" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(-e.amount)+'</div></div>';
+}
 function viewGameSessions(){
   const mk=monthKey();
   const rows=[]
     .concat((S.sessions||[]).filter(s=>String(s.date||"").startsWith(mk)).map(s=>({date:s.date,kind:"slot",s:s})))
-    .concat((S.mjSessions||[]).filter(s=>String(s.date||"").startsWith(mk)).map(s=>({date:s.date,kind:"mj",s:s})));
+    .concat((S.mjSessions||[]).filter(s=>String(s.date||"").startsWith(mk)).map(s=>({date:s.date,kind:"mj",s:s})))
+    /* v5.72: 家計簿の分類で入れた遊技の経費(稼働の後ろに並ぶよう、配列の最後に足す) */
+    .concat((S.entries||[]).filter(e=>isGameCat(e)&&String(e.date||"").startsWith(mk)).map(e=>({date:e.date,kind:"exp",e:e})));
   let h=band("セッション");
   h+='<div class="row" style="gap:8px;margin-bottom:12px">'+
     '<button class="btn dash" style="flex:1;padding:13px 0;font-weight:700;font-size:13px" data-a="slotnew">＋ パチスロ</button>'+
@@ -2831,7 +2864,7 @@ function viewGameSessions(){
     h+='<div style="margin-bottom:12px"><div class="mono muted" style="font-size:11px;margin:0 4px 4px">'+
       d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')</div>'+
       '<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden">'+
-      byDate[d].map((r,i)=> r.kind==="slot" ? gameRowSlot(r.s, i===0) : gameRowMj(r.s, i===0)).join("")+
+      byDate[d].map((r,i)=> r.kind==="slot" ? gameRowSlot(r.s, i===0) : r.kind==="exp" ? gameRowExp(r.e, i===0) : gameRowMj(r.s, i===0)).join("")+
       '</div></div>';
   });
   return h;
@@ -3185,7 +3218,7 @@ function summaryText(){
   L.push("## この数字の読み方");
   L.push("- 所持金 = 帳簿上の残高。カード払いの決済ズレは反映しないので実口座とは差が出る");
   L.push("- 軍資金 = 遊技専用の資金。生活費・貯金とは分離しており、勝ち負けはこの中だけで増減する");
-  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外) / 立替=会社の経費を一時的に払ったもの(収入の「立替精算」で戻る。収支・予算に数えない)");
+  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外) / 立替=会社の経費を一時的に払ったもの(収入の「立替精算」で戻る。収支・予算に数えない) / 麻雀・パチスロ=遊技の経費(所持金か軍資金から出て遊技収支に入る。家計の収支・予算には数えない)");
   L.push("- 遊技の収支は当月収支に含まれるが、**所持金ではなく軍資金**を増減させる");
   L.push("- 振替(財布間・貯金へ・軍資金へ)は収支ではない。総資産は動かない");
   L.push("- 「確定」= 今日までに発生した分。「予定込」= 未来日の固定費・定期収入を含む見込み");
@@ -4619,6 +4652,8 @@ function transferRows(d){
   const svLink=new Set((S.entries||[]).filter(e=>e.svTx!=null).map(e=>String(e.svTx)));
   /* v5.70: 軍資金から払った支出の戻しも同じく出さない——振替の行として別に直せると、支出と戻しが食い違う */
   const bkLink=new Set((S.entries||[]).filter(e=>e.bkTx!=null).map(e=>String(e.bkTx)));
+  /* v5.72: 遊技の経費を所持金から払った時の補充も同じく出さない(経費の側が面倒を見る) */
+  const gtLink=new Set((S.entries||[]).filter(e=>e.gtTx!=null).map(e=>String(e.gtTx)));
   const out=[], used=new Set();
   const nameW=id=>{ const p=walletPots().find(x=>String(x.id)===String(id)); return p?p.name:"所持金"; };
   const nameP=id=>{ const p=savingsPots().find(x=>String(x.id)===String(id)); return p?p.name:"貯金"; };
@@ -4657,6 +4692,7 @@ function transferRows(d){
     out.push({store:"wl", ids:[t.id], amt:num(t.amount), date:d, label:nameW(t.walId)+" の調整", adj:true}); });
   bk.forEach(t=>{
     if(t.date!==d || used.has(t.id)) return;
+    if(t.type==="topup" && gtLink.has(String(t.id))) return;
     if(t.type==="topup")  out.push({store:"bk", ids:[t.id], amt:num(t.amount), date:d,
       label:nameW(t.walId)+" → "+nameB(t.bwal)});
     else if(t.type==="return" && bkLink.has(String(t.id))) return;
@@ -4741,7 +4777,9 @@ function detOrder(list){
     if(UI.reconWal) a=a.filter(e=>eWal(e)===String(UI.reconWal));
     /* v5.70: **軍資金から払った支出は照合に出さない**。財布は経由しただけで、銀行の明細には載らない。
        残すと消せない行が「残り」に居座る(v5.59の予定と同じ理由) */
-    a=a.filter(e=>!e.bkSrc);
+    /* v5.71/v5.72: 遊技の経費のうち**軍資金から出したもの**は出さない(所持金が動かず、銀行の明細に相手がいない)。
+       所持金から払ったもの(gtTxあり)は銀行の明細に載るので消し込み対象に残す */
+    a=a.filter(e=>!e.bkSrc && !(isGameCat(e) && e.gtTx==null));
   }
   return UI.detAsc ? a.slice().reverse() : a;
 }
@@ -6308,7 +6346,7 @@ function viewFixed(){
     if(f.type==="expense"){
       h += '<div class="muted" style="font-size:11px;margin:0 2px 6px">分類</div>'+
         '<div class="row" style="gap:8px;margin-bottom:10px">'+
-        EXPENSE_CATS.filter(c=>c!==ADV_EXP).map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="flex:1;padding:10px 2px;font-size:13px" data-fa="fcat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>';
+        EXPENSE_CATS.filter(c=>c!==ADV_EXP&&!GAME_CATS[c]).map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="flex:1;padding:10px 2px;font-size:13px" data-fa="fcat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>';
     } else {
       h += '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
         INCOME_CATS.filter(c=>c!==ADV_INC).map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-fa="fcat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>';
@@ -7172,13 +7210,14 @@ function bindMain(){
                貯金の箱(svTx)も同じ穴があったので一緒に塞ぐ */
             if(e.svTx!=null){ const st=((S.savings||{}).txns||[]).find(x=>String(x.id)===String(e.svTx)); if(st) st.date=t; }
             if(e.bkTx!=null){ const bt=((S.bank||{}).txns||[]).find(x=>String(x.id)===String(e.bkTx)); if(bt) bt.date=t; }
+            if(e.gtTx!=null){ const gt=((S.bank||{}).txns||[]).find(x=>String(x.id)===String(e.gtTx)); if(gt) gt.date=t; }
           });
           save(); render(); toast(nm+" の "+n+"件を "+t+" に移しました");
           return;
         }
         if(!confirm(nm+" の "+n+"件("+signYen(sum)+")をまとめて削除しますか?")) return;
         /* 箱に紐づく引き出しも一緒に消す(1件削除と同じ後始末) */
-        g.items.forEach(e=>{ try{ entrySvDrop(e); }catch(err){} try{ entryBkDrop(e); }catch(err){} });
+        g.items.forEach(e=>{ try{ entrySvDrop(e); }catch(err){} try{ entryBkDrop(e); }catch(err){} try{ entryGtDrop(e); }catch(err){} });
         const ids=new Set(g.items.map(e=>String(e.id)));
         S.entries=(S.entries||[]).filter(e=>!ids.has(String(e.id)));
         save(); render(); toast(nm+" の "+n+"件を削除しました");
@@ -7200,7 +7239,7 @@ function bindMain(){
           if(s){ UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.tab="games"; UI.screen="mahjong-edit"; render(); return; }
         }
         UI.editEntryId=e.id;
-        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:e.svPot||"",svDraw:(e.svTx!=null),bkSrc:e.bkSrc||""};
+        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:e.svPot||"",svDraw:(e.svTx!=null),bkSrc:(e.bkSrc||((isGameCat(e)&&e.gtTx==null)?(e.bwal||""):""))};
         UI.screen="entry"; render();
       }
       else if(a==="sedit"){
@@ -7302,6 +7341,26 @@ function entryBkSync(ent, bwal, amt, date, wal){
   const body = {type:"return", date:date, amount:String(amt), walId:String(wal), bwal:String(bwal)};
   if(i>=0) Object.assign(b.txns[i], body);
   else { const nid=uid(); b.txns.push(Object.assign({id:nid}, body)); ent.bkTx=nid; }
+}
+/* v5.72: **遊技の経費を所持金から払う**(ユーザー判断: 所持金から減らして良い)。
+   v5.70の裏返し——所持金→軍資金 の補充(`topup`)を1本自動で立て、遊技の経費として軍資金から出す。
+   所持金だけが減り、軍資金は増減ゼロ(補充と経費が相殺)、遊技収支には経費として入る。
+   手で「所持金→軍資金」と移してから払ったのと同じなので、**今月の振替(入)にも数わる**
+   (家計の金が遊技に回った事実なので、枠に入れるのが正直——ユーザーに伝達済み)。txnは`gtTx`で紐づける。 */
+function entryGtSync(ent, wal, amt, date, bwal){
+  const b = S.bank = S.bank || {}; b.txns = b.txns || [];
+  const i = (ent.gtTx!=null) ? b.txns.findIndex(t=>String(t.id)===String(ent.gtTx)) : -1;
+  if(!wal){
+    if(i>=0) b.txns.splice(i,1);
+    delete ent.gtTx; return;
+  }
+  const body = {type:"topup", date:date, amount:String(amt), walId:String(wal), bwal:String(bwal)};
+  if(i>=0) Object.assign(b.txns[i], body);
+  else { const nid=uid(); b.txns.push(Object.assign({id:nid}, body)); ent.gtTx=nid; }
+}
+function entryGtDrop(ent){
+  if(!ent || ent.gtTx==null) return;
+  const b=S.bank||{}; b.txns=(b.txns||[]).filter(t=>String(t.id)!==String(ent.gtTx));
 }
 /* 削除時: 紐づく戻しも消す(残すと軍資金が減ったままになる) */
 function entryBkDrop(ent){
@@ -7627,12 +7686,16 @@ function viewEntry(){
      財布が1つしか無くても、軍資金があれば出所の選択肢は2つ以上になるので節を出す */
   const _bk = String(f.bkSrc||"");
   const _bkOpts = (!isTr && f.type==="expense" && bankPots().length>0);
+  /* v5.72: 遊技の分類も**出所の選び方は普通の支出と同じ**(財布 or 軍資金の置き場)。
+     違うのは保存時の解釈と、下に出す1行の説明だけ(v5.71の「置き場だけ」の節は撤去) */
+  const _gcat = (!isTr && f.type==="expense") ? (GAME_CATS[f.category]||"") : "";
   if(!isTr && !_svDrawOn && (walletPots().length>1 || _bkOpts)){
     const cur=String(f.wal||walletPots()[0].id);
     const gridOpen='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:12px">';
     /* v4.38: **等幅のグリッド**にする(ユーザー指摘)。名前の長さでボタンの大きさが変わると
        押す位置が毎回ずれる。auto-fitなので財布が増減しても等幅のまま折り返す */
-    if(walletPots().length>1 || _bk){
+    /* v5.72: 遊技の経費は財布が1つでも見せる(どこから出たかを必ず目で確かめられるように) */
+    if(walletPots().length>1 || _bk || _gcat){
       walHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+(f.type==="income"?"どの財布に入る":"どの財布から出す")+'</div>'+
         gridOpen+
         walletPots().map(w=>'<button class="btn '+(!_bk&&cur===String(w.id)?"sel":"")+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
@@ -7646,8 +7709,13 @@ function viewEntry(){
           '<span class="ellip" style="display:block">'+esc(b.name)+'</span>'+
           '<span class="mono muted" style="font-size:11px;display:block">¥'+bankBalance(b.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>'+
         /* 選んだときだけ、金の動きを1行で(v4.87の箱と同じ流儀)。財布を経由するが増減ゼロ */
-        (_bk ? '<div class="muted" style="font-size:11px;margin:-6px 0 12px;line-height:1.6">'+
-          esc(bankName(_bk))+'→所持金の振替を自動で立てます。所持金は増減ゼロで、軍資金だけが減ります。</div>' : '');
+        (_gcat
+          /* v5.72: 遊技の経費は、どちらから出しても**遊技の収支に入る**。違うのは減る場所だけ */
+          ? '<div class="muted" style="font-size:11px;margin:-6px 0 12px;line-height:1.6">'+
+            (_bk ? esc(bankName(_bk))+'(軍資金)から出して、<b>遊技の収支</b>に入れます。所持金と予算は動きません。'
+                 : '所持金から出して、<b>遊技の収支</b>に入れます(所持金→軍資金の振替を自動で立てます)。予算は動きません。')+'</div>'
+          : (_bk ? '<div class="muted" style="font-size:11px;margin:-6px 0 12px;line-height:1.6">'+
+            esc(bankName(_bk))+'→所持金の振替を自動で立てます。所持金は増減ゼロで、軍資金だけが減ります。</div>' : ''));
     }
   }
   /* v4.85: **貯金の箱から払えるようにする**(ユーザー指摘: 大阪旅行の貯金から払ったのに選べない)。
@@ -7660,7 +7728,7 @@ function viewEntry(){
      v4.84の対称性もそのまま効く(承認で目標が下がり、引き出しで実績も下がる)。
      支出のときだけ出す(収入を貯金から「補填」する意味がない)。箱が無ければ出さない */
   let svHtml="";
-  if(!isTr && f.type==="expense" && savingsPots().length && !String(f.bkSrc||"")){   /* v5.70: 軍資金から払う時は箱を出さない */
+  if(!isTr && f.type==="expense" && savingsPots().length && !String(f.bkSrc||"") && !GAME_CATS[f.category]){   /* v5.70/v5.71: 軍資金から払う時・遊技の分類の時は箱を出さない */
     const cp=String(f.svPot||"");
     /* v4.93: 見出しは状態で言い分ける。補填ONのときは財布の節が消えるので、
        ここが唯一の「出所」になる——「(任意)」のままだと出所が無いように読める */
@@ -7747,8 +7815,10 @@ function viewEntry(){
       : f.type==="expense"
       ? ((f.tmode && UI.editEntryId===null) ? '' :
         '<div class="muted" style="font-size:11px;margin:0 2px 6px">支出の分類</div>'+
-        '<div class="row" style="gap:8px;margin-bottom:12px">'+
-        EXPENSE_CATS.map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="flex:1;padding:2px;font-size:13px;min-height:44px" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>')
+        /* v5.71: 分類が6つになったので**折り返す等幅グリッド**へ(財布・箱と同じ仕組み・v4.38)。
+           1行に詰めると「パチスロ」が潰れ、押す位置も毎回ずれる */
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:8px;margin-bottom:12px">'+
+        EXPENSE_CATS.map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="padding:2px;font-size:13px;min-height:44px" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>')
       : '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
         INCOME_CATS.map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>'+
         /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
@@ -7894,6 +7964,7 @@ function bindEntry(){
         }
         entrySvDrop(ent);   /* v4.85: 紐づく貯金の引き出しも消す(残すと箱が減ったままになる) */
         entryBkDrop(ent);   /* v5.70: 紐づく軍資金の戻しも消す(残すと軍資金が減ったままになる) */
+        entryGtDrop(ent);   /* v5.72: 紐づく補充も消す(残すと所持金が減ったままになる) */
         S.entries = S.entries.filter(x=>x.id!==UI.editEntryId);
         save(); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
       }
@@ -7949,17 +8020,30 @@ function bindEntry(){
         const memo=[store,item].filter(Boolean).join(" ");
         const wal = String(f.wal || walletPots()[0].id);   /* v4.14: どの財布から出たか */
         /* v4.85: 貯金の箱からの補填。支出のときだけ。残高を超える指定は止める(箱がマイナスになる) */
-        /* v5.70: 軍資金から払う。支出のときだけ。**箱からの補填とは両立させない**(出所が2つになる) */
-        const bkSrc = (f.type==="expense") ? String(f.bkSrc||"") : "";
-        const svPot = (f.type==="expense" && !bkSrc) ? String(f.svPot||"") : "";
+        /* v5.71: 遊技の分類(麻雀・パチスロ)なら`src`を付けて遊技の世界に入れる。
+           金は軍資金から出たものとして扱うので、**財布・軍資金の振替・箱の補填はどれも使わない**
+           (isNetなので所持金は動かず、bankGameNetで軍資金だけが減る) */
+        const gsrc = (f.type==="expense") ? (GAME_CATS[f.category]||"") : "";
+        /* v5.72: **出所の選択は普通の支出と同じ**(財布 or 軍資金の置き場)。解釈だけが分類で変わる:
+             普通の支出 + 財布     → そのまま
+             普通の支出 + 軍資金   → 軍資金→財布の戻しを立てる(v5.70)
+             遊技の経費 + 財布     → 財布→軍資金の補充を立てる(v5.72)
+             遊技の経費 + 軍資金   → 何も立てない。その置き場の遊技収支から出る(v5.71) */
+        const srcBk = (f.type==="expense") ? String(f.bkSrc||"") : "";
+        const bkSrc = gsrc ? "" : srcBk;                                   /* 戻しを立てる置き場 */
+        const gBwal = gsrc ? (srcBk || String(bankPots()[0].id)) : "";     /* 遊技の経費が属する置き場 */
+        const gWal  = (gsrc && !srcBk) ? wal : "";                         /* 補充を立てる財布 */
+        /* v5.70: **箱からの補填とは両立させない**(出所が2つになる)。遊技の経費も箱は使わない */
+        const svPot = (f.type==="expense" && !srcBk && !gsrc) ? String(f.svPot||"") : "";
         const svDraw = (f.svDraw!==false);   /* v4.92: 既定ON。OFFなら紐づけだけで箱は減らない */
-        if(bkSrc){
-          const bal = bankBalance(bkSrc);
+        if(srcBk){
+          const bal = bankBalance(srcBk);
           const prev = (UI.editEntryId!==null) ? (S.entries.find(x=>x.id===UI.editEntryId)||{}) : {};
-          const back = (String(prev.bkSrc||"")===bkSrc) ? num(prev.amount) : 0;   /* 編集時は自分の分を戻して判定 */
+          /* 編集時は自分の分を戻して判定(v5.72: 遊技の経費で同じ置き場から出していた分も) */
+          const back = (String(prev.bkSrc||"")===srcBk || (isGameCat(prev) && prev.gtTx==null && eBWal(prev)===srcBk)) ? num(prev.amount) : 0;
           const need = amt + (f.extra||[]).reduce((a2,x)=>a2+num(x.amount),0);
           if(need - back > bal){
-            if(!confirm(bankName(bkSrc)+"(軍資金)の残高 ¥"+bal.toLocaleString("ja-JP")+" を超えます。\n\n必要 ¥"+need.toLocaleString("ja-JP")+"\n\n続けますか?")) return;
+            if(!confirm(bankName(srcBk)+"(軍資金)の残高 ¥"+bal.toLocaleString("ja-JP")+" を超えます。\n\n必要 ¥"+need.toLocaleString("ja-JP")+"\n\n続けますか?")) return;
           }
         }
         if(svPot && svDraw){
@@ -7976,6 +8060,9 @@ function bindEntry(){
           S.entries = S.entries.map(x=>{
             if(x.id!==UI.editEntryId) return x;
             const y=Object.assign({},x,{date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal});
+            /* v5.71: 分類を遊技に変えたら`src`を付け、外したら消す(付けっぱなしだと家計簿から消えたままになる) */
+            if(gsrc){ y.src=gsrc; y.bwal=gBwal; }
+            else if(GAME_CATS[x.category]){ delete y.src; delete y.bwal; }
             /* v5.60: **照合済みの中身が変わったら✓を落とす**。金額・日付・財布・種別が変われば
                「銀行と一致していた」という事実がもう成り立たない。**品目やメモの直しでは落とさない**——
                誤字を直すたびに照合をやり直すことになると、記録を直す動機そのものを削る */
@@ -7984,12 +8071,14 @@ function bindEntry(){
             return y;
           });
           const _e = S.entries.find(x=>x.id===UI.editEntryId);
-          if(_e){ entrySvSync(_e, svPot, amt, f.date, wal, svDraw); entryBkSync(_e, bkSrc, amt, f.date, wal); }
+          if(_e){ entrySvSync(_e, svPot, amt, f.date, wal, svDraw); entryBkSync(_e, bkSrc, amt, f.date, wal); entryGtSync(_e, gWal, amt, f.date, gBwal); }
         } else {
           const _new = {id:uid(),date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal};
+          if(gsrc){ _new.src=gsrc; _new.bwal=gBwal; }   /* v5.71 */
           S.entries.push(_new);
           entrySvSync(_new, svPot, amt, f.date, wal, svDraw);
           entryBkSync(_new, bkSrc, amt, f.date, wal);
+          entryGtSync(_new, gWal, amt, f.date, gBwal);   /* v5.72 */
           /* v4.35: 追加行は**同じ日付/分類/店/財布で別エントリ**にする。
              1行にまとめないのは、品目ごとの分析(ジャンル・内訳ドリル)を壊さないため */
           (f.extra||[]).forEach(x=>{
@@ -7999,9 +8088,11 @@ function bindEntry(){
                1本にまとめると、あとで1行だけ消したときに箱が戻らない */
             const _x = {id:uid(),date:f.date,type:f.type,category:f.category,amount:xa,
               store:store, item:xi, memo:[store,xi].filter(Boolean).join(" "), wal:wal};
+            if(gsrc){ _x.src=gsrc; _x.bwal=gBwal; }   /* v5.71 */
             S.entries.push(_x);
             entrySvSync(_x, svPot, xa, f.date, wal, svDraw);
             entryBkSync(_x, bkSrc, xa, f.date, wal);   /* v5.70: 行ごとに別の戻し(1行だけ消しても軍資金が戻るように) */
+            entryGtSync(_x, gWal, xa, f.date, gBwal);   /* v5.72: 補充も行ごと */
           });
         }
         save(); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
