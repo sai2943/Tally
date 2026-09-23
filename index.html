@@ -164,6 +164,19 @@
     border:1px solid var(--teal); color:var(--teal); font-size:12px; padding:6px 16px; border-radius:16px;
     z-index:60; opacity:0; transition:opacity .25s; pointer-events:none;}
   .toast.show{opacity:1;}
+  /* v5.75: **説明はⓘに畳む**(ユーザー要望: 余計な説明文が嫌。押したらポップアップで出す)。
+     見た目は16pxの丸、押せる範囲は28px(負のmarginで行の高さは増やさない) */
+  .ibtn{display:inline-flex; align-items:center; justify-content:center; padding:6px; margin:-6px -6px -6px 0;
+    background:none; border:0; cursor:pointer; flex-shrink:0; vertical-align:middle;}
+  .ibtn span{display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%;
+    border:1px solid var(--muted); color:var(--muted); font:italic 700 10px/1 Georgia,serif;}
+  .ipop-bg{position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,.55);
+    display:flex; align-items:center; justify-content:center; padding:24px;}
+  .ipop{background:var(--surface); border:1px solid var(--line); border-radius:14px; max-width:360px; width:100%;
+    max-height:80vh; overflow-y:auto; padding:16px 16px 12px; font-size:13px; line-height:1.75; color:var(--text);
+    box-shadow:0 10px 30px rgba(0,0,0,.45);}
+  .ipop .ipop-x{display:block; margin:12px 0 0 auto; background:none; border:1px solid var(--line); color:var(--muted);
+    border-radius:10px; padding:6px 16px; font-size:12px;}
   #updatebar{position:fixed; left:12px; right:12px; top:calc(env(safe-area-inset-top, 0px) + 10px); z-index:9999;
     background:var(--teal); color:#04201d; border-radius:12px; padding:11px 14px;
     display:flex; align-items:center; gap:10px; box-shadow:0 6px 24px rgba(0,0,0,.4);
@@ -243,7 +256,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.74 (localStorage保存・完全オフライン)
+   Tally 5.75 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -809,7 +822,9 @@ function xferRowsHtml(list, act){
       '<span class="mono">'+yen(num(e.amount))+'</span></button>';
   }).join("");
 }
-const xferHint = '<div class="muted" style="font-size:11px;margin:8px 2px 0">選ぶと経費に入ります。<br>セッション保存時に元の家計簿記録は削除されます。</div>';
+/* v5.75: 説明はⓘへ。**定数にすると infoBtn より先に評価される**ので関数にする */
+const xferHint = () => '<div class="row" style="align-items:center;margin:8px 2px 0"><span class="muted" style="font-size:11px">家計簿の支出から選ぶ</span>'+
+  infoBtn("選ぶと経費に入ります。<br>セッションを保存すると、元の家計簿の記録は削除されます。")+'</div>';
 /* 乗り打ちの折半調整: myShareが入力されていればそれを自分の取り分に使う(なければ折半) */
 const halfSplit = s => Math.round(poolTotal(s)/2);
 const myShare = s => (s.myShare!==undefined && s.myShare!=="") ? num(s.myShare) : halfSplit(s);
@@ -939,7 +954,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.74";
+const APP_VERSION = "5.75";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1158,9 +1173,29 @@ function renderKeepScroll(){
 /* ---------- 共通部品 ---------- */
 /* v5.52: 節の見出し。**右端に小さな補足**を置けるようにした(予算の期間など)。
    第2引数はHTMLとして扱うので、呼ぶ側でescすること */
-const band = (t, sub) => '<div class="band"><div class="tick"></div><div class="label">'+esc(t)+'</div>'+
+/* v5.75: 第3引数でⓘを付ける(見出しの直後)。説明は本文に置かず、押した人にだけ出す */
+const band = (t, sub, info) => '<div class="band"><div class="tick"></div><div class="label">'+esc(t)+'</div>'+
+  (info ? infoBtn(info) : '')+
   (sub ? '<div style="margin:0 8px;flex-shrink:0">'+sub+'</div>' : '')+
   '<div class="rule"></div></div>';
+/* v5.75: ⓘボタン。html はアプリ側で組む(利用者の入力を混ぜる時は esc 済みで渡すこと) */
+const infoBtn = html => '<button class="ibtn" data-info="'+esc(html)+'" aria-label="説明"><span>i</span></button>';
+function showInfo(html){
+  const bg=document.createElement("div"); bg.className="ipop-bg";
+  bg.innerHTML='<div class="ipop">'+html+'<button class="ipop-x">閉じる</button></div>';
+  bg.addEventListener("click", e=>{ if(e.target===bg || (e.target.classList&&e.target.classList.contains("ipop-x"))) bg.remove(); });
+  document.body.appendChild(bg);
+}
+/* **画面ごとのbindを触らずに効くよう、捕捉段階で拾う**。カード(押すと開く)の中のⓘでも、
+   カードのタップは発火させない——説明を読みたいだけの人を別画面へ飛ばさない */
+if(typeof document!=="undefined" && document.addEventListener){
+  document.addEventListener("click", e=>{
+    const b=e.target && e.target.closest && e.target.closest("[data-info]");
+    if(!b) return;
+    e.stopPropagation(); e.preventDefault();
+    showInfo(b.dataset.info);
+  }, true);
+}
 const monthNav = () =>
   '<div class="row" style="justify-content:center;margin-top:8px">'+
   '<button class="navbtn" style="font-size:22px;padding:0 12px" data-a="mprev">‹</button>'+
@@ -1254,9 +1289,10 @@ function viewBudget(){
   const ps=preSplit(curBudgetMk());
   let h='<div class="hdr"><button class="navbtn" data-bu="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">予算の設定</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:12px">'+
-    '割合の基準は<b>可処分 = 収入 − 固定費</b>(今月 ¥'+base.toLocaleString("ja-JP")+')。<br>'+
-    '金額と割合の両方を入れると<b>小さい方</b>が採用され、低収入月だけ自動で絞ります。</div>';
+  /* v5.75: 可処分の額は**データ**なので本文に残し、仕組みの説明はⓘへ */
+  h+='<div class="row" style="align-items:center;gap:2px;margin-bottom:12px">'+
+    '<span class="muted" style="font-size:11px">可処分(今月) <span class="mono">¥'+base.toLocaleString("ja-JP")+'</span></span>'+
+    infoBtn("割合の基準は<b>可処分 = 収入 − 固定費</b>。<br>金額と割合の両方を入れると<b>小さい方</b>が採用され、低収入月だけ自動で絞ります。")+'</div>';
   h+=band("使う枠(上限)");
   h+=row("変動消費","varc",bg["消費"],"日々の消費の上限。超えないための計器です。");
   h+=row("娯楽","amuse",bg["娯楽"],"娯楽の上限。増収しても膨らませない額。");
@@ -1265,8 +1301,8 @@ function viewBudget(){
     '使う枠を引いて残った分を、貯金と投資で按分します。<br>合計が100でなくても比として扱います。</div>'+
     '<div class="row" style="gap:8px">'+rr("貯金へ(%)","sink",wf.sink)+rr("投資へ(%)","invest",wf.invest)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:6px">今月の残り <span class="mono teal">¥'+ps.rest.toLocaleString("ja-JP")+'</span>'+
-    ' → 貯金 ¥'+ps.sv.toLocaleString("ja-JP")+' / 投資 ¥'+ps.iv.toLocaleString("ja-JP")+'</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:6px">貯金が目標に達したら、この比を投資側へ移していきます。</div></div>';
+    ' → 貯金 ¥'+ps.sv.toLocaleString("ja-JP")+' / 投資 ¥'+ps.iv.toLocaleString("ja-JP")+
+    infoBtn("貯金が目標に達したら、この比を投資側へ移していきます。")+'</div></div>';
   /* v5.49: **予算の期間を選べる**(ユーザー提案: 予算の期間だけ設定できれば良いのでは)。
      「収入を次の収入までどう使うか」が生活の実態。**明細・月別収支・税金は暦月のまま**なので、
      切り替わるのは予算カード(可処分・枠・貯金目標・振替)だけ */
@@ -1279,11 +1315,11 @@ function viewBudget(){
       '<button class="btn'+(sd?' sel':'')+'" style="flex:1;padding:12px 0;font-weight:700" data-bu="cyc" data-v="'+(sd||14)+'">給料日から</button>'+
       '</div>'+
       (sd
-        ? '<div class="fxl">給料日(毎月)</div>'+
+        ? '<div class="fxl">給料日(毎月)'+infoBtn("土日祝・年末年始なら<b>前営業日</b>に繰り上げます。")+'</div>'+
           '<input class="input mono r" type="number" inputmode="numeric" id="bu-cycday" value="'+sd+'">'+
           /* v5.51: **土日祝なら前営業日**。実際に切れる日を出さないと確かめられない */
+          /* v5.75: 繰り上げの規則はⓘへ。**実際に切れる期間はデータなので本文に残す** */
           '<div class="muted" style="font-size:11px;margin-top:6px;line-height:1.7">'+
-          '土日祝・年末年始なら<b>前営業日</b>に繰り上げます。<br>'+
           (()=>{ const W=["日","月","火","水","木","金","土"];
             const dw=x=>W[new Date(x+"T12:00:00Z").getUTCDay()];
             const r=budgetRange(curBudgetMk());   /* v5.56: 「今の期間」なので今日が属する期間 */
@@ -1291,7 +1327,7 @@ function viewBudget(){
             const e=d.toISOString().slice(0,10);
             return '今の期間 <span class="mono">'+r[0]+'('+dw(r[0])+') 〜 '+e+'('+dw(e)+')</span>'; })()+
           '</div>'
-        : '<div class="muted" style="font-size:11px">1日から末日までで集計します。</div>')+
+        : '')+   /* v5.75: 「暦月」のボタン自体が言っていることなので消す */
       '</div>';
   }
   h+='<button class="btn full sel" style="margin-top:6px;display:none" data-bu="save">保存する</button>';
@@ -1480,8 +1516,7 @@ function viewPayroll(){
     '<div class="muted" style="font-size:12px;line-height:1.7">'+
     (r.workH>0 ? '下の「試算する」を押してください。'
                : '出勤時間を入れて「試算する」を押してください。')+
-    '<br>明細の「出勤時間」と「普通残業」はHH.MM表記です'+
-    '<span class="mono">(167.37 = 167時間37分)</span>。</div></div>';
+    infoBtn('明細の「出勤時間」と「普通残業」はHH.MM表記です<span class="mono">(167.37 = 167時間37分)</span>。')+'</div></div>';
   h+='<div class="card" style="margin-bottom:14px'+(_show?'':';display:none')+'" id="pay-out">'+
     '<div class="row between" style="align-items:baseline;margin-bottom:10px">'+
     '<span style="font-size:13px;font-weight:700">差引支給額</span>'+
@@ -1497,7 +1532,7 @@ function viewPayroll(){
   h+='<div class="muted" style="font-size:11px;margin-bottom:14px;line-height:1.7">'+
     '出勤 <span class="mono">'+r.workH.toFixed(2)+'h</span>'+
     '<span style="margin-left:10px">割増単価 <span class="mono">'+Math.round(r.unit).toLocaleString("ja-JP")+'円/h</span></span>'+
-    '<span style="margin-left:10px">所得税は税額表をこの帯だけ直線で近似</span></div>';
+    infoBtn("所得税は、税額表をこの帯だけ直線で近似しています。")+'</div>';
   h+='<div class="card" data-pa="conf" style="cursor:pointer"><div class="row between" style="align-items:center">'+
     '<div style="font-size:13px;font-weight:600">前提を変える</div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
@@ -1737,7 +1772,7 @@ function viewMjLog(){
   h+='<button style="display:none" data-ml="add">'+(_ed?'更新する':'記録する')+'</button>';
   /* 精算——**スコアは消去法**。実際にやり取りした額を入れると残りがスコア分 */
   h+='<div class="card" style="margin-bottom:12px">'+
-    '<div class="fxl">精算(実際の収支)</div>'+
+    '<div class="fxl">精算(実際の収支)'+infoBtn("卓で払った/もらった額を入れると、スコア分が逆算されます(スコアは消去法)。")+'</div>'+
     '<div class="row" style="gap:6px">'+
     '<button class="btn'+(String(L.settle||"").charAt(0)==="-"?' sel':'')+'" style="width:46px;padding:10px 0;font-size:15px;font-weight:700'+
       (String(L.settle||"").charAt(0)==="-"?';color:var(--red);border-color:var(--red)':'')+'" data-ml="ssign">'+
@@ -1763,7 +1798,7 @@ function viewMjLog(){
         '<span style="font-size:13px;font-weight:700">最終収支</span>'+
         '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>'+
         '</div>'
-      : '<div class="muted" style="font-size:11px;margin-top:8px">卓で払った/もらった額を入れるとスコア分が逆算されます</div>')+
+      : '')+
     '</div>';
   /* v5.42【バグ修正】**締めるボタンをカードの外に出す**(ユーザー指摘: 押せない)。
      精算カードの内側に入れ子で置いていたため、親カードと重なってタップが通らなかった。
@@ -1976,7 +2011,7 @@ function viewCatDrill(){
     if(!ggroups.length){
       h += '<div class="muted" style="text-align:center;font-size:12px;padding:24px 0">この月の'+esc(cat)+'の支出はまだありません</div>';
     } else {
-      h += '<div class="muted" style="font-size:11px;margin:0 2px 6px">店をタップでジャンルを割当(全期間の記録に即反映)</div>';
+      h += '<div style="text-align:right;margin:-2px 2px 4px">'+infoBtn("店をタップしてジャンルを割り当てます。全期間の記録にすぐ反映されます。")+'</div>';
       h += '<div class="card" style="padding:2px 12px">';
       ggroups.forEach((G,gi)=>{
         const open = UI.drillOpenStore===("g:"+G.gn);
@@ -2200,7 +2235,8 @@ function viewLedgerDetail(mk){
     const pots=walletPots();
     h += '<div class="card" style="margin-bottom:10px;border-color:var(--teal)">'+
       '<div class="row between" style="align-items:baseline">'+
-      '<span class="teal" style="font-size:12px;font-weight:700">照合中</span>'+
+      '<span class="teal" style="font-size:12px;font-weight:700">照合中'+
+        infoBtn("銀行の明細を上から見て、対応する行をタップで消していきます。<br>消し終えて<b>残った額が、Tallyにしか無い記録</b>です。<br>予定は銀行に相手がいないので、照合中は伏せています。")+'</span>'+
       '<span><span class="mono muted" style="font-size:11px">残り '+rest.n+'件</span> '+
       '<span class="mono teal" style="font-size:17px;font-weight:700">'+signYen(rest.net)+'</span></span></div>'+
       /* 財布が1つしか無いなら絞り込みは出さない(押す先が1つのボタンは邪魔なだけ) */
@@ -2210,13 +2246,7 @@ function viewLedgerDetail(mk){
             '<button class="btn'+((String(UI.reconWal||"")===String(pp.id||""))?' sel':'')+'" style="font-size:11px;padding:5px 10px" data-a="rwal" data-v="'+esc(pp.id==null?"all":pp.id)+'">'+esc(pp.name)+'</button>').join("")+
           '</div>'
         : '')+
-      '<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.7">'+
-      '銀行の明細を上から見て、対応する行をタップで消していきます。<br>'+
-      '消し終えて<b>残った額が、Tallyにしか無い記録</b>です。'+
-      /* v5.59: 予定が消えるのは仕様なので、**予定が実在する月にだけ**理由を書く
-         (無い月に出すと、何も起きていないことの説明になってしまう) */
-      (detEntries.some(e=>e.date>todayS) ? '<br>予定は相手がいないので伏せています。' : '')+
-      '</div>'+
+      /* v5.75: 使い方の説明は見出しのⓘへ(ユーザー要望: 余計な説明文が嫌) */
       /* v5.60: ✓が保存されるようになったので**戻す道**が要る。
          押し間違いを1件ずつ外すのは現実的でない。**照合済みが実在する時だけ出す** */
       (detEntries.some(e=>e.chk)
@@ -2791,13 +2821,13 @@ function viewLedger(){
     if(_adv!==0){
       h += '<div class="card" style="margin-bottom:12px;padding:11px 14px">'+
         '<div class="row between" style="align-items:baseline">'+
-        '<span style="font-size:13px;font-weight:700">立替 '+(_adv>0?'未精算':'精算が多い')+'</span>'+
+        '<span style="font-size:13px;font-weight:700">立替 '+(_adv>0?'未精算':'精算が多い')+
+          (_adv>0 ? infoBtn("振り込まれたら、収入の「立替精算」で記録すると0に戻ります。") : '')+'</span>'+
         '<span class="mono amber" style="font-size:17px;font-weight:700">'+yen(_adv)+'</span></div>'+
-        '<div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">'+
-        (_adv>0
-          ? '振り込まれたら、収入の「立替精算」で記録すると0に戻ります。'
-          : '立替の記録より精算の方が多くなっています。立替の記帳漏れか、精算の重複かもしれません。')+
-        '</div></div>';
+        /* v5.75: **矛盾の警告は状態なので本文に残す**(読めば行動が変わる)。使い方はⓘへ */
+        (_adv>0 ? ''
+          : '<div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">立替の記帳漏れか、精算の重複かもしれません。</div>')+
+        '</div>';
     } }
   h += viewLedgerDetail(mk);
   return h;
@@ -2969,7 +2999,7 @@ function viewMjStatsPage(){
   const gs=mjGroups();
   let h='<div class="hdr"><button class="navbtn" data-a="mjstback">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">ルール名別 成績</div><div style="width:44px"></div></div>';
-  if(!gs.length) return h+'<div style="text-align:center;padding:24px 0;font-size:12px;line-height:1.7" class="muted">まだ記録がありません。<br>貯まるとルール名別の平均着順や収支が出ます。</div>';
+  if(!gs.length) return h+'<div style="text-align:center;padding:24px 0;font-size:12px" class="muted">まだ記録がありません。</div>';
   gs.forEach(G=>{
     const A=mjAgg(G.list), catC=G.category==="free"?"var(--red)":"var(--amber)";
     const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
@@ -3025,13 +3055,12 @@ function viewMjtList(){
      1件削除で自動解除する。進行中の卓を触っている最中に消える経路を構造的に無くすのが狙い */
   const tables = (S.mjTables||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
   const delMode = !!UI.mjtDelMode && tables.length>0;
-  let h = '<div class="hdr"><button class="navbtn" data-a="mjtlback">‹ 戻る</button><div style="font-size:14px;font-weight:700">麻雀 スコア表</div>'+
+  let h = '<div class="hdr"><button class="navbtn" data-a="mjtlback">‹ 戻る</button><div style="font-size:14px;font-weight:700">麻雀 スコア表'+infoBtn("当日のセットの半荘ごとのスコアを記録・集計します。")+'</div>'+
     (tables.length
       ? '<button class="navbtn" data-a="mjtdelmode" style="font-size:12px;color:'+(delMode?"var(--muted)":"var(--red)")+'">'+(delMode?"完了":"削除")+'</button>'
       : '<div style="width:44px"></div>')+'</div>';
-  h += '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">'+
-    (delMode ? '消すスコア表の「削除」を押してください。<br>1件消すと削除モードは解除されます。'
-             : '当日のセットの半荘ごとのスコアを記録・集計します。')+'</div>';
+  /* v5.75: 削除モードの案内は**状態**なので残す。普段の説明は見出しのⓘへ */
+  if(delMode) h += '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">消すスコア表の「削除」を押してください。<br>1件消すと削除モードは解除されます。</div>';
   if(!tables.length) h += '<div class="muted" style="text-align:center;padding:22px 0;font-size:13px">まだスコア表がありません。下から作成できます。</div>';
   tables.forEach(t=>{
     const names = (t.players||[]).map((p,i)=>p||("P"+(i+1))).join("・");
@@ -3333,7 +3362,7 @@ function monthlyRows(){
 function viewMonthly(){
   const rows=monthlyRows();
   let h='<div class="hdr"><button class="navbtn" data-a="monback">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">月別の収支</div><div style="width:44px"></div></div>';
+    '<div style="font-size:14px;font-weight:700">月別の収支'+infoBtn("生活費 = 消費 + 承認。<br>遊技は収支に含まれますが、所持金ではなく軍資金を増減させます。")+'</div><div style="width:44px"></div></div>';
   if(!rows.length) return h+'<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">まだ記録がありません。</div>';
   const mx=Math.max.apply(null, rows.map(b=>Math.max(b.inc,b.exp)))||1;
   const yen=n=>"¥"+Math.round(n).toLocaleString("ja-JP");
@@ -3354,16 +3383,12 @@ function viewMonthly(){
       (b.game!==0?'<span class="muted">遊技 <span class="mono '+clsPM(b.game)+'">'+signYen(b.game)+'</span></span>':'')+
       '</div></div>';
   });
-  h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-top:6px">生活費=消費+承認。遊技は収支に含まれますが所持金ではなく軍資金を増減させます。</div>';
   return h;
 }
 function viewSummary(){
   const t=summaryText();
   return '<div class="hdr"><button class="navbtn" data-a="sumback">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">収支サマリ</div><div style="width:44px"></div></div>'+
-    '<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:10px">'+
-    'バックアップのJSONは**未来日の固定費が数百件混ざる**ため、そのまま渡すと集計を誤られます。<br>'+
-    'こちらは定義つき・確定と予定を分けた要約なので、貼るだけで正しく読まれます。</div>'+
+    '<div style="font-size:14px;font-weight:700">収支サマリ'+infoBtn("バックアップのJSONは未来日の固定費が数百件混ざるため、そのままAIに渡すと集計を誤られます。<br>こちらは定義つき・確定と予定を分けた要約なので、貼るだけで正しく読まれます。")+'</div><div style="width:44px"></div></div>'+
     '<textarea id="sum-t" class="input" rows="14" readonly style="width:100%;font-size:11px;font-family:ui-monospace,monospace;line-height:1.6;margin-bottom:10px">'+esc(t)+'</textarea>'+
     '<button class="btn tealb full" style="padding:11px 0;font-weight:700" data-a="sumcopy">コピーする</button>';
 }
@@ -3847,11 +3872,10 @@ function viewMjTable(){
       ? '<div class="muted" style="font-size:11px;margin-top:6px">✓ 飛び = <span class="mono" style="color:var(--amber);font-weight:700">'+mjtTobiScore(t)+'</span> … セル選択でキーパッドに「飛び」ボタンが出ます</div>'
       : '<div style="font-size:11px;margin-top:6px;color:var(--red)">※飛びボタン: 返し点を入力し「箱下あり」をオフに</div>')+
     '<div style="height:1px;background:var(--line);margin:10px 0"></div>'+
-    '<div class="muted" style="font-size:11px;margin-bottom:2px">精算単位(何円単位で精算するか)</div>'+
-    '<div class="muted" style="font-size:11px;margin-bottom:6px">トップ以外を切捨・端数はトップが調整</div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:6px">精算単位'+
+      infoBtn("何円単位で精算するか。トップ以外を切り捨て、端数はトップが調整します。<br>未選択なら端数は切り捨てません。選択中をもう一度押すと解除。")+'</div>'+
     '<div class="row" style="gap:5px">'+
     [50,100,500,1000].map(u=>'<button class="btn '+((t.roundPay===true?100:(num(t.roundPay)||0))===u?"sel":"")+'" style="flex:1;font-size:12px;padding:8px 0" data-mt="rpay" data-v="'+u+'">'+u+'円</button>').join("")+'</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:6px">未選択＝端数切捨なし・選択中を再タップで解除</div>'+
     '</div>';
   }
 
@@ -3940,8 +3964,7 @@ function viewMjTable(){
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc((t.pexp||[])[ci]||"")+'" data-mt="pexp" data-c="'+ci+'" style="width:92px"></div>').join("")+'</div>';
 
   /* ===== 操作(最下部に集約) ===== */
-  h += band("家計簿・共有");
-  h += '<div class="muted" style="font-size:11px;margin:0 2px 6px">「自分」を選ぶと成績を家計簿に反映できます</div>';
+  h += band("家計簿・共有", null, "「自分」を選ぶと、成績を家計簿に反映できます。");
   h += '<div style="overflow-x:auto;margin-bottom:10px"><div class="row" style="gap:6px">'+
     P.map((p,i)=>'<button class="btn '+(t.meIdx===i?"sel":"")+'" style="white-space:nowrap;font-size:12px;padding:6px 12px" data-mt="setme" data-v="'+i+'">'+(t.meIdx===i?"★ ":"")+esc(p||("P"+(i+1)))+'</button>').join("")+'</div></div>';
   if(t.meIdx!=null){
@@ -4994,8 +5017,9 @@ function leakAgg(mk){
 }
 function viewLeak(){
   const ms=leakMonths().map(leakAgg);
-  let h='<div class="hdr"><button class="navbtn" data-lk="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">漏れ係数</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:12px">増えた収入に支出がどれだけ連動したかの計器。<br>「稼いでも残らない」を感覚でなく数字で検証。</div>';
+  let h='<div class="hdr"><button class="navbtn" data-lk="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">漏れ係数'+
+    infoBtn("増えた収入に支出がどれだけ連動したかの計器。「稼いでも残らない」を感覚でなく数字で検証します。<br><br>読み方: 増収+10万・支出+4万なら漏れ40% = 実効6割。<br>体感ほぼ100%だった時代から、壁と振替の配管でどこまで下げたかの実測です。")+
+    '</div><div style="width:44px"></div></div>';
   let head='';
   for(let i=0;i<ms.length-1;i++){
     const cur=ms[i], prev=ms[i+1];
@@ -5030,7 +5054,6 @@ function viewLeak(){
     '<div class="row between" style="margin-bottom:5px"><span class="muted">貯金へ振替 累計</span><span class="mono teal">¥'+sweep.toLocaleString("ja-JP")+'</span></div>'+
     '<div class="row between" style="margin-bottom:5px"><span class="muted">回収率</span><span class="mono" style="font-weight:700">'+(posSum>0?Math.round(sweep/posSum*100)+"%":"—")+'</span></div>'+
     '<div class="row between"><span class="muted">軍資金へ振替(生活→遊技の逆流)</span><span class="mono '+(topup>0?"red":"muted")+'">¥'+topup.toLocaleString("ja-JP")+'</span></div></div>';
-  h+='<div class="muted" style="font-size:11px;margin-top:10px;line-height:1.6">読み方: 増収+10万・支出+4万なら漏れ40%=実効6割。<br>体感ほぼ100%だった時代から、壁と振替の配管で<br>どこまで下げたかの実測です。</div>';
   return h;
 }
 function bindLeak(){
@@ -5216,7 +5239,7 @@ function viewInvest(){
           (monthsLeft>0 ? ('このペースだと残り約 '+Math.floor(monthsLeft/12)+'年'+(monthsLeft%12)+'ヶ月'+
             (pace.perMonth>capPerMonth?'　<span class="amber">※年間枠の上限で頭打ち</span>':'')) : '')+
           '</div>'
-        : '<div class="muted" style="font-size:11px;margin-top:3px">買付を記録するとペースが出ます。<br>満額(月30万)でも埋めきるのに5年かかります。</div>')+
+        : '<div class="muted" style="font-size:11px;margin-top:3px">買付を記録するとペースが出ます。</div>')+
       '</div></div>';
   }
   /* 振替ロードマップ: 貯金目標の梯子→投資スタート。欲の視線をカウントダウンへ */
@@ -5240,13 +5263,15 @@ function viewInvest(){
   /* 方針 */
   h+='<div class="card" style="margin-bottom:12px">';
   if(UI.invPolicyEdit){
-    h+='<div class="muted" style="font-size:11px;margin-bottom:6px">投資方針(監査資料の前文になります)</div>'+
+    h+='<div class="muted" style="font-size:11px;margin-bottom:6px">投資方針'+infoBtn("監査資料の前文になります。")+'</div>'+
       '<textarea class="input" id="iv-policy" rows="6" style="width:100%;font-size:13px;line-height:1.6">'+esc(inv.policy||"")+'</textarea>'+
       '<div class="row" style="gap:8px;margin-top:8px"><button class="btn" style="flex:1;padding:9px 0" data-iv="pcancel">キャンセル</button>'+
       '<button class="btn tealb" style="flex:1;padding:9px 0;font-weight:700" data-iv="psave">保存</button></div>';
   } else {
-    h+='<div class="row between" style="margin-bottom:4px"><span class="muted" style="font-size:11px">投資方針</span><button class="chip" style="font-size:11px;padding:3px 10px" data-iv="pedit">編集</button></div>'+
-      '<div style="font-size:12px;line-height:1.7;white-space:pre-wrap">'+(inv.policy&&inv.policy.trim()?esc(inv.policy):'<span class="muted">未記入 — シナリオと出口を書いておくと、<br>暴落の夜に過去の自分が答えてくれます</span>')+'</div>';
+    h+='<div class="row between" style="margin-bottom:4px"><span class="muted" style="font-size:11px">投資方針'+
+        infoBtn("監査資料の前文になります。<br>シナリオと出口を書いておくと、暴落の夜に過去の自分が答えてくれます。")+'</span>'+
+        '<button class="chip" style="font-size:11px;padding:3px 10px" data-iv="pedit">編集</button></div>'+
+      '<div style="font-size:12px;line-height:1.7;white-space:pre-wrap">'+(inv.policy&&inv.policy.trim()?esc(inv.policy):'<span class="muted">未記入</span>')+'</div>';
   }
   h+='</div>';
   /* v4.49: 年間枠の消化は生涯枠カードに統合したのでここには置かない(二重表示になる) */
@@ -5284,7 +5309,7 @@ function viewInvestDetail(){
     '<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)"><span class="muted" style="flex:1;font-size:12px">保有 / 積立額の累計</span>'+
     '<span class="mono" style="font-size:14px;font-weight:700">'+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+' ・ ¥'+num(x.cost).toLocaleString("ja-JP")+'</span></div></div>';
   /* 買付記録 */
-  h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:11px;margin-bottom:6px">買付を記録(数量と積立額に加算)</div>'+
+  h+='<div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:11px;margin-bottom:6px">買付を記録'+infoBtn("数量と積立額に加算します。")+'</div>'+
     '<div class="row" style="gap:6px">'+
     '<input class="input sm mono" type="date" id="iv-bdate" value="'+todayStr()+'" style="width:118px;flex:none">'+
     '<input class="input sm mono r" type="number" inputmode="decimal" id="iv-bqty" placeholder="数量" style="flex:1;min-width:0">'+
@@ -5455,8 +5480,9 @@ function gspHtml(sess, fin){
   }
   if(avail.length) h+='<button class="btn dash full" data-a="gspadd" style="margin-bottom:8px;font-size:12px;padding:9px 0">'+(UI.gspPick?'やめる':'＋ 分けて入れる')+'</button>';
   if(list.length){
-    h+='<div class="muted" id="gsp-rest" style="font-size:12px;text-align:right;margin:2px 0 4px">'+gspRestHtml(sess, fin)+'</div>'+
-       '<div class="muted" style="font-size:11px;line-height:1.6;margin-bottom:12px">相手に貸し(もらう予定)は＋、借り(払う予定)は−。残りは上で選んだ置き場に入ります。</div>';
+    h+='<div class="row" style="justify-content:flex-end;align-items:center;margin:2px 0 12px">'+
+       '<span class="muted" id="gsp-rest" style="font-size:12px">'+gspRestHtml(sess, fin)+'</span>'+
+       infoBtn("相手に貸し(もらう予定)は＋、借り(払う予定)は−。<br>残りは上で選んだ置き場に自動で入ります。")+'</div>';
   }
   return h;
 }
@@ -6309,8 +6335,9 @@ function viewWishlist(){
   const list=S.wishlist||[];
   const nw=UI.wishNew||(UI.wishNew={name:"",est:"",url:"",reason:""});
   let h='<div class="hdr"><button class="navbtn" data-wa="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">ほしい物</div><div style="width:44px"></div></div>';
-  h+='<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">衝動買い防止のための寝かせリスト。<br>登録→PDFで相談→寝かせ日数を入れて寝かせる<br>→承認可能になったら承認<br>→購入したら金額を入れて家計簿に計上。</div>';
+    '<div style="font-size:14px;font-weight:700">ほしい物'+
+      infoBtn("衝動買い防止のための寝かせリスト。<br>登録 → PDFで相談 → 寝かせ日数を入れて寝かせる → 承認可能になったら承認 → 購入したら金額を入れて家計簿に計上。")+
+      '</div><div style="width:44px"></div></div>';
 
   const waiting=list.filter(w=>["consult","cooldown","ready"].includes(wishEff(w))).length;
   const resisted=list.filter(w=>w.status==="rejected").reduce((a,w)=>a+num(w.est),0);
@@ -6346,8 +6373,7 @@ function viewWishlist(){
         h+='<div class="row" style="gap:8px;align-items:center;margin-top:8px">'+
           '<span class="muted" style="font-size:11px;white-space:nowrap">寝かせ日数</span>'+
           '<input class="input sm r mono" type="number" inputmode="numeric" placeholder="日数" value="'+esc(w.cooldownDays||"")+'" data-wd="'+w.id+'" style="width:70px">'+
-          '<button class="btn" style="font-size:11px;padding:6px 12px" data-wa="startcool" data-v="'+w.id+'">寝かせ開始</button></div>'+
-          '<div class="muted" style="font-size:11px;margin-top:5px">PDFで相談→日数を入れて開始</div>';
+          '<button class="btn" style="font-size:11px;padding:6px 12px" data-wa="startcool" data-v="'+w.id+'">寝かせ開始</button></div>';
       } else if(eff==="cooldown"){
         h+='<div class="muted" style="font-size:11px;margin-top:4px">あと'+wishDaysLeft(w)+'日で承認可能</div>';
       } else if(eff==="ready"){
@@ -6395,9 +6421,9 @@ function bindWishlist(){
 function viewFixed(){
   const f = UI.fixForm;
   let h = '<div class="hdr"><button class="navbtn" data-fa="fback">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">固定費(定期)</div><div style="width:44px"></div></div>';
-  h += '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">'+
-    '登録した固定費は当年12月まで自動で計上。<br>金額が変わる月(光熱費など)は後から修正可。<br>停止すると未来分だけ消え、過去の記録は残る。<br><span class="teal">給与など定期収入も登録できます</span>(収入に切替)。</div>';
+    '<div style="font-size:14px;font-weight:700">固定費(定期)'+
+      infoBtn("登録した固定費は当年12月まで自動で計上します。<br>金額が変わる月(光熱費など)は後から修正できます。<br>停止すると未来分だけ消え、過去の記録は残ります。<br>給与など定期収入も登録できます(収入に切替)。")+
+      '</div><div style="width:44px"></div></div>';
 
   const list = S.fixed||[];
   if(list.length){
@@ -6423,7 +6449,11 @@ function viewFixed(){
     });
   }
 
-  h += band(f?(f.editId?"固定費を編集":"新しい固定費"):"追加");
+  /* v5.75: 保存の効き方(未来だけ変わる/12月まで計上)は見出しのⓘへ */
+  h += band(f?(f.editId?"固定費を編集":"新しい固定費"):"追加", null,
+    f ? (f.editId ? "保存すると未来の予定分に反映されます。過去の実績は変わりません。"
+                  : "登録すると今月から当年12月まで、選んだ頻度で自動計上されます。<br>起点日(初回の引き落とし日)から周期が決まります。")
+      : "");
   if(!f){
     h += '<button class="btn dash full" style="padding:14px 0" data-fa="new">＋ 固定費を追加</button>';
     h += '<button class="btn full" style="margin-top:10px;padding:9px 0;font-size:11px;color:var(--muted)" data-fa="fdiag">整合性チェック(定期エントリの戸籍を表示)</button>';
@@ -6473,13 +6503,12 @@ function viewFixed(){
        収入には関係ないので支出のときだけ出す */
     let fxKind="";
     if(f.type!=="income"){
-      fxKind='<div class="fxl" style="margin-top:2px">計上先</div>'+
+      fxKind='<div class="fxl" style="margin-top:2px">計上先'+
+        infoBtn("<b>固定費</b>: 可処分から先に引きます。予算の枠には乗りません。家賃・光熱費のように削れない支出向け。<br><br><b>変動支出</b>: 自動で計上しますが、可処分は減らさず予算の枠に乗せます。定期便のように「自動で来るが削れる」支出向け。")+'</div>'+
         '<div class="row" style="gap:6px;margin-bottom:4px">'+
         [[false,"固定費"],[true,"変動支出"]].map(([v,l])=>
           '<button class="btn '+((!!f.varc)===v?"sel":"")+'" data-fa="fkind" data-v="'+(v?"1":"0")+'" style="flex:1;font-size:11px;padding:6px 0">'+l+'</button>').join("")+'</div>'+
-        '<div class="muted" style="font-size:11px;line-height:1.6;margin-bottom:10px">'+
-        (f.varc ? '自動で計上しますが、可処分は減らさず予算の枠に乗せます。<br>定期便のように「自動で来るが削れる」支出向け。'
-                : '可処分から先に引きます。予算の枠には乗りません。<br>家賃・光熱費のように削れない支出向け。')+'</div>';
+        '<div style="height:8px"></div>';
     }
     let fxWal="";
     if(walletPots().length>1){
@@ -6510,7 +6539,7 @@ function viewFixed(){
           ((evN>1)?(evN+u+'ごと'):((freq==="daily")?'毎日':'毎週'))+'に計上されます'+
           ' <span class="mono">(年内 '+cnt+' 回)</span></div>';
       } else {
-        stepNote='<div class="muted" style="font-size:11px;margin:-6px 2px 12px">起点日を選ぶと、そこから周期が決まります。</div>';
+        stepNote='';   /* v5.75: 選べば周期がデータで出るので、選ぶ前の説明は要らない */
       }
     }
     h += (isDays
@@ -6536,7 +6565,7 @@ function viewFixed(){
               const _ev=Math.max(1,num(f.every)||1);
               return '<div class="muted" style="font-size:11px;margin:-6px 2px 12px">'+
                 _sd.getFullYear()+'/'+(_sd.getMonth()+1)+' から '+(_ev>1?_ev+'ヶ月ごと ':'毎月 ')+_sd.getDate()+' 日に計上されます</div>'; })()
-          : '<div class="muted" style="font-size:11px;margin:-6px 2px 12px">初回の引き落とし日を選ぶと、その日付から周期が決まります。</div>')+
+          : '')+
 
         '<div class="fxg">'+fxAmt+fxEnd+'</div>')+
       (!isWeekly && !isDays ? '<div class="muted" style="font-size:11px;margin:0 2px 6px">引き落とし日が土日祝のとき</div>'+
@@ -6547,9 +6576,8 @@ function viewFixed(){
       '<button class="btn full" style="padding:10px 0;font-size:12px;color:var(--muted)" data-fa="fcancel">やめる</button>'+
       '</div><div style="display:none"><button data-fa="fsave">保存</button></div>'+
       (f.editId
-        ? '<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.6">保存すると未来の予定分に反映されます(過去の実績は変わりません)。</div>'+
-          '<button class="btn" style="width:100%;margin-top:10px;color:var(--red);border-color:var(--red);font-size:12px" data-fa="fdelete" data-v="'+f.editId+'">この固定費を完全に削除(過去含む)</button>'
-        : '<div class="muted" style="font-size:11px;margin-top:8px">登録すると今月から当年12月まで、選んだ頻度で自動計上されます。</div>')+
+        ? '<button class="btn" style="width:100%;margin-top:10px;color:var(--red);border-color:var(--red);font-size:12px" data-fa="fdelete" data-v="'+f.editId+'">この固定費を完全に削除(過去含む)</button>'
+        : '')+
       '</div>';
   }
   return h;
@@ -6721,10 +6749,7 @@ function viewMj(){
       '<button class="btn '+((_cash?"cash":"score")===v?"sel":"")+'" style="flex:1;font-size:12px" data-a="mjcalc" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
 
   if(_cash){
-    h += band("投資・回収");
-    h += '<div class="muted" style="font-size:11px;margin-bottom:8px;line-height:1.7">'+
-      'チップを買った額と、最後に換金した額。<br>'+
-      'ゲーム代は<b>道中で払っている分</b>なので、差額に戻すと麻雀だけの勝ち負けが出ます。</div>';
+    h += band("投資・回収", null, "チップを買った額と、最後に換金した額。<br>ゲーム代は<b>道中で払っている分</b>なので、差額に戻すと麻雀だけの勝ち負けが出ます。");
     h += '<div class="grid2" style="margin-bottom:6px">'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">投資(買った額)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(m.inAmt||"")+'" data-in="mjf" data-v="inAmt"></div>'+
@@ -6732,18 +6757,17 @@ function viewMj(){
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(m.outAmt||"")+'" data-in="mjf" data-v="outAmt"></div></div>';
   }
 
-  h += band(_cash ? "内訳(分かる分だけ)" : "スコア・チップ");
+  /* v5.75: この節の説明(金額に効くか/スコア欄が円か素点か)は見出しのⓘへ */
+  h += band(_cash ? "内訳(分かる分だけ)" : "スコア・チップ", null,
+    _cash ? "<b>金額には効きません。</b>分かっているものだけ入れてください。最後に「未入力」の分が出ます。"
+          : (fnum(m.scoreRate)===1
+            ? "単価1なので<b>スコア欄 = 円</b>です。素点で入れるならレート(例 30)に直してください。"
+            : "素点 × レートで計算します。金額で入れたいなら単価を1に。"));
   /* v5.48: **集計できなかったときは金額で直接入れられる**(ユーザー要望)。
      半荘の記録から来ると単価1(=スコア欄が円そのもの)になるので、**どちらの意味か**を出す。
      素点で入れたいなら単価をレートに直す——**入力欄はどちらでも受ける**
      v5.65: 金額の卓では、この節は**記録用で金額に効かない**ことをはっきり書く */
-  h += '<div class="muted" style="font-size:11px;margin-bottom:6px;line-height:1.6">'+
-    (_cash
-      ? '<b>金額には効きません。</b>分かっているものだけ入れてください。最後に「内訳に落とせていない分」が出ます。'
-      : (fnum(m.scoreRate)===1
-        ? '単価1なので<span class="mono">スコア欄=円</span>。素点で入れるならレート(例 30)に直してください。'
-        : '素点×レートで計算します。<span class="mono">金額で入れたいなら単価を1</span>に。'))+
-    '</div>';
+
   h += mjSignedRow("トータルスコア"+(_cash?"(素点・任意)":""), m.score, "score", "1スコア単価(円)", m.scoreRate, "scoreRate", true);
   h += mjSignedRow("トータルチップ"+((_cash||isFree)?"(任意)":""), m.chips, "chips", "チップ1枚単価(円)", m.chipRate, "chipRate", false);
 
@@ -6760,8 +6784,7 @@ function viewMj(){
   h += '</div>';
   h += '<div class="muted mono" style="font-size:11px;text-align:right" id="mj-hanchan">半荘数 '+mjHanchan(m)+(mjAvgRank(m)!==null?' / 平均着順 '+mjAvgRank(m).toFixed(2):'')+'</div>';
 
-  h += band("同卓者(自分以外・任意)");
-  h += '<div class="muted" style="font-size:11px;margin:0 2px 8px;line-height:1.6">最大5名。スコア表から反映した記録は自動で入ります。<br>カードに表示されます。</div>';
+  h += band("同卓者", null, "自分以外・任意。最大5名。<br>スコア表から反映した記録は自動で入ります。カードに表示されます。");
   (m.players||[]).forEach((p,i)=>{
     h += '<div class="row" style="gap:8px;margin-bottom:6px;align-items:center">'+
       '<input class="input" placeholder="プレイヤー名" value="'+esc(p||"")+'" data-in="mjp" data-v="'+i+'" style="flex:1">'+
@@ -6833,7 +6856,7 @@ function viewMj(){
   });
   h += '<button class="btn dash full" data-a="mjxadd">＋ 経費を追加</button>';
   h += '<button class="btn dash full" style="margin-top:6px" data-a="mjxfopen">⇄ 家計簿から振替</button>';
-  if(UI.xferOpen){ h += xferHint + xferRowsHtml(xferCandidates(m.date, m.expenses), "mjxfpick"); }
+  if(UI.xferOpen){ h += xferHint() + xferRowsHtml(xferCandidates(m.date, m.expenses), "mjxfpick"); }
 
   h += band("この日の結果");
   h += '<div class="card" id="mj-summary">'+mjSummary(m)+'</div>';
@@ -6901,10 +6924,8 @@ function mjSummary(m){
        式の上では 0−0+ゲーム代 で「麻雀のみ +¥350 / ゲーム代 −¥350」が立つが、何も入れていない卓で
        「麻雀で350円勝った」と読めてしまう——**入力が無いところに数字を作らない** */
     const _hasCash = String(m.inAmt||"").trim()!=="" || String(m.outAmt||"").trim()!=="";
-    if(!_hasCash){
-      h += '<div class="muted" style="font-size:12px;line-height:1.7">投資と回収を入れると、麻雀のみの収支とゲーム代の内訳が出ます。</div>';
-    }
-    else h += '<div class="muted mono" style="font-size:11px">投資 ¥'+num(m.inAmt).toLocaleString("ja-JP")+
+    /* v5.75: 空のときの案内も外す(入れれば出る。出ないこと自体が合図) */
+    if(_hasCash) h += '<div class="muted mono" style="font-size:11px">投資 ¥'+num(m.inAmt).toLocaleString("ja-JP")+
       ' → 回収 ¥'+num(m.outAmt).toLocaleString("ja-JP")+'</div>';
 
     if(_hasCash){
@@ -7774,8 +7795,8 @@ function viewEntry(){
           : opt(a,String(UI.trTo||"")===a.id,"trto")).join("")+'</div></div>';
     const fa=accs.find(a=>a.id===String(UI.trFrom)), ta=accs.find(a=>a.id===String(UI.trTo));
     if(fa&&ta&&fa!==ta) trHtml+='<div class="teal" style="font-size:11px;margin-bottom:12px;text-align:center;font-weight:700">'+esc(fa.name)+' → '+esc(ta.name)+'</div>';
-    else trHtml+='<div class="muted" style="font-size:11px;margin-bottom:12px;text-align:center">振替元と振替先を選んでください</div>';
-    trHtml+='<div class="muted" style="font-size:11px;margin:0 2px 12px;line-height:1.7">振替は収支に含まれません。<br>財布の間で金が動いただけだからです。</div>';
+    else trHtml+='<div class="muted" style="font-size:11px;margin-bottom:12px;text-align:center">振替元と振替先を選んでください'+
+      infoBtn("振替は収支に含まれません。財布の間で金が動いただけだからです。")+'</div>';
   }
   /* v4.14: **どの財布から出したか/入ったか**を記帳時に選ぶ(ユーザー設計)。
      財布が1つしかないときは出さない(摩擦を増やさない)。既定は先頭の財布 */
@@ -7806,19 +7827,15 @@ function viewEntry(){
           '<span class="mono muted" style="font-size:11px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
     }
     if(_bkOpts){
-      walHtml+='<div class="muted" style="font-size:11px;margin-bottom:5px">軍資金から出す</div>'+
+      /* v5.75: 金の動きの説明は見出しのⓘへ(選ぶたびに本文へ1行出していた) */
+      walHtml+='<div class="muted" style="font-size:11px;margin-bottom:5px">軍資金から出す'+
+        infoBtn(_gcat
+          ? "遊技経費は、どちらから出しても<b>遊技の収支</b>に入ります。予算は動きません。<br><br>財布を選ぶと: 所持金から出ます(所持金→軍資金の振替を自動で立てます)。<br>軍資金を選ぶと: その置き場から出ます。所持金は動きません。"
+          : "軍資金→所持金の振替を自動で立ててから払います。<br>所持金は増減ゼロで、軍資金だけが減ります。")+'</div>'+
         gridOpen+
         bankPots().map(b=>'<button class="btn '+(_bk===String(b.id)?"sel":"")+'" data-a="ebk" data-v="'+b.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
           '<span class="ellip" style="display:block">'+esc(b.name)+'</span>'+
-          '<span class="mono muted" style="font-size:11px;display:block">¥'+bankBalance(b.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>'+
-        /* 選んだときだけ、金の動きを1行で(v4.87の箱と同じ流儀)。財布を経由するが増減ゼロ */
-        (_gcat
-          /* v5.72: 遊技の経費は、どちらから出しても**遊技の収支に入る**。違うのは減る場所だけ */
-          ? '<div class="muted" style="font-size:11px;margin:-6px 0 12px;line-height:1.6">'+
-            (_bk ? esc(bankName(_bk))+'(軍資金)から出して、<b>遊技の収支</b>に入れます。所持金と予算は動きません。'
-                 : '所持金から出して、<b>遊技の収支</b>に入れます(所持金→軍資金の振替を自動で立てます)。予算は動きません。')+'</div>'
-          : (_bk ? '<div class="muted" style="font-size:11px;margin:-6px 0 12px;line-height:1.6">'+
-            esc(bankName(_bk))+'→所持金の振替を自動で立てます。所持金は増減ゼロで、軍資金だけが減ります。</div>' : ''));
+          '<span class="mono muted" style="font-size:11px;display:block">¥'+bankBalance(b.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
     }
   }
   /* v4.85: **貯金の箱から払えるようにする**(ユーザー指摘: 大阪旅行の貯金から払ったのに選べない)。
@@ -7860,11 +7877,11 @@ function viewEntry(){
       (cp ? (()=>{ const _pn=esc((savingsPots().find(x=>String(x.id)===cp)||{}).name||"貯金");
         const _sw='<span class="teal" data-a="espdraw" style="cursor:pointer;white-space:nowrap">'+
           (f.svDraw===false?'箱から出す':'財布から出す')+' →</span>';
-        return '<div class="muted" style="font-size:11px;margin:-6px 2px 12px;line-height:1.7">'+
-          (f.svDraw===false
-            ? '所持金から出ます。'+_pn+'の進捗に数えます。'
-            : _pn+'の箱から出ます。所持金は動きません。')+
-          ' '+_sw+'</div>'; })() : '');
+        /* v5.75: **今どちらから出るか(状態)と切り替え(操作)は残し**、仕組みの説明だけⓘへ */
+        return '<div class="row between" style="font-size:11px;margin:-6px 2px 12px;align-items:center">'+
+          '<span class="muted">'+(f.svDraw===false ? '所持金から('+_pn+'の進捗に数える)' : _pn+'の箱から')+
+          infoBtn("<b>箱から出す</b>: 箱の残高だけが減り、所持金は動きません(補填と支出で相殺)。<br><br><b>財布から出す</b>: 所持金から払い、箱の目標の進捗には数えます。")+'</span>'+
+          _sw+'</div>'; })() : '');
   }
   /* v4.35: **同じ店で複数の品目をまとめて入力**(ユーザー設計)。レシート1枚=1回の入力にする。
      保存時は**行ごとに別のエントリ**を作る(日付/分類/店/財布は共有)ので、
@@ -7877,7 +7894,7 @@ function viewEntry(){
   if(!isTr && UI.editEntryId===null){
     pasteHtml = UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px">'+
-        '<div class="muted" style="font-size:11px;line-height:1.7;margin-bottom:8px">レシートを撮ってClaudeに読ませ、返ってきた文字列をそのまま貼ります。</div>'+
+        '<div class="muted" style="font-size:11px;margin-bottom:8px">レシートを貼る'+infoBtn("レシートを撮ってClaudeに読ませ、返ってきた文字列をそのまま貼ります。")+'</div>'+
         '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | 宮城野通→連坊 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
@@ -8260,7 +8277,7 @@ function viewSession(){
 
   /* ----- 交換設定(セッション共通) ----- */
   if(!(s.mode==="dai"&&s.lotteryOnly)){
-  h += band("交換設定");
+  h += band("交換設定", null, "使う方だけ入力。前回値を記憶します。<br>貯玉プッシュのレートは管理タブのボーダー試算で設定します。");
   if((S.stores||[]).length) h += '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">'+
     (S.stores||[]).map(st=>'<button class="chip" data-a="applystore" data-v="'+st.id+'">'+esc(st.name)+'</button>').join("")+'</div>';
   h += '<div class="row" style="gap:8px;align-items:center;margin-bottom:6px">'+
@@ -8270,8 +8287,7 @@ function viewSession(){
     '<div class="row" style="gap:8px;align-items:center;margin-bottom:6px">'+
     '<span class="muted" style="font-size:12px;width:74px">パチンコ</span>'+
     '<input class="input mono r" type="number" inputmode="numeric" placeholder="例: 250" value="'+esc(s.pExchange||"")+'" style="flex:1" data-in="pexchange">'+
-    '<span class="muted" style="font-size:12px">玉=1000円</span></div>'+
-    '<div class="muted" style="font-size:11px">使う方だけ入力。前回値を記憶します。<br>貯玉プッシュのレートは管理タブのボーダー試算で設定。</div>';
+    '<span class="muted" style="font-size:12px">玉=1000円</span></div>';
   }
 
   /* ----- 代打ち: 報酬 ----- */
@@ -8338,7 +8354,7 @@ function viewSession(){
   });
   h += '<button class="btn dash full" data-a="xadd">＋ 経費を追加</button>';
   h += '<button class="btn dash full" style="margin-top:6px" data-a="xfopen">⇄ 家計簿から振替</button>';
-  if(UI.xferOpen){ h += xferHint + xferRowsHtml(xferCandidates(s.date, s.expenses), "xfpick"); }
+  if(UI.xferOpen){ h += xferHint() + xferRowsHtml(xferCandidates(s.date, s.expenses), "xfpick"); }
 
   /* ----- サマリー ----- */
   h += band("このセッションの結果");
@@ -8356,17 +8372,15 @@ function sessionSummary(s){
     const dai = daiResult(s);
     if(slotMachines(s).some(machHasData)){
       h += '<div class="card2" style="margin-bottom:10px"><div class="row between" style="align-items:baseline">'+
-        '<span style="font-size:11px;font-weight:700">客の玉での勝敗(報告用)</span>'+
-        '<span class="mono '+clsPM(dai)+'" style="font-size:16px;font-weight:700">'+signYen(dai)+'</span></div>'+
-        '<div class="muted" style="font-size:11px;margin-top:4px">この金額は家計簿には反映されません</div></div>';
+        '<span style="font-size:11px;font-weight:700">客の玉での勝敗(報告用)'+infoBtn("この金額は家計簿には反映されません。")+'</span>'+
+        '<span class="mono '+clsPM(dai)+'" style="font-size:16px;font-weight:700">'+signYen(dai)+'</span></div></div>';
     }
     h += srow("報酬", num(s.fee));
     h += srow("経費(自分負担分)", -expTotal(s));
     const fin = finalOwn(s);
     h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>'+
-      '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">代打ち報酬(家計簿の収入へ)</span>'+
-      '<span class="mono '+clsPM(fin)+'" style="font-size:20px;font-weight:700">'+signYen(fin)+'</span></div>'+
-      '<div class="muted" style="font-size:11px;margin-top:4px">労働収入なので家計簿の収入に計上(軍資金には入りません)</div>';
+      '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">代打ち報酬(家計簿の収入へ)'+infoBtn("労働収入なので家計簿の収入(副業)に計上します。軍資金には入りません。")+'</span>'+
+      '<span class="mono '+clsPM(fin)+'" style="font-size:20px;font-weight:700">'+signYen(fin)+'</span></div>';
     return h;
   }
   if(s.mode==="nori"){
@@ -8466,9 +8480,7 @@ function viewMachine(m, s){
     '<div id="msug-'+m.id+'">'+(hits.length?'<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">'+
       hits.map(x=>'<button class="chip" data-a="msug" data-v="'+m.id+'|'+esc(x.name)+'">'+esc(x.name)+'</button>').join("")+'</div>':'')+'</div>';
 
-  if(m.kind==="pachi"){
-    h += '<div class="muted" style="font-size:11px;margin-bottom:8px;padding:6px 8px;border:1px dashed var(--line);border-radius:8px">回転数・ボーダーの試算は管理タブへ移動。<br>(収支の記録とは別のため)</div>';
-  }
+  /* v5.75: 「ボーダーの試算は管理タブへ移動」の告知は、移動から時間が経ち役目を終えたので撤去 */
 
   /* 収支(貯玉方式・任意) */
   h += '<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">'+
@@ -8606,21 +8618,21 @@ function viewBorderTool(){
      処理を二重に書かないので btreset の分岐は1つのまま */
   let h = '<div class="row between" style="align-items:center;margin-bottom:6px">'+
     '<button class="navbtn" data-a="btback" style="font-size:14px">‹ 戻る</button>'+
-    '<h1 style="font-size:17px;margin:0">ボーダー試算</h1>'+
+    '<h1 style="font-size:17px;margin:0">ボーダー試算'+
+      infoBtn("この台を続けるか判断するための試算です(収支の記録とは別)。<br>着席時・当たり後の再開時・現金追加時に区間を追加すると、回転率とボーダー乖離が出ます。")+'</h1>'+
     '<div style="width:44px"></div></div>'+
     '<button class="chip" data-a="btreset" style="display:none">クリア</button>';
-  h += '<div class="muted" style="font-size:11px;margin-bottom:12px">この台を続けるか判断する試算(収支の記録とは別)。<br>着席時・当たり後の再開時・現金追加時に区間を追加。<br>回転率とボーダー乖離が出ます。</div>';
+  /* v5.75: 冒頭の説明は見出しのⓘへ */
 
   /* 貯玉プッシュ レート */
   if((S.stores||[]).length) h += band("店を選ぶ")+'<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
     (S.stores||[]).map(st=>'<button class="chip" data-a="btstore" data-v="'+st.id+'">'+esc(st.name)+'</button>').join("")+'</div>';
-  h += band("貯玉プッシュ(玉/回)");
+  h += band("貯玉プッシュ(玉/回)", null, "貯玉プッシュを使う時だけ入力します。持ち玉(玉数)区間だけなら不要です。");
   h += '<div class="card" style="margin-bottom:12px"><div class="grid2">'+
     '<div><div class="muted" style="font-size:11px;margin-bottom:2px">払出(出玉計算用)</div>'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="230" value="'+esc(m.pushPayout||"")+'" data-bi="pushPayout"></div>'+
     '<div><div class="muted" style="font-size:11px;margin-bottom:2px">引落(コスト計算用)</div>'+
-    '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="245" value="'+esc(m.pushDraw||"")+'" data-bi="pushDraw"></div></div>'+
-    '<div class="muted" style="font-size:11px;margin-top:5px">貯玉プッシュを使う時だけ入力。持ち玉(玉数)区間のみなら不要。</div></div>';
+    '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="245" value="'+esc(m.pushDraw||"")+'" data-bi="pushDraw"></div></div></div>';
 
   /* 機種名 */
   h += band("機種");
@@ -8634,14 +8646,13 @@ function viewBorderTool(){
     '</div>';
 
   /* 削り率 */
-  h += band("削り率(出玉の削れ)");
+  h += band("削り率(出玉の削れ)", null, "釘の削りで出玉が理論に届かない分。この分だけ厳しくした<b>削り後ボーダー</b>で判定します。<br>例: 5% = 出玉が理論の95%。0なら理論ボーダー基準。<br>店・釘に合わせて調整。前回値を記憶します。");
   h += '<div class="card" style="margin-bottom:12px"><div class="row" style="gap:8px;align-items:center">'+
     '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="5" value="'+esc(m.kezuri||"")+'" style="width:84px" data-bi="kezuri">'+
-    '<span class="muted" style="font-size:12px">% 理論を下回る分</span></div>'+
-    '<div class="muted" style="font-size:11px;margin-top:5px;line-height:1.6">釘の削りで出玉が理論に届かない分。<br>この分だけ厳しくした<b>削り後ボーダー</b>で判定します。<br>例: 5%=出玉が理論の95%。0なら理論ボーダー基準。<br>店・釘に合わせて調整。前回値を記憶します。</div></div>';
+    '<span class="muted" style="font-size:12px">% 理論を下回る分</span></div></div>';
 
   /* 時給の設定 */
-  h += band("時給の設定");
+  h += band("時給の設定", null, "換金率 = 出玉の価値(等価4円なら250玉)。<br>現金貸出 = 貸出で削る店の実玉数。<br>開始時刻は初回区間の入力で自動記録(ズレたら修正可)。<br>前回値を記憶します(開始・休憩はクリアで初期化)。");
   const _hm = ts => { const d=new Date(ts); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
   h += '<div class="card" style="margin-bottom:12px"><div class="grid2">'+
     '<div><div class="muted" style="font-size:11px;margin-bottom:2px">換金率(1000円=◯玉)</div>'+
@@ -8658,12 +8669,10 @@ function viewBorderTool(){
         '<button class="chip" data-a="startnow" style="font-size:11px">今にリセット</button></div>'+
       '<div class="row" style="gap:8px;align-items:center"><span class="muted" style="font-size:11px;width:28px">休憩</span>'+
         '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(m.breakMin||"")+'" style="width:80px" data-bi="breakMin">'+
-        '<span class="muted" style="font-size:11px">分(昼休憩など経過から除く)</span></div></div>'+
-    '<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.6">換金率=出玉の価値(等価4円なら250玉)。<br>現金貸出=貸出で削る店の実玉数。<br>開始時刻は初回区間の入力で自動記録。ズレたら修正可。<br>前回値を記憶(開始・休憩はクリアで初期化)。</div></div>';
+        '<span class="muted" style="font-size:11px">分(昼休憩など経過から除く)</span></div></div></div>';
 
   /* 通常時区間(貯玉プッシュ一本化) */
-  h += band("通常時 区間");
-  h += '<div class="muted" style="font-size:11px;margin-bottom:8px;line-height:1.6">貯玉プッシュ区間: 残プッシュを入力。<br>持ち玉区間: <b>残プッシュを空</b>にして残玉に持ち玉。<br>現金区間: <b>現金投資(円)</b>を入力。</div>';
+  h += band("通常時 区間", null, "<b>貯玉プッシュ区間</b>: 残プッシュを入力。<br><b>持ち玉区間</b>: 残プッシュを空にして、残玉に持ち玉を入力。<br><b>現金区間</b>: 現金投資(円)を入力。");
   h += '<div style="margin-bottom:8px">';
   const segFields = [["rpStart","開始 残プッシュ"],["rpEnd","終了 残プッシュ"],["sb","開始 残玉"],["eb","当たり時 残玉"],["ss","開始 回転数"],["es","当たり時 回転数"],["cash","現金投資(円)"]];
   (m.segments||[]).forEach((g,gi)=>{
@@ -9005,8 +9014,9 @@ function saveSession(){
 /* ---------- 店舗データ(プリセット) ---------- */
 function viewStores(){
   let h = '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">店舗データ</div><div style="width:44px"></div></div>';
-  h += '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:12px">店ごとの換金率・貸出・貯玉レートを登録。<br>交換設定やボーダー試算の「店を選ぶ」で自動入力。<br>スロットは換金率のみ(設定と収支が全てのため)。</div>';
+    '<div style="font-size:14px;font-weight:700">店舗データ'+
+      infoBtn("店ごとの換金率・貸出・貯玉レートを登録します。<br>交換設定やボーダー試算の「店を選ぶ」で自動入力されます。<br>スロットは換金率のみ(設定と収支が全てのため)。")+
+      '</div><div style="width:44px"></div></div>';
   const f = UI.storeForm;
   (S.stores||[]).forEach(st=>{
     h += '<div class="card" style="margin-bottom:8px"><div class="row between" style="align-items:center">'+
@@ -9015,7 +9025,8 @@ function viewStores(){
       '<div class="row" style="gap:6px;flex-shrink:0;margin-left:8px"><button class="btn" style="font-size:11px;padding:3px 12px" data-a="stedit" data-v="'+st.id+'">編集</button>'+
       '<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-a="stdel" data-v="'+st.id+'">削除</button></div></div></div>';
   });
-  h += band(f?(f.editId?"店舗を編集":"新しい店舗"):"追加");
+  h += band(f?(f.editId?"店舗を編集":"新しい店舗"):"追加", null,
+    f ? "換金率 = 出玉の価値。現金貸出 = 貸出で削られた実玉数。<br>貯玉払出/引落 = 貯玉プッシュ1回あたりの玉数。<br>使う項目だけ入れれば大丈夫です。" : "");
   if(!f){
     h += '<button class="btn dash full" style="padding:14px 0" data-a="stnew">＋ 店舗を追加</button>';
   } else {
@@ -9033,7 +9044,7 @@ function viewStores(){
       '<div class="grid2">'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">貯玉払出(玉/回)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="230" value="'+esc(f.pachiPay||"")+'" data-sf="pachiPay"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">貯玉引落(玉/回)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="245" value="'+esc(f.pachiDraw||"")+'" data-sf="pachiDraw"></div></div>'+
-      '<div class="muted" style="font-size:11px;margin-top:6px;line-height:1.6">換金率=出玉の価値。現金貸出=貸出で削られた実玉数。<br>貯玉払出/引落=貯玉プッシュ1回あたりの玉数。<br>使う項目だけ入れればOK。</div>'+
+
       '<div class="row" style="gap:8px;margin-top:12px">'+
       '<button class="btn full" style="padding:10px 0;font-size:12px;color:var(--muted)" data-a="stcancel">やめる</button>'+
       '</div><div style="display:none"><button data-a="stsave">保存</button></div></div>';
@@ -9067,7 +9078,9 @@ function bindStores(){
 
 function viewMdb(){
   let h = '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">機種データ</div><div style="width:44px"></div></div>';
+    '<div style="font-size:14px;font-weight:700">機種データ'+
+      infoBtn("パチンコは確率分母と理論TYを登録すると、台に機種名を入れるだけでボーダー分析が自動適用されます。")+
+      '</div><div style="width:44px"></div></div>';
   const f = UI.mdbForm;
   if(f){
     h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
@@ -9090,8 +9103,7 @@ function viewMdb(){
   } else {
     h += '<button class="btn dash full" style="margin-bottom:12px" data-a="fnew">＋ 機種を登録</button>';
     if(!S.mdb.length)
-      h += '<div style="text-align:center;padding:24px 0;font-size:13px;line-height:1.8" class="muted">'+
-        'まだ登録がありません。<br>パチンコは確率分母と理論TYを登録すると、<br>台に機種名を入れるだけで<br>ボーダー分析が自動適用されます。</div>';
+      h += '<div style="text-align:center;padding:24px 0;font-size:13px" class="muted">まだ登録がありません。</div>';
     S.mdb.slice().sort((a,b)=>a.name>b.name?1:-1).forEach(x=>{
       h += '<div class="listitem" data-a="fedit" data-v="'+x.id+'">'+
         '<div style="flex:1;min-width:0">'+
@@ -9152,11 +9164,11 @@ function snapListHtml(){
   if(!sn.length) return '<div class="muted" style="font-size:12px;margin-bottom:4px">まだありません(次回起動時に自動取得されます)</div>';
   let h = '<div class="card" style="padding:2px 14px;margin-bottom:4px">'+
     '<div class="row" style="align-items:center;gap:8px;padding:9px 0">'+
-    '<div style="flex:1;font-size:12px">'+sn.length+'世代保持中 <span class="muted" style="font-size:11px">・最新 '+fmt(sn[0].ts)+'</span></div>'+
+    '<div style="flex:1;font-size:12px">'+sn.length+'世代保持中 <span class="muted" style="font-size:11px">・最新 '+fmt(sn[0].ts)+'</span>'+
+      infoBtn("起動時(1日1回)と、復元・同期で上書きする前に、この端末の中へ自動で退避されます。")+'</div>'+
     '<button class="btn" style="padding:7px 12px;font-size:12px;color:var(--text)" data-a="snaptoggle">'+(UI.snapOpen?"閉じる":"表示")+'</button></div>';
   if(UI.snapOpen){
-    h += '<div class="muted" style="font-size:11px;line-height:1.7;padding:2px 0 8px">起動時(日次)と復元・同期での上書き前に、<br>この端末内へ自動退避されます。</div>'+
-      sn.map((s,i)=>{
+    h += sn.map((s,i)=>{
         const c1 = ((s.d&&s.d.entries)||[]).length, c2 = ((s.d&&s.d.sessions)||[]).length, c3 = ((s.d&&s.d.mjSessions)||[]).length;
         return '<div class="row" style="align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--line)">'+
           '<div style="flex:1"><div style="font-size:12px">'+fmt(s.ts)+' <span class="tag" style="color:var(--muted);border:1px solid var(--muted)">'+esc(s.label)+'</span></div>'+
@@ -9169,26 +9181,23 @@ function snapListHtml(){
 function viewBackup(){
   return '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">バックアップ</div><div style="width:44px"></div></div>'+
-    band("クラウド同期")+
+    band("クラウド同期", null, "ログインすると、データが自動でクラウドに保存され、複数端末で同期されます。<br>初めての場合は「新規登録」を。同じメール/パスワードで別端末からもログインできます。")+
     '<div id="syncbox">'+syncBoxHtml()+'</div>'+
     band("自動スナップショット")+
     snapListHtml()+
-    band("自己診断")+
-    '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:10px">保存領域・収支計算・書き出し→再取込の整合を検査します。</div>'+
+    band("自己診断", null, "保存領域・収支計算・書き出し→再取込の整合を検査します。")+
     '<button class="btn tealb full" style="font-weight:700;padding:11px 0" data-a="btest">自己診断を実行</button>'+
     (UI.msg?'<div class="row" style="align-items:flex-start;gap:6px;margin-top:10px">'+
       '<div class="mono teal" style="flex:1;font-size:11px;line-height:1.8;white-space:pre-wrap">'+esc(UI.msg)+'</div>'+
       '<button class="navbtn" data-a="msgclose" aria-label="閉じる" style="font-size:18px;padding:0 8px;line-height:1.4">×</button></div>':'')+
-    band("エクスポート(全データ)")+
-    '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:10px">'+
-    '家計簿・稼働・機種・レートの全データをJSONで書き出し。<br>日常の保全は自動(スナップショット+クラウド)。<br>書き出しは機種変更やiOS大型更新の前だけで十分。</div>'+
+    band("エクスポート(全データ)", null, "家計簿・稼働・機種・レートの全データをJSONで書き出します。<br>日常の保全は自動(スナップショット+クラウド)なので、書き出しは機種変更やiOSの大型更新の前だけで十分です。")+
     '<div class="row" style="gap:8px;margin-bottom:8px">'+
     '<button class="btn primary" style="flex:1;padding:11px 0" data-a="bexport">ファイルに書き出す</button>'+
     '<button class="btn" style="flex:1;padding:11px 0;color:var(--text)" data-a="bcopy">コピー</button></div>'+
     '<button class="btn" style="width:100%;padding:10px 0;color:var(--text);font-size:12px" data-a="csv">CSV形式で書き出す(表計算ソフト用)</button>'+
-    band("インポート(復元)")+
-    '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:10px">'+
-    'バックアップJSONの中身を下に貼り付けて取り込み。<br><span class="red">現在のデータは貼り付けた内容で完全に置き換わる。</span></div>'+
+    band("インポート(復元)", null, "バックアップJSONの中身を下に貼り付けて取り込みます。")+
+    /* v5.75: **取り返しのつかない操作の警告は本文に残す**(ⓘに入れると押さない人が事故る) */
+    '<div class="red" style="font-size:12px;margin-bottom:10px">現在のデータは貼り付けた内容で完全に置き換わります。</div>'+
     '<textarea class="input mono" id="b-import" placeholder=\'{"entries":[...],"sessions":[...]}\'></textarea>'+
     '<button class="btn danger full" style="margin-top:8px;font-weight:700;padding:11px 0" data-a="bimport">このデータで置き換えて復元する</button>'+
     '<div class="muted" style="text-align:center;font-size:11px;margin-top:24px;opacity:.7">Tally バージョン '+APP_VERSION+'</div>';
@@ -9269,7 +9278,12 @@ function bindBackup(){
           chk("麻雀経費込み", mjFinal(Object.assign({},tmj,{expenses:[{amount:"300"}]})), 2100);
           chk("麻雀平均着順", mjAvgRank(tmj), 1.75);
           chk("スキーマ版", S.schemaV, 3);
+          /* v5.75: 金額で入れる麻雀(v5.65)の式も検算に入れる */
+          chk("麻雀(金額で入れる)", mjFinal({calc:"cash",inAmt:"10000",outAmt:"13000",expenses:[]}), 3000);
+          chk("麻雀のみ(ゲーム代を戻す)", mjRaw({calc:"cash",inAmt:"10000",outAmt:"13000",category:"free",rule:"4",baseFee:"300",ranks:["3","3","2","2"]}), 6000);
         }catch(e){ log.push("✗ 計算検証: "+e.message); }
+        /* v5.75: 手元の実データの整合 */
+        try{ dataAudit().forEach(x=>log.push(x)); }catch(e){ log.push("✗ 実データの整合: "+e.message); }
         try{
           const p = JSON.parse(JSON.stringify(S));
           const sum = a => (a||[]).reduce((x,e)=>x+num(e.amount),0);
@@ -9295,6 +9309,46 @@ function bindBackup(){
       }
     };
   });
+}
+
+/* v5.75: **実データの整合検査**(ユーザー要望: Tally全体のチェック)。
+   上の計算検証は固定の例でしか確かめられない。こちらは**手元の実データ**を見る——
+   紐づけが切れていないか、稼働と家計簿の数字が一致しているか、消えた置き場・財布を指していないか。
+   どれも「気付かないうちに数字が静かにずれる」種類の壊れ方で、画面を眺めても見つからない */
+function dataAudit(){
+  const out=[];
+  const ok=(name,bad,detail)=>out.push((bad?"✗ ":"✓ ")+name+(bad?": "+detail:""));
+  const bt=new Set(((S.bank||{}).txns||[]).map(t=>String(t.id)));
+  const st=new Set(((S.savings||{}).txns||[]).map(t=>String(t.id)));
+  const E=S.entries||[];
+  /* 紐づけ(軍資金払い・遊技経費の補充・貯金の箱) */
+  const lostB=E.filter(e=>(e.bkTx!=null&&!bt.has(String(e.bkTx)))||(e.gtTx!=null&&!bt.has(String(e.gtTx))));
+  ok("軍資金との紐づけ", lostB.length, lostB.length+"件の記録が、消えた振替を指しています");
+  const lostS=E.filter(e=>e.svTx!=null&&!st.has(String(e.svTx)));
+  ok("貯金の箱との紐づけ", lostS.length, lostS.length+"件の記録が、消えた引き出しを指しています");
+  /* 稼働と家計簿(本体+分け先の合計 = 稼働の最終収支) */
+  const sums={};
+  E.forEach(e=>{ const m=String(e.id).match(/^(mj|slot)-([^~]+)/); if(!m) return;
+    const k=m[1]+"-"+m[2]; sums[k]=(sums[k]||0)+(e.type==="income"?e.amount:-e.amount); });
+  const known=new Set((S.mjSessions||[]).map(x=>"mj-"+x.id).concat((S.sessions||[]).map(x=>"slot-"+x.id)));
+  const orphan=Object.keys(sums).filter(k=>!known.has(k));
+  ok("稼働の無い連携記録", orphan.length, orphan.length+"件(稼働が消えたのに家計簿に残っています)");
+  const drift=[];
+  (S.mjSessions||[]).forEach(x=>{ const f=mjFinal(x), g=sums["mj-"+x.id]||0; if(f!==g) drift.push(x.date+" 麻雀 "+signYen(f)+"≠"+signYen(g)); });
+  (S.sessions||[]).forEach(x=>{ const f=finalOwn(x), g=sums["slot-"+x.id]||0; if(f!==g) drift.push(x.date+" "+modeLabel(x.mode)+" "+signYen(f)+"≠"+signYen(g)); });
+  ok("稼働と家計簿の金額", drift.length, drift.length+"件ずれています(その稼働を開いて保存し直すと直ります) "+drift.slice(0,3).join(" / "));
+  /* 置き場・財布 */
+  const bp=new Set(bankPots().map(p=>String(p.id)));
+  const badSess=(S.mjSessions||[]).concat(S.sessions||[]).filter(x=>(x.bwal&&!bp.has(String(x.bwal)))||(x.splits||[]).some(y=>!bp.has(String(y.bwal))));
+  ok("稼働の置き場", badSess.length, badSess.length+"件が消えた置き場を指しています");
+  const bsum=bankPots().reduce((a,p)=>a+bankBalance(p.id),0);
+  ok("軍資金の合計 = 置き場の合計", bsum!==bankBalance(), signYen(bsum)+" ≠ "+signYen(bankBalance())+"(消えた置き場を指す記録があります)");
+  const wsum=walletPots().reduce((a,p)=>a+walletBalance(null,p.id),0);
+  ok("所持金の合計 = 財布の合計", wsum!==walletBalance(null), signYen(wsum)+" ≠ "+signYen(walletBalance(null))+"(消えた財布を指す記録があります)");
+  /* 照合 */
+  const t=todayStr(), futChk=E.filter(e=>e.chk&&e.date>t).length;
+  ok("未来の記録の照合済み", futChk, futChk+"件(まだ起きていない記録に✓が付いています)");
+  return out;
 }
 
 /* ============================================================
@@ -9429,8 +9483,6 @@ function syncBoxHtml(){
       '<button class="btn" style="flex:1;padding:10px 0;color:var(--text)" data-sa="logout">ログアウト</button></div></div>';
   }
   return '<div class="card">'+
-    '<div class="muted" style="font-size:12px;line-height:1.7;margin-bottom:10px">'+
-    'ログインするとデータが自動でクラウドに保存され、<br>複数端末で同期されます。<br>初めての場合は「新規登録」を。<br>同じメール/パスワードで別端末からログイン可。</div>'+
     '<input class="input" id="sync-email" type="email" inputmode="email" placeholder="メールアドレス" autocomplete="username" style="margin-bottom:8px">'+
     '<input class="input" id="sync-pw" type="password" placeholder="パスワード(6文字以上)" autocomplete="current-password" style="margin-bottom:10px">'+
     '<div class="row" style="gap:8px">'+
