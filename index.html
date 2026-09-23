@@ -256,7 +256,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.77 (localStorage保存・完全オフライン)
+   Tally 5.78 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -649,6 +649,8 @@ function applyData(d){
   S.payroll = (d.payroll && typeof d.payroll==="object") ? d.payroll : {};
   /* v5.34: 半荘の記録。**ホワイトリストに載せないと復元のたびに失われる**(v3.97/v5.20と同じ事故) */
   S.mjLog = (d.mjLog && typeof d.mjLog==="object") ? d.mjLog : {};
+  /* v5.78: v5.77の「差し馬」ボタン(sashi)は**着順の差**で数えていた=今の定義では馬身。um へ移す */
+  if(S.mjLog.sashi){ S.mjLog.um=Object.assign({}, S.mjLog.um||{}, S.mjLog.sashi); delete S.mjLog.sashi; }
   /* v5.49: 予算の期間。**ホワイトリストに載せないと復元のたびに失われる**(v3.97/v5.20と同じ) */
   S.budgetCycle = (d.budgetCycle && typeof d.budgetCycle==="object") ? d.budgetCycle : {};
   S.invest = (d.invest && typeof d.invest==="object") ? d.invest : {policy:"",holdings:[],bufferTxns:[]};   /* v3.18: 投資台帳 */
@@ -954,7 +956,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.77";
+const APP_VERSION = "5.78";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1648,6 +1650,7 @@ function bindTrEdit(){
    打つ前に1回だけ触る設定なので、**普通の入力欄を並べる**のが素直 */
 const MJ_CONF_FIELDS=[
   ["chipUnit","チップ単価","円/枚"],
+  ["sashiUnit","差し馬単価","円/1回"],   /* v5.78: 1半荘ごとの上下(着順の差は関係ない) */
   ["umaUnit","馬身単価","円/1つ"],
   ["tobiUnit","飛び単価","円/1回"],
   ["gameFee","ゲーム代","円/半荘"],
@@ -1729,6 +1732,7 @@ function viewMjLog(){
     '</span></div>'+
     '<div class="row between" style="font-size:12px;margin-top:8px">'+
     '<span class="muted">チップ <span class="mono" style="color:var(--fg);font-weight:700">'+(t.chip>=0?'+':'−')+Math.abs(t.chip)+'</span>枚</span>'+
+    (Object.keys(L.sa||{}).length?'<span class="muted">差し馬 <span class="mono" style="color:var(--fg);font-weight:700">'+(t.sashi>=0?'+':'−')+Math.abs(t.sashi)+'</span></span>':'')+   /* v5.78 */
     (c.useUma?'<span class="muted">馬身 <span class="mono" style="color:var(--fg);font-weight:700">'+(t.uma>=0?'+':'−')+Math.abs(t.uma)+'</span></span>':'')+
     (c.useTobi?'<span class="muted">飛び <span class="mono" style="color:var(--fg);font-weight:700">'+(t.tobi>=0?'+':'−')+Math.abs(t.tobi)+'</span></span>':'')+
     '</div>'+
@@ -1743,7 +1747,7 @@ function viewMjLog(){
     const P=mjlPeople();
     h+='<div class="card" style="margin-bottom:12px">'+
       '<div class="row between" style="align-items:center;cursor:pointer" data-ml="memtog">'+
-      '<span class="fxl" style="margin:0">メンバー'+infoBtn("同じ卓で打つ相手の名前です(自分は入れません)。<br><br>相手が人数分そろうと、半荘ごとに<b>全員の着順</b>を入れられるようになります。全員の着順があれば、後から相手ごとの成績や、差し馬(特定の相手との着順の賭け)の馬身を計算できます。<br><br><b>交代</b>: 途中で人が入れ替わった時に使います。前の人の記録はそのまま残り、次の半荘から新しい人になります。<br>名前を押すと、名前の書き間違いを直せます(同じ人のまま)。")+'</span>'+
+      '<span class="fxl" style="margin:0">メンバー'+infoBtn("同じ卓で打つ相手の名前です(自分は入れません)。<br><br>相手が人数分そろうと、半荘ごとに<b>全員の着順</b>を入れられるようになります。全員の着順があれば、後から相手ごとの成績や、差し馬・馬身(特定の相手との着順の賭け)を計算できます。<br><br><b>交代</b>: 途中で人が入れ替わった時に使います。前の人の記録はそのまま残り、次の半荘から新しい人になります。<br>名前を押すと、名前の書き間違いを直せます(同じ人のまま)。")+'</span>'+
       '<span class="muted" style="font-size:12px">'+(ro.length ? esc(ro.map(id=>P[id]).join("・")) : 'まだいません')+' '+(open?'▾':'▸')+'</span></div>'+
       (open
         ? '<div style="margin-top:10px">'+
@@ -1815,19 +1819,23 @@ function viewMjLog(){
             'style="flex:1;padding:12px 0;font-size:14px;font-weight:700'+(u<0?';color:var(--red)':'')+'" '+
             'data-ml="uma" data-v="'+u+'">'+(u>0?'+':'−')+Math.abs(u)+'</button>').join("")+'</div>' : ''))+
     '</div>';
-  /* v5.77: **相手ごとの成績と差し馬**。全員の着順を入れた半荘がある時だけ出す */
+  /* v5.77/v5.78: **相手ごとの成績と、差し馬・馬身**。全員の着順を入れた半荘がある時だけ出す。
+     差し馬と馬身は**別の賭け**なので、相手ごとに別々のボタンで選ぶ(両方・どちらか・何人でも・後から) */
   { const vs=mjlVs(), pids=Object.keys(vs);
-    if(c.useUma && pids.length){
-      const sa=(L.sashi||{});
-      h+='<div class="card" style="margin-bottom:12px"><div class="fxl">相手ごとの成績・差し馬'+
-        infoBtn("全員の着順を入れた半荘から、相手ごとの成績を出しています。<br><b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br><b>馬身</b>は、その相手との着順の差の合計です(自分が上なら＋)。例: 自分が1着・相手が3着なら +2。<br><br><b>差し馬</b>(特定の相手と、どちらが上の着順になるかを賭けること)をしていた相手を選ぶと、その相手との馬身が上の合計に入り、馬身の単価で金額になります。何人でも選べて、後から選び直しても大丈夫です。")+'</div>'+
-        pids.map(pid=>{ const x=vs[pid], on=!!sa[pid];
-          return '<div class="row between" style="align-items:center;padding:7px 0;border-top:1px solid var(--line)">'+
-            '<span class="ellip" style="font-size:13px;min-width:0">'+esc(mjlName(pid))+
-              ' <span class="muted mono" style="font-size:11px">'+x.n+'回 上'+x.up+'・下'+x.down+'</span></span>'+
-            '<span class="row" style="gap:8px;align-items:center;flex-shrink:0">'+
-            '<span class="mono '+(x.uma<0?'red':x.uma>0?'teal':'muted')+'" style="font-size:13px;font-weight:700">馬身'+(x.uma>=0?'+':'−')+Math.abs(x.uma)+'</span>'+
-            '<button class="btn'+(on?' sel':'')+'" style="font-size:11px;padding:4px 10px" data-ml="sashi" data-v="'+esc(pid)+'">差し馬</button></span></div>';
+    if(pids.length){
+      const sa=(L.sa||{}), um=(L.um||{});
+      const sv=v=>'<span class="mono '+(v<0?'red':v>0?'teal':'muted')+'" style="font-weight:700">'+(v>=0?'+':'−')+Math.abs(v)+'</span>';
+      h+='<div class="card" style="margin-bottom:12px"><div class="fxl">相手ごとの成績'+
+        infoBtn("全員の着順を入れた半荘から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>その相手と賭けをしていたら、下のボタンで選びます。両方でも、どちらかだけでも、何人でも選べます。終わってから選び直しても大丈夫です。<br><br><b>差し馬</b>: 1半荘ごとに、相手より上なら +1、下なら −1。着順の差は関係ありません。例: 上2回・下1回なら +1。差し馬の単価(1回あたり)で金額になります。<br><br><b>馬身</b>: 着順の差を数えます。例: 自分が1着・相手が3着なら +2、自分が3着・相手が2着なら −1。馬身の単価で金額になります。<br><br>単価は右上の「単価」で決めます。")+'</div>'+
+        pids.map(pid=>{ const x=vs[pid];
+          return '<div style="padding:8px 0;border-top:1px solid var(--line)">'+
+            '<div class="row between" style="align-items:baseline">'+
+            '<span class="ellip" style="font-size:13px;min-width:0">'+esc(mjlName(pid))+'</span>'+
+            '<span class="muted mono" style="font-size:11px;flex-shrink:0">'+x.n+'回 上'+x.up+'・下'+x.down+'</span></div>'+
+            '<div class="row" style="gap:6px;margin-top:6px">'+
+            '<button class="btn'+(sa[pid]?' sel':'')+'" style="flex:1;font-size:12px;padding:7px 0" data-ml="sa" data-v="'+esc(pid)+'">差し馬 '+sv(x.sa)+'</button>'+
+            '<button class="btn'+(um[pid]?' sel':'')+'" style="flex:1;font-size:12px;padding:7px 0" data-ml="um" data-v="'+esc(pid)+'">馬身 '+sv(x.uma)+'</button>'+
+            '</div></div>';
         }).join("")+'</div>';
     } }
   h+='<button style="display:none" data-ml="add">'+(_ed?'更新する':'記録する')+'</button>';
@@ -1849,9 +1857,10 @@ function viewMjLog(){
         '<div class="row between" style="font-size:13px;padding:6px 0 0;margin-top:4px;border-top:1px solid var(--line)">'+
         '<span style="font-weight:700">スコア分</span>'+
         '<span class="mono '+clsPM(t.score)+'" style="font-weight:700;font-size:15px">'+signYen(t.score)+'</span></div>'+
-        ((t.umaY||t.back)
+        ((t.umaY||t.back||t.sashiY)
           ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line)">'+
             '<div class="muted" style="font-size:11px;margin-bottom:2px">卓の外</div>'+
+            (t.sashiY? _mjRow("差し馬 "+(t.sashi>=0?"+":"−")+Math.abs(t.sashi), t.sashiY):'')+   /* v5.78 */
             (c.useUma&&t.umaY? _mjRow("馬身 "+t.uma, t.umaY):'')+
             (t.back? _mjRow("ゲーム代バック "+t.n+"半荘", t.back):'')+'</div>'
           : '')+
@@ -1921,8 +1930,8 @@ function bindMjLog(){
       /* v5.77: **リセット**。確かめてから、この卓の記録だけを消す(メンバーと単価は残す) */
       if(a==="reset"){
         const t0=mjLogTotals();
-        if(!confirm("この卓の記録を消して、最初からにしますか?\n\n消えるもの: "+t0.n+"半荘の着順・チップ・飛び・精算・差し馬の選択\n残るもの: メンバーと単価")) return;
-        delete S.mjLog.rows; delete S.mjLog.chip; delete S.mjLog.tobi; delete S.mjLog.settle; delete S.mjLog.sashi;
+        if(!confirm("この卓の記録を消して、最初からにしますか?\n\n消えるもの: "+t0.n+"半荘の着順・チップ・飛び・精算・差し馬と馬身の選択\n残るもの: メンバーと単価")) return;
+        delete S.mjLog.rows; delete S.mjLog.chip; delete S.mjLog.tobi; delete S.mjLog.settle; delete S.mjLog.sa; delete S.mjLog.um;
         mjlPrune(); UI.mjlForm={rank:0, uma:0};
         save(); render(); toast("リセットしました"); return;
       }
@@ -1961,7 +1970,8 @@ function bindMjLog(){
         else { ord.push(v); if(ord.length===parts.length-1){ const last=parts.find(x=>ord.indexOf(x)<0); if(last!=null) ord.push(last); } }
         f.order=ord; render(); return;
       }
-      if(a==="sashi"){ const sa=Object.assign({}, S.mjLog.sashi||{}); if(sa[v]) delete sa[v]; else sa[v]=true; S.mjLog.sashi=sa; save(); render(); return; }
+      /* v5.78: 差し馬(sa)と馬身(um)は別々に選ぶ */
+      if(a==="sa"||a==="um"){ const m0=Object.assign({}, S.mjLog[a]||{}); if(m0[v]) delete m0[v]; else m0[v]=true; S.mjLog[a]=m0; save(); render(); return; }
       if(a==="rank"){ f.rank=num(v); render(); return; }
       if(a==="uma"){ f.uma=(num(f.uma)===num(v)?0:num(v)); render(); return; }
       if(a==="cancel"){ UI.mjlForm={rank:0, uma:0}; render(); return; }
@@ -2019,7 +2029,9 @@ function bindMjLog(){
           /* v5.45: **卓の外は経費と分ける**(ユーザー指摘)。しかも**馬身とバックは別々の行**に——
              1行にまとめると内訳が読めない */
           /* **馬身だけが卓の外**。バックはゲーム代側に渡した */
-          extras: t.umaY ? [{id:uid(), name:"馬身", amount:String(t.umaY)}] : [],
+          /* v5.78: 差し馬と馬身は**別々の行**で(まとめると内訳が読めない・v5.45と同じ理由) */
+          extras: [].concat(t.sashiY ? [{id:uid(), name:"差し馬", amount:String(t.sashiY)}] : [])
+                    .concat(t.umaY ? [{id:uid(), name:"馬身", amount:String(t.umaY)}] : []),
           memo:"半荘の記録から: "+t.n+"半荘 "+rc.join("-")+
                " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+
                " / 卓の精算"+signYen(t.settle),
@@ -4890,7 +4902,7 @@ function mjLogConf(){
   const c=S.mjLog||{};
   /* v5.39: **ゲーム代・トップ賞・バックを半荘数と着順から自動で出す**(ユーザーの実データで確定)。
      入力するのは**卓の精算額**だけ。実額から引くので**端数処理(50円単位の切上/切捨)を知らなくてよい** */
-  return {chipUnit:fnum(c.chipUnit)||50, umaUnit:fnum(c.umaUnit)||0, tobiUnit:fnum(c.tobiUnit)||0,
+  return {chipUnit:fnum(c.chipUnit)||50, umaUnit:fnum(c.umaUnit)||0, sashiUnit:fnum(c.sashiUnit)||0, tobiUnit:fnum(c.tobiUnit)||0,
           gameFee:fnum(c.gameFee)||0, topBonus:fnum(c.topBonus)||0, feeBack:fnum(c.feeBack)||0,
           seats:num(c.seats)||3,
           useUma:(c.useUma===undefined ? true : !!c.useUma),
@@ -4916,13 +4928,16 @@ function mjlPrune(){
   const P0=mjlPeople(), P={}; Object.keys(P0).forEach(k=>{ if(keep.has(k)) P[k]=P0[k]; });
   S.mjLog.people=P;
 }
-/* 相手ごとの成績(全員の着順を入れた半荘だけ)。馬身 = 相手の着順 − 自分の着順(上なら＋) */
+/* 相手ごとの成績(全員の着順を入れた半荘だけ)。
+   v5.78: **差し馬と馬身は別の賭け**(ユーザー: どっちも欲しい。どのパターンもある)。
+   ・差し馬 = 1半荘ごとに相手より上なら+1、下なら−1(着順の差は関係ない)→ sa = 上 − 下
+   ・馬身   = 着順の差(相手の着順 − 自分の着順。自分が上なら＋)→ uma */
 function mjlVs(){
   const res={};
   mjLogRows().forEach(r=>{ if(!r.ranks) return; const me=num(r.ranks.me); if(!me) return;
     Object.keys(r.ranks).forEach(pid=>{ if(pid==="me") return; const o=num(r.ranks[pid]); if(!o) return;
       const x=res[pid]||(res[pid]={n:0,up:0,down:0,uma:0});
-      x.n++; if(me<o) x.up++; else if(me>o) x.down++; x.uma+=(o-me); }); });
+      x.n++; if(me<o) x.up++; else if(me>o) x.down++; x.uma+=(o-me); x.sa=x.up-x.down; }); });
   return res;
 }
 /* 馬身の選べる値。3麻なら +2 +1 −1 −2 / 4麻なら +3..−3(0は無い) */
@@ -4938,7 +4953,11 @@ function mjLogTotals(){
   /* v5.77: 全員の着順を入れた行(ranks あり)の馬身は、**差し馬の相手を選んで後から計算**する。
      手で入れた馬身は ranks の無い行だけに効く(同じ半荘を二重に数えない) */
   rows.forEach(r=>{ if(r.rank) rank[r.rank]=(rank[r.rank]||0)+1; if(!r.ranks) uma+=num(r.uma); });
-  { const vs=mjlVs(), sa=(L.sashi||{}); Object.keys(sa).forEach(pid=>{ if(sa[pid] && vs[pid]) uma+=vs[pid].uma; }); }
+  /* v5.78: 相手ごとに「差し馬」「馬身」を別々に選ぶ(両方・どちらか・何人でも) */
+  let sashi=0;
+  { const vs=mjlVs(), um=(L.um||{}), sa=(L.sa||{});
+    Object.keys(um).forEach(pid=>{ if(um[pid] && vs[pid]) uma+=vs[pid].uma; });
+    Object.keys(sa).forEach(pid=>{ if(sa[pid] && vs[pid]) sashi+=vs[pid].sa; }); }
   const chip=num(L.chip), tobi=num(L.tobi), n=rows.length;
   /* v5.39: **半荘数と着順から自動で出る分**。入力は要らない */
   const fee   = -Math.round(n*c.gameFee);          /* ゲーム代(払う) */
@@ -4946,18 +4965,18 @@ function mjLogTotals(){
      トップだとゲーム代が 300+200=500円になる。v5.39で「もらう」と取り違えていた */
   const top   = -Math.round((rank[1]||0)*c.topBonus);
   const back  =  Math.round(n*c.feeBack);          /* ゲーム代バック(卓の外でもらう) */
-  const chipY = chip*c.chipUnit, umaY = uma*c.umaUnit, tobiY = tobi*c.tobiUnit;
+  const chipY = chip*c.chipUnit, umaY = uma*c.umaUnit, tobiY = tobi*c.tobiUnit, sashiY = sashi*c.sashiUnit;
   /* **卓の中で金額が分かる分**。スコア分はここから逆算する(消去法)。
      馬身とバックは**卓の外**でやり取りするので、卓の精算には含めない */
   const known = chipY + tobiY + fee + top;
   const settled = String(L.settle||"").trim()!=="";
   const settle = num(L.settle);
   const score = settled ? settle-known : 0;
-  return {n:n, rank:rank, uma:uma, chip:chip, tobi:tobi,
-          fee:fee, top:top, back:back, chipY:chipY, umaY:umaY, tobiY:tobiY,
+  return {n:n, rank:rank, uma:uma, sashi:sashi, chip:chip, tobi:tobi,
+          fee:fee, top:top, back:back, chipY:chipY, umaY:umaY, sashiY:sashiY, tobiY:tobiY,
           known:known, settled:settled, settle:settle, score:score,
-          /* **最終収支 = 卓の精算 + 馬身 + バック** */
-          net: settled ? settle+umaY+back : 0, c:c};
+          /* **最終収支 = 卓の精算 + 差し馬 + 馬身 + バック**(差し馬と馬身は卓の外でやり取りする) */
+          net: settled ? settle+sashiY+umaY+back : 0, c:c};
 }
 /* v5.57: **明細の並び順を決める唯一の関数**(ユーザー要望: デビットカードの明細と突合するとき順番を合わせたい)。
    既定は新しい順(false)、突合のときだけ古い順(true)。
@@ -7304,7 +7323,7 @@ function saveMj(){
      単価と設定は残す(次の卓で入れ直さない) */
   if(UI.mjlPending){
     const keep=Object.assign({}, S.mjLog||{});
-    delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle; delete keep.sashi;   /* v5.77: 差し馬の選択はその卓限り */
+    delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle; delete keep.sa; delete keep.um;   /* v5.77/78: 差し馬・馬身の選択はその卓限り */
     S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
     mjlPrune();   /* v5.77: メンバーは残す(同じ面子なら入れ直さない)。もう使わない人だけ消す */
     UI.mjlForm={rank:0, uma:0};
