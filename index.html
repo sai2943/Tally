@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.81 (localStorage保存・完全オフライン)
+   Tally 5.82 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.81";
+const APP_VERSION = "5.82";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1939,19 +1939,25 @@ function viewMjLog(){
           '<td class="x" data-ml="del" data-v="'+i+'">✕</td></tr>';
         prev=null; return;
       }
-      if(!prev || prev.join(",")!==st.join(",")){
+      if(!prev || prev.join(",")!==st.join(",") || r.ev==="卓移動"){
         let lab='';
         if(prev){
-          const same=prev.length===st.length && prev.slice().sort().join(",")===st.slice().sort().join(",");
-          const others=st.filter(x=>x!=="me"), allNew=others.length && others.every(x=>prev.indexOf(x)<0);
-          lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
+          if(r.ev) lab=r.ev;   /* v5.82: 実際に行った操作 */
+          else {               /* 印の無い古い行だけ、並びの変化から推測する */
+            const same=prev.length===st.length && prev.slice().sort().join(",")===st.slice().sort().join(",");
+            const others=st.filter(x=>x!=="me"), allNew=others.length && others.every(x=>prev.indexOf(x)<0);
+            lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
+          }
         }
-        body+='<tr class="nm"><td class="no" style="color:var(--amber);font-size:10px">'+lab+'</td>'+
+        /* 卓移動は**別の卓の始まり**なので、青い太線で区切り、名前ごとの色付けはしない(全員が新しい卓の顔ぶれ) */
+        const mv=(lab==='卓移動');
+        const labCol = mv ? 'var(--blue)' : (lab==='交代' ? 'var(--amber)' : 'var(--muted)');
+        body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:10px;font-weight:700'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
           Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
-            if(pid==null) return '<td></td>';
-            const chg=prev && prev[k]!==pid;
-            return '<td style="'+(pid==="me"?'font-weight:700;color:var(--text)':'')+(chg?';color:var(--amber)':'')+'">'+esc(mjlName(pid))+'</td>'; }).join("")+
-          '<td></td></tr>';
+            if(pid==null) return '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>';
+            const chg=!mv && prev && prev[k]!==pid;
+            return '<td style="'+(pid==="me"?'font-weight:700;color:var(--text)':'')+(chg?';color:var(--amber)':'')+(mv?';border-top:2px solid var(--blue)':'')+'">'+esc(mjlName(pid))+'</td>'; }).join("")+
+          '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td></tr>';
         prev=st;
       }
       body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
@@ -2000,7 +2006,7 @@ function bindMjLog(){
       if(a==="reset"){
         const t0=mjLogTotals();
         if(!confirm("この卓の記録を消して、最初からにしますか?\n\n消えるもの: "+t0.n+"半荘の着順・チップ・飛び・精算・差し馬と馬身の選択\n残るもの: メンバーと単価")) return;
-        delete S.mjLog.rows; delete S.mjLog.chip; delete S.mjLog.tobi; delete S.mjLog.settle; delete S.mjLog.sa; delete S.mjLog.um;
+        delete S.mjLog.rows; delete S.mjLog.chip; delete S.mjLog.tobi; delete S.mjLog.settle; delete S.mjLog.sa; delete S.mjLog.um; delete S.mjLog.pendEv;
         mjlPrune(); UI.mjlForm={rank:0, uma:0};
         save(); render(); toast("リセットしました"); return;
       }
@@ -2011,7 +2017,9 @@ function bindMjLog(){
       /* 自分の席を変える: 行き先の人と入れ替わる */
       if(a==="mepick"){
         const k=num(v), st=mjlSeat(), me=st.indexOf("me"); if(k===me||st[k]==null) return;
-        st[me]=st[k]; st[k]="me"; S.mjLog.seat=st; save(); render(); return;
+        st[me]=st[k]; st[k]="me"; S.mjLog.seat=st;
+        if(!S.mjLog.pendEv) S.mjLog.pendEv="席替え";   /* v5.82: 卓移動・交代より弱い */
+        save(); render(); return;
       }
       /* 席 i に人を座らせる(交代)。id があればその人(戻ってきた人)、無ければ新しい人。次の半荘から効く */
       const seatPut=(i,id,nm)=>{
@@ -2023,6 +2031,7 @@ function bindMjLog(){
           else { id="p"+uid(); S.mjLog.people=Object.assign({}, P, {[id]:nm}); }
         }
         const old=mjlName(st[i]); st[i]=id; S.mjLog.seat=st;
+        if(S.mjLog.pendEv!=="卓移動") S.mjLog.pendEv="交代";   /* v5.82 */
         UI.mjlSeatEd=null; UI.mjlNewName=""; save(); render(); toast(MJL_SEATS[i]+"席: "+old+" → "+mjlName(id)); return true;
       };
       if(a==="seatx"){ const i=num(v); const st=mjlSeat(); if(st[i]==null||st[i]==="me") return; const id=mjlNewX(); seatPut(i,id,null); return; }
@@ -2057,6 +2066,7 @@ function bindMjLog(){
         const k=num(v), n=mjlSeat().length; if(k<0||k>=n) return;
         const st=[]; for(let i=0;i<n;i++) st.push(i===k ? "me" : mjlNewX());
         S.mjLog.seat=st; UI.mjlMoving=false; UI.mjlSeatEd=null; UI.mjlMemOpen=true;
+        S.mjLog.pendEv="卓移動";   /* v5.82: 次の半荘に「卓移動」を付ける(一番強い) */
         save(); render(); toast("卓を移りました(自分は"+MJL_SEATS[k]+"席)"); return;
       }
 
@@ -2162,11 +2172,15 @@ function bindMjLog(){
         }
         if(f.editIdx!=null && mjLogRows()[f.editIdx]){
           const at=mjLogRows()[f.editIdx].at;
-          S.mjLog.rows=mjLogRows().map((x,k)=> k===num(f.editIdx) ? Object.assign(row,{at:at||row.at}) : x);
+          const _ev=mjLogRows()[f.editIdx].ev;   /* v5.82: 直しても、その半荘の前に起きた出来事の印は残す */
+          S.mjLog.rows=mjLogRows().map((x,k)=> k===num(f.editIdx) ? Object.assign(row,{at:at||row.at}, _ev?{ev:_ev}:{}) : x);
           UI.mjlForm={rank:0, uma:0};
           save(); render(); toast((num(f.editIdx)+1)+"半荘目を直しました");
           return;
         }
+        /* v5.82: **実際に行った操作を印として付ける**(ユーザー指摘: 卓移動と交代を区別して出して欲しい)。
+           v5.80は席の並びの変化から推測していたので、ツルさんと一緒に卓を移った時(=1人は同じ)を「交代」と誤表示した */
+        if(S.mjLog.pendEv){ row.ev=S.mjLog.pendEv; delete S.mjLog.pendEv; }
         S.mjLog.rows=(S.mjLog.rows||[]).concat([row]);
         /* **次の半荘へすぐ入れる**ように選択を外す */
         UI.mjlForm={rank:0, uma:0};
@@ -7454,7 +7468,7 @@ function saveMj(){
      単価と設定は残す(次の卓で入れ直さない) */
   if(UI.mjlPending){
     const keep=Object.assign({}, S.mjLog||{});
-    delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle; delete keep.sa; delete keep.um;   /* v5.77/78: 差し馬・馬身の選択はその卓限り */
+    delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle; delete keep.sa; delete keep.um; delete keep.pendEv;   /* v5.77/78: 差し馬・馬身の選択はその卓限り */
     S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
     mjlPrune();   /* v5.77: メンバーは残す(同じ面子なら入れ直さない)。もう使わない人だけ消す */
     UI.mjlForm={rank:0, uma:0};
