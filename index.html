@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.87 (localStorage保存・完全オフライン)
+   Tally 5.88 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.87";
+const APP_VERSION = "5.88";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1860,7 +1860,9 @@ function viewMjLog(){
     '</div>';
   /* v5.77/v5.78: **相手ごとの成績と、差し馬・馬身**。全員の着順を入れた半荘がある時だけ出す。
      差し馬と馬身は**別の賭け**なので、相手ごとに別々のボタンで選ぶ(両方・どちらか・何人でも・後から) */
-  { const vs=mjlVs(), pids=Object.keys(vs);
+  /* v5.88: **仮称(X・Y…)の人は出さない**(ユーザー: 仮称の人と差し馬は絶対にやらない)。
+     名前を知らない相手と賭けは成立しないので、ボタンを並べても押されない行が増えるだけ。名前を直せば出てくる */
+  { const vs=mjlVs(), pids=Object.keys(vs).filter(pid=>!mjlIsX(mjlName(pid)));
     if(pids.length){
       const sa=(L.sa||{}), um=(L.um||{});
       const sv=v=>'<span class="mono '+(v<0?'red':v>0?'teal':'muted')+'" style="font-weight:700">'+(v>=0?'+':'−')+Math.abs(v)+'</span>';
@@ -1876,7 +1878,7 @@ function viewMjLog(){
       h+='<div class="card" style="margin-bottom:12px">'+
         '<div class="row between" style="align-items:center;cursor:pointer" data-ml="vstog">'+
         '<span class="fxl" style="margin:0">相手ごとの成績'+
-        infoBtn("全員の着順を入れた半荘から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>その相手と賭けをしていたら、下のボタンで選びます。両方でも、どちらかだけでも、何人でも選べます。終わってから選び直しても大丈夫です。<br><br><b>差し馬</b>: 1半荘ごとに、相手より上なら +1、下なら −1。着順の差は関係ありません。例: 上2回・下1回なら +1。差し馬の単価(1回あたり)で金額になります。<br><br><b>馬身</b>: 着順の差を数えます。例: 自分が1着・相手が3着なら +2、自分が3着・相手が2着なら −1。馬身の単価で金額になります。<br><br>単価は右上の「単価」で決めます。<br><br>見出しを押すと畳めます。畳んでいる間は、選んだ差し馬・馬身の合計(選んでいなければ人数)を右に出します。")+'</span>'+
+        infoBtn("全員の着順を入れた半荘から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>その相手と賭けをしていたら、下のボタンで選びます。両方でも、どちらかだけでも、何人でも選べます。終わってから選び直しても大丈夫です。<br><br><b>差し馬</b>: 1半荘ごとに、相手より上なら +1、下なら −1。着順の差は関係ありません。例: 上2回・下1回なら +1。差し馬の単価(1回あたり)で金額になります。<br><br><b>馬身</b>: 着順の差を数えます。例: 自分が1着・相手が3着なら +2、自分が3着・相手が2着なら −1。馬身の単価で金額になります。<br><br>単価は右上の「単価」で決めます。<br><br>仮の名前(X・Y など)の人は、賭けの相手にならないので出しません。名前を直すと出てきます。<br><br>見出しを押すと畳めます。畳んでいる間は、選んだ差し馬・馬身の合計(選んでいなければ人数)を右に出します。")+'</span>'+
         '<span class="muted mono" style="font-size:12px">'+esc(vSum)+' '+(vOpen?'▾':'▸')+'</span></div>'+
         (!vOpen ? '' : pids.map(pid=>{ const x=vs[pid];
           return '<div style="padding:8px 0;border-top:1px solid var(--line)">'+
@@ -5119,8 +5121,10 @@ function mjLogTotals(){
   /* v5.78: 相手ごとに「差し馬」「馬身」を別々に選ぶ(両方・どちらか・何人でも) */
   let sashi=0;
   { const vs=mjlVs(), um=(L.um||{}), sa=(L.sa||{});
-    Object.keys(um).forEach(pid=>{ if(um[pid] && vs[pid]) uma+=vs[pid].uma; });
-    Object.keys(sa).forEach(pid=>{ if(sa[pid] && vs[pid]) sashi+=vs[pid].sa; }); }
+    /* v5.88: 仮称の人は画面に出さないので、選択が残っていても数えない(見えない選択が金額に効くのを防ぐ) */
+    const named=pid=>!mjlIsX(mjlName(pid));
+    Object.keys(um).forEach(pid=>{ if(um[pid] && vs[pid] && named(pid)) uma+=vs[pid].uma; });
+    Object.keys(sa).forEach(pid=>{ if(sa[pid] && vs[pid] && named(pid)) sashi+=vs[pid].sa; }); }
   const chip=num(L.chip), tobi=num(L.tobi), n=rows.length;
   /* v5.39: **半荘数と着順から自動で出る分**。入力は要らない */
   const fee   = -Math.round(n*c.gameFee);          /* ゲーム代(払う) */
