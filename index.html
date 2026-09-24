@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.90 (localStorage保存・完全オフライン)
+   Tally 5.91 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.90";
+const APP_VERSION = "5.91";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1671,7 +1671,8 @@ const MJ_CONF_FIELDS=[
   ["tobiUnit","飛び単価","円/1回"],
   ["gameFee","ゲーム代","円/半荘"],
   ["topBonus","トップ賞","円/1着(追加で払う)"],
-  ["feeBack","ゲーム代バック","円/半荘"]
+  ["feeBack","ゲーム代バック","円/半荘"],
+  ["drinkFee","ドリンク代","円/1回(卓ごと)"]   /* v5.91: 初期値で入れる(ユーザー要望) */
 ];
 function viewMjConf(){
   const c=mjLogConf();
@@ -1900,7 +1901,7 @@ function viewMjLog(){
   h+='<button style="display:none" data-ml="add">'+(_ed?'更新する':'記録する')+'</button>';
   /* 精算——**スコアは消去法**。実際にやり取りした額を入れると残りがスコア分 */
   h+='<div class="card" style="margin-bottom:12px">'+
-    '<div class="fxl">精算(実際の収支)'+infoBtn("卓で実際にやり取りしたお金を入れます(もらったら＋、払ったら−)。<br><br>そこから、ゲーム代・トップ賞・チップなど内訳が分かる分を差し引いて、残りを<b>スコアの分</b>として逆算します。スコアを自分で計算して入れる必要はありません。")+'</div>'+
+    '<div class="fxl">店での精算'+infoBtn("お店と最後にやり取りしたお金を入れます(もらったら＋、払ったら−)。<br><br>差し馬・馬身・ゲーム代バックのように、<b>お店の精算とは別にやり取りするお金は入れません</b>。それらは下の「卓の外」で足し、<b>最終収支 = 店での精算 + 卓の外</b> になります。<br><br>店での精算から、ゲーム代・トップ賞・ドリンク代・チップなど内訳が分かる分を差し引いて、残りを<b>スコアの分</b>として逆算します。スコアを自分で計算して入れる必要はありません。")+'</div>'+
     '<div class="row" style="gap:6px">'+
     '<button class="btn'+(String(L.settle||"").charAt(0)==="-"?' sel':'')+'" style="width:46px;padding:10px 0;font-size:15px;font-weight:700'+
       (String(L.settle||"").charAt(0)==="-"?';color:var(--red);border-color:var(--red)':'')+'" data-ml="ssign">'+
@@ -2130,7 +2131,7 @@ function bindMjLog(){
       if(a==="close"){
         const t=mjLogTotals(), c=t.c;
         if(!t.n){ toast("半荘の記録がありません"); return; }
-        if(!t.settled){ toast("卓の精算額を入れてください"); return; }
+        if(!t.settled){ toast("店での精算額を入れてください"); return; }
         const rc=[1,2,3,4].slice(0,c.seats).map(k=>String(t.rank[k]||0));
         UI.mjDraft={
           id:uid(), date:todayStr(), store:"", category:"free", rule:String(c.seats),
@@ -2149,17 +2150,17 @@ function bindMjLog(){
           players:(()=>{ const ids=[]; mjLogRows().forEach(r=>{ if(r.ranks) Object.keys(r.ranks).forEach(k=>{ if(k!=="me"&&ids.indexOf(k)<0) ids.push(k); }); });
             mjlRoster().forEach(k=>{ if(ids.indexOf(k)<0) ids.push(k); }); return ids.map(mjlName).filter(x=>x&&x!=="?"&&!mjlIsX(x)).slice(0,5); })(),   /* v5.79: 仮称のままの人は同卓者に入れない */
           baseFee:String(c.gameFee), topBonus:String(c.topBonus),
-          feeBack:String(c.feeBack), drinkFee:"", setFee:"",
+          feeBack:String(c.feeBack), drinkFee:(c.drinkFee?String(c.drinkFee):""), setFee:"",   /* v5.91 */
           expenses: [],
           /* v5.45: **卓の外は経費と分ける**(ユーザー指摘)。しかも**馬身とバックは別々の行**に——
              1行にまとめると内訳が読めない */
           /* **馬身だけが卓の外**。バックはゲーム代側に渡した */
           /* v5.78: 差し馬と馬身は**別々の行**で(まとめると内訳が読めない・v5.45と同じ理由) */
-          extras: [].concat(t.sashiY ? [{id:uid(), name:"差し馬", amount:String(t.sashiY)}] : [])
-                    .concat(t.umaY ? [{id:uid(), name:"馬身", amount:String(t.umaY)}] : []),
+          /* v5.91: **相手ごとの行**にし、誰の分かを`who`に持つ——締めた後に置き場へ分ける時、どの額を誰の置き場へ入れるか分かるように */
+          extras: t.outs.filter(x=>x.yen).map(x=>({id:uid(), name:x.kind+(x.who?" "+x.who:"")+" "+(x.n>=0?"+":"−")+Math.abs(x.n), who:x.who||"", amount:String(x.yen)})),
           memo:"半荘の記録から: "+t.n+"半荘 "+rc.join("-")+
-               " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+
-               " / 卓の精算"+signYen(t.settle),
+               " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+(t.drink?" ドリンク代"+signYen(t.drink):"")+
+               " / 店での精算"+signYen(t.settle),
           bwal:String(S.mjLog.bwal||(bankPots()[0]||{}).id||"")
         };
         UI.mjIsNew=true;
@@ -5035,6 +5036,8 @@ function mjLogConf(){
      入力するのは**卓の精算額**だけ。実額から引くので**端数処理(50円単位の切上/切捨)を知らなくてよい** */
   return {chipUnit:fnum(c.chipUnit)||50, umaUnit:fnum(c.umaUnit)||0, sashiUnit:fnum(c.sashiUnit)||0, tobiUnit:fnum(c.tobiUnit)||0,
           gameFee:fnum(c.gameFee)||0, topBonus:fnum(c.topBonus)||0, feeBack:fnum(c.feeBack)||0,
+          /* v5.91: ドリンク代。**未設定なら麻雀の記録で最後に使った額**(S.rates.mjDrink)を初期値にする。0と入れれば0 */
+          drinkFee:(c.drinkFee!=null && String(c.drinkFee).trim()!=="") ? fnum(c.drinkFee) : (fnum((S.rates||{}).mjDrink)||0),
           seats:num(c.seats)||3,
           useUma:(c.useUma===undefined ? true : !!c.useUma),
           useTobi:(c.useTobi===undefined ? true : !!c.useTobi)};
@@ -5042,28 +5045,32 @@ function mjLogConf(){
 /* v5.90: 精算の内訳(ゲーム代・スコア分・卓の外・最終収支)。**精算欄を打っている最中も書き換えられるよう関数に切り出した**
    (欄そのものは描き直さない=キーボードが閉じない) */
 function mjlBreakdownHtml(){
+  /* v5.91: **2つのブロックに分け、足し算で読めるように**(ユーザー指摘: 実際の収支と最終収支がズレている)。
+     ズレ自体は仕様(最終収支 = 店での精算 + 卓の外)だが、旧版は入力欄を「実際の収支」と呼び、内訳にその額を出していなかったので、
+     **最終収支がどこから来たか読めなかった**。v5.66の原則どおり「内訳の和 = 見出し、見出しの和 = 最終収支」に揃える */
   const t=mjLogTotals(), c=t.c;
-  return (t.settled
-      ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">'+
-        (t.fee? _mjRow("ゲーム代 "+t.n+"半荘", t.fee):'')+
-        (t.top? _mjRow("トップ賞 "+(t.rank[1]||0)+"回(追加で払う)", t.top):'')+
-        (t.chip? _mjRow("チップ "+t.chip+"枚", t.chipY):'')+
-        (c.useTobi&&t.tobi? _mjRow("飛び "+t.tobi, t.tobiY):'')+
-        '<div class="row between" style="font-size:13px;padding:6px 0 0;margin-top:4px;border-top:1px solid var(--line)">'+
-        '<span style="font-weight:700">スコア分</span>'+
-        '<span class="mono '+clsPM(t.score)+'" style="font-weight:700;font-size:15px">'+signYen(t.score)+'</span></div>'+
-        ((t.umaY||t.back||t.sashiY)
-          ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line)">'+
-            '<div class="muted" style="font-size:11px;margin-bottom:2px">卓の外</div>'+
-            (t.sashiY? _mjRow("差し馬 "+(t.sashi>=0?"+":"−")+Math.abs(t.sashi), t.sashiY):'')+   /* v5.78 */
-            (c.useUma&&t.umaY? _mjRow("馬身 "+t.uma, t.umaY):'')+
-            (t.back? _mjRow("ゲーム代バック "+t.n+"半荘", t.back):'')+'</div>'
-          : '')+
-        '<div class="row between" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
-        '<span style="font-size:13px;font-weight:700">最終収支</span>'+
-        '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>'+
-        '</div>'
-      : '');
+  if(!t.settled) return '';
+  const sub=(lab,y)=>'<div class="row between" style="font-size:12px;padding:2px 0 2px 12px"><span class="muted">'+lab+'</span><span class="mono '+clsPM(y)+'">'+signYen(y)+'</span></div>';
+  const head=(lab,y)=>'<div class="row between" style="font-size:13px;padding:6px 0 2px"><span style="font-weight:700">'+lab+'</span><span class="mono '+clsPM(y)+'" style="font-weight:700">'+signYen(y)+'</span></div>';
+  const outSum=t.outs.reduce((a,x)=>a+x.yen,0)+t.back;
+  let h='<div style="margin-top:10px;padding-top:6px;border-top:1px solid var(--line)">';
+  h+=head("店での精算", t.settle);
+  h+=sub("スコア分", t.score);
+  if(t.fee) h+=sub("ゲーム代 "+t.n+"半荘", t.fee);
+  if(t.top) h+=sub("トップ賞 "+(t.rank[1]||0)+"回", t.top);
+  if(t.drink) h+=sub("ドリンク代", t.drink);
+  if(t.chip) h+=sub("チップ "+t.chip+"枚", t.chipY);
+  if(c.useTobi&&t.tobi) h+=sub("飛び "+t.tobi, t.tobiY);
+  if(t.outs.length||t.back){
+    h+='<div style="margin-top:6px;border-top:1px solid var(--line)"></div>';
+    h+=head("卓の外", outSum);
+    t.outs.forEach(x=>{ if(x.yen) h+=sub(x.kind+(x.who?" "+esc(x.who):"")+" "+(x.n>=0?"+":"−")+Math.abs(x.n), x.yen); });
+    if(t.back) h+=sub("ゲーム代バック "+t.n+"半荘", t.back);
+  }
+  h+='<div class="row between" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
+    '<span style="font-size:13px;font-weight:700">最終収支</span>'+
+    '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>';
+  return h+'</div>';
 }
 function mjLogRows(){ return (S.mjLog&&S.mjLog.rows)||[]; }
 /* v5.77: **メンバーと全員の着順**(ユーザー要望: プレイヤー名を事前に入れ、毎回全員の着順を入れる。途中交代にも対応。
@@ -5143,11 +5150,17 @@ function mjLogTotals(){
   rows.forEach(r=>{ if(r.rank) rank[r.rank]=(rank[r.rank]||0)+1; if(!r.ranks) uma+=num(r.uma); });
   /* v5.78: 相手ごとに「差し馬」「馬身」を別々に選ぶ(両方・どちらか・何人でも) */
   let sashi=0;
+  /* v5.91: **卓の外を相手ごとに持つ**(ユーザー: 店の精算と別にツルさんと精算する。締めた後に分けるため、誰の分か分かるように) */
+  const outs=[];
   { const vs=mjlVs(), um=(L.um||{}), sa=(L.sa||{});
     /* v5.88: 仮称の人は画面に出さないので、選択が残っていても数えない(見えない選択が金額に効くのを防ぐ) */
     const named=pid=>!mjlIsX(mjlName(pid));
-    Object.keys(um).forEach(pid=>{ if(um[pid] && vs[pid] && named(pid)) uma+=vs[pid].uma; });
-    Object.keys(sa).forEach(pid=>{ if(sa[pid] && vs[pid] && named(pid)) sashi+=vs[pid].sa; }); }
+    Object.keys(sa).forEach(pid=>{ if(sa[pid] && vs[pid] && named(pid)){ sashi+=vs[pid].sa;
+      outs.push({kind:"差し馬", who:mjlName(pid), n:vs[pid].sa, yen:vs[pid].sa*c.sashiUnit}); } });
+    const manual=uma;   /* メンバー無しで入れた行の手入力の馬身(相手不明) */
+    Object.keys(um).forEach(pid=>{ if(um[pid] && vs[pid] && named(pid)){ uma+=vs[pid].uma;
+      outs.push({kind:"馬身", who:mjlName(pid), n:vs[pid].uma, yen:vs[pid].uma*c.umaUnit}); } });
+    if(manual) outs.push({kind:"馬身", who:"", n:manual, yen:manual*c.umaUnit}); }
   const chip=num(L.chip), tobi=num(L.tobi), n=rows.length;
   /* v5.39: **半荘数と着順から自動で出る分**。入力は要らない */
   const fee   = -Math.round(n*c.gameFee);          /* ゲーム代(払う) */
@@ -5155,14 +5168,16 @@ function mjLogTotals(){
      トップだとゲーム代が 300+200=500円になる。v5.39で「もらう」と取り違えていた */
   const top   = -Math.round((rank[1]||0)*c.topBonus);
   const back  =  Math.round(n*c.feeBack);          /* ゲーム代バック(卓の外でもらう) */
+  /* v5.91: ドリンク代は**店での精算の中**(麻雀の記録と同じくゲーム代の仲間)。最終収支は変わらず、スコア分が正しくなる */
+  const drink = n ? -Math.round(c.drinkFee) : 0;
   const chipY = chip*c.chipUnit, umaY = uma*c.umaUnit, tobiY = tobi*c.tobiUnit, sashiY = sashi*c.sashiUnit;
   /* **卓の中で金額が分かる分**。スコア分はここから逆算する(消去法)。
      馬身とバックは**卓の外**でやり取りするので、卓の精算には含めない */
-  const known = chipY + tobiY + fee + top;
+  const known = chipY + tobiY + fee + top + drink;
   const settled = String(L.settle||"").trim()!=="";
   const settle = num(L.settle);
   const score = settled ? settle-known : 0;
-  return {n:n, rank:rank, uma:uma, sashi:sashi, chip:chip, tobi:tobi,
+  return {n:n, rank:rank, uma:uma, sashi:sashi, chip:chip, tobi:tobi, drink:drink, outs:outs,
           fee:fee, top:top, back:back, chipY:chipY, umaY:umaY, sashiY:sashiY, tobiY:tobiY,
           known:known, settled:settled, settle:settle, score:score,
           /* **最終収支 = 卓の精算 + 差し馬 + 馬身 + バック**(差し馬と馬身は卓の外でやり取りする) */
@@ -5842,6 +5857,16 @@ function gspHtml(sess, fin){
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(x.amt||"")+'" data-in="gsp" data-v="'+i+'" style="width:120px">'+
       '<button class="navbtn" data-a="gspdel" data-v="'+i+'" style="color:var(--muted);padding:0 6px;font-size:16px">×</button></div>';
   });
+  /* v5.91: **卓の外の相手ごとの額を、その人の名前の置き場へワンタップで分ける**(ユーザー: 締めた後に分けるため分かるように)。
+     半荘の記録から締めた卓は、卓の外の行に相手(who)を持っている。**同じ名前の置き場があり、まだ分けていない人**だけ出す */
+  { const per={};
+    ((sess&&sess.extras)||[]).forEach(x=>{ if(x&&x.who) per[x.who]=(per[x.who]||0)+num(x.amount); });
+    const chips=Object.keys(per).filter(w=>per[w]).map(w=>({w:w, y:per[w], p:bankPots().find(p=>p.name===w)}))
+      .filter(o=>o.p && String(o.p.id)!==pb && !list.some(x=>String(x.bwal)===String(o.p.id)));
+    if(chips.length){
+      h+='<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">'+
+        chips.map(o=>'<button class="chip" data-a="gspquick" data-v="'+esc(o.p.id)+'|'+o.y+'">'+esc(o.w)+' '+signYen(o.y)+' を分ける</button>').join("")+'</div>';
+    } }
   if(UI.gspPick && avail.length){
     h+='<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">'+
       avail.map(p=>'<button class="chip" data-a="gsppick" data-v="'+esc(p.id)+'">'+esc(p.name)+'</button>').join("")+'</div>';
@@ -5859,6 +5884,11 @@ function gspAction(sess, a, v){
   if(a==="gspadd"){ UI.gspPick=!UI.gspPick; return true; }
   if(a==="gsppick"){ sess.splits=gspList(sess).concat([{bwal:String(v), amt:"", neg:false}]); UI.gspPick=false; return true; }
   if(a==="gspdel"){ const i=num(v); sess.splits=gspList(sess).filter((_,k)=>k!==i); return true; }
+  /* v5.91: 卓の外の額をそのまま分け先に(符号も引き継ぐ: 相手に借りた分は−) */
+  if(a==="gspquick"){ const p=String(v).split("|"), y=num(p[1]);
+    if(!gspList(sess).some(x=>String(x.bwal)===String(p[0])))
+      sess.splits=gspList(sess).concat([{bwal:String(p[0]), amt:String(Math.abs(y)), neg:y<0}]);
+    return true; }
   if(a==="gspsign"){ const x=gspList(sess)[num(v)]; if(x) x.neg=!x.neg; return true; }
   return false;
 }
