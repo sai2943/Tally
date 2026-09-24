@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.89 (localStorage保存・完全オフライン)
+   Tally 5.90 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.89";
+const APP_VERSION = "5.90";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1089,6 +1089,20 @@ function goBackViaHeader(){
   if(_hdrBack){ _hdrBack.click(); return; }
   UI.screen="main"; render();   /* ヘッダーに戻るが無い画面の保険 */
 }
+/* v5.90: 下バーだけを描き直す(本文は触らない)。入力中にボタンの中身が変わる画面(半荘の記録の精算など)から呼ぶ */
+function refreshSubnav(){
+  const navbar = document.getElementById("navbar");
+  if(!navbar || UI.screen==="main" || SUBNAV_SKIP.indexOf(UI.screen)>=0) return;
+  navbar.innerHTML = subNavHtml(); navbar.style.display="";
+  const bb = navbar.querySelector('[data-nav="back"]');
+  if(bb) bb.onclick = goBackViaHeader;
+  const tb = navbar.querySelector('[data-nav="transfer"]');
+  if(tb) tb.onclick = ()=>openTransfer("", "", UI.screen);
+  navbar.querySelectorAll('[data-nav^="app:"]').forEach(el=>{
+    const sel = el.dataset.nav.slice(4);
+    el.onclick = ()=>{ const t=document.querySelector("#app "+sel); if(t) t.click(); };
+  });
+}
 /* 下バーを出さない画面: mjsheet=共有される紙面 / mjplay=既にstickyヘッダーに「‹」があり
    下端はsticky キーパッドが使っている */
 const SUBNAV_SKIP = ["main","mjsheet","mjplay"];
@@ -1098,17 +1112,7 @@ function _renderBody(){
   if(navbar){
     if(UI.screen==="main"){ navbar.innerHTML = navHtml(); navbar.style.display=""; }
     else if(SUBNAV_SKIP.indexOf(UI.screen)>=0){ navbar.innerHTML = ""; navbar.style.display = "none"; }
-    else {
-      navbar.innerHTML = subNavHtml(); navbar.style.display="";
-      const bb = navbar.querySelector('[data-nav="back"]');
-      if(bb) bb.onclick = goBackViaHeader;
-      const tb = navbar.querySelector('[data-nav="transfer"]');
-      if(tb) tb.onclick = ()=>openTransfer("", "", UI.screen);
-      navbar.querySelectorAll('[data-nav^="app:"]').forEach(el=>{
-        const sel = el.dataset.nav.slice(4);
-        el.onclick = ()=>{ const t=document.querySelector("#app "+sel); if(t) t.click(); };
-      });
-    }
+    else refreshSubnav();
     /* ナビバー実高を--navhへ(インジケーター行追加等で背が変わっても自動追随) */
     document.documentElement.style.setProperty("--navh", (navbar.offsetHeight||0)+"px");
   }
@@ -1903,27 +1907,7 @@ function viewMjLog(){
       (String(L.settle||"").charAt(0)==="-"?'−':'+')+'</button>'+
     '<input class="input mono r" type="number" inputmode="numeric" id="mjl-settle" placeholder="0" value="'+esc(String(L.settle||"").replace(/^-/,""))+'" style="flex:1">'+
     '</div>'+
-    (t.settled
-      ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">'+
-        (t.fee? _mjRow("ゲーム代 "+t.n+"半荘", t.fee):'')+
-        (t.top? _mjRow("トップ賞 "+(t.rank[1]||0)+"回(追加で払う)", t.top):'')+
-        (t.chip? _mjRow("チップ "+t.chip+"枚", t.chipY):'')+
-        (c.useTobi&&t.tobi? _mjRow("飛び "+t.tobi, t.tobiY):'')+
-        '<div class="row between" style="font-size:13px;padding:6px 0 0;margin-top:4px;border-top:1px solid var(--line)">'+
-        '<span style="font-weight:700">スコア分</span>'+
-        '<span class="mono '+clsPM(t.score)+'" style="font-weight:700;font-size:15px">'+signYen(t.score)+'</span></div>'+
-        ((t.umaY||t.back||t.sashiY)
-          ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line)">'+
-            '<div class="muted" style="font-size:11px;margin-bottom:2px">卓の外</div>'+
-            (t.sashiY? _mjRow("差し馬 "+(t.sashi>=0?"+":"−")+Math.abs(t.sashi), t.sashiY):'')+   /* v5.78 */
-            (c.useUma&&t.umaY? _mjRow("馬身 "+t.uma, t.umaY):'')+
-            (t.back? _mjRow("ゲーム代バック "+t.n+"半荘", t.back):'')+'</div>'
-          : '')+
-        '<div class="row between" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
-        '<span style="font-size:13px;font-weight:700">最終収支</span>'+
-        '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>'+
-        '</div>'
-      : '')+
+    '<div id="mjl-brk">'+mjlBreakdownHtml()+'</div>'+   /* v5.90: 打つたびにここだけ書き換える */
     '</div>';
   /* v5.42【バグ修正】**締めるボタンをカードの外に出す**(ユーザー指摘: 押せない)。
      精算カードの内側に入れ子で置いていたため、親カードと重なってタップが通らなかった。
@@ -1932,7 +1916,10 @@ function viewMjLog(){
      本文に置いた`<button>`が押せない原因を特定しきれなかったので、
      **確実に動いている経路**(本文に隠しボタン→下バーがclick / v4.43)に載せ替える。
      締めは画面を離れる操作なので、下バーの定位置が意味的にも正しい */
-  if(t.settled && t.n){
+  /* v5.90: **半荘があれば常に置く**。精算を打った直後は画面を描き直さず下バーだけ切り替えるので、
+     描いた時点で精算が空でも、押された時に隠しボタンが存在していないと「締める」が空振りする。
+     精算が空のまま押された場合は close の側で断る(既存) */
+  if(t.n){
     h+='<button style="display:none" data-ml="close">この卓を締める</button>';
   }
   /* v5.80: **記録は表で出す——席を列に固定し、各マスに着順**(ユーザー要望: スコア表のように。途中交代にも対応する工夫を)。
@@ -2009,6 +1996,12 @@ function bindMjLog(){
     const abs=String(e.target.value||"").replace(/^-/,"");
     S.mjLog.settle = abs==="" ? "" : ((neg?"-":"")+abs);
     save();
+    /* v5.90【修正】**打った精算を下バーと内訳に反映する**(ユーザー報告: この状態だと締められない。入り直すと締められる)。
+       この欄は打つたびに描き直さない(キーボードが閉じる)ため、v5.89まで**下バーは精算が空だった時の「記録する」のまま**、
+       内訳も出なかった。画面を開き直すと描き直されるので締められた、が症状の正体。
+       欄には触らず、内訳の入れ物と下バーだけを書き換える */
+    const bk=document.getElementById("mjl-brk"); if(bk) bk.innerHTML=mjlBreakdownHtml();
+    refreshSubnav();
   };
   document.querySelectorAll("[data-ml]").forEach(el=>{
     el.onclick=()=>{
@@ -5045,6 +5038,32 @@ function mjLogConf(){
           seats:num(c.seats)||3,
           useUma:(c.useUma===undefined ? true : !!c.useUma),
           useTobi:(c.useTobi===undefined ? true : !!c.useTobi)};
+}
+/* v5.90: 精算の内訳(ゲーム代・スコア分・卓の外・最終収支)。**精算欄を打っている最中も書き換えられるよう関数に切り出した**
+   (欄そのものは描き直さない=キーボードが閉じない) */
+function mjlBreakdownHtml(){
+  const t=mjLogTotals(), c=t.c;
+  return (t.settled
+      ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">'+
+        (t.fee? _mjRow("ゲーム代 "+t.n+"半荘", t.fee):'')+
+        (t.top? _mjRow("トップ賞 "+(t.rank[1]||0)+"回(追加で払う)", t.top):'')+
+        (t.chip? _mjRow("チップ "+t.chip+"枚", t.chipY):'')+
+        (c.useTobi&&t.tobi? _mjRow("飛び "+t.tobi, t.tobiY):'')+
+        '<div class="row between" style="font-size:13px;padding:6px 0 0;margin-top:4px;border-top:1px solid var(--line)">'+
+        '<span style="font-weight:700">スコア分</span>'+
+        '<span class="mono '+clsPM(t.score)+'" style="font-weight:700;font-size:15px">'+signYen(t.score)+'</span></div>'+
+        ((t.umaY||t.back||t.sashiY)
+          ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line)">'+
+            '<div class="muted" style="font-size:11px;margin-bottom:2px">卓の外</div>'+
+            (t.sashiY? _mjRow("差し馬 "+(t.sashi>=0?"+":"−")+Math.abs(t.sashi), t.sashiY):'')+   /* v5.78 */
+            (c.useUma&&t.umaY? _mjRow("馬身 "+t.uma, t.umaY):'')+
+            (t.back? _mjRow("ゲーム代バック "+t.n+"半荘", t.back):'')+'</div>'
+          : '')+
+        '<div class="row between" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
+        '<span style="font-size:13px;font-weight:700">最終収支</span>'+
+        '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>'+
+        '</div>'
+      : '');
 }
 function mjLogRows(){ return (S.mjLog&&S.mjLog.rows)||[]; }
 /* v5.77: **メンバーと全員の着順**(ユーザー要望: プレイヤー名を事前に入れ、毎回全員の着順を入れる。途中交代にも対応。
