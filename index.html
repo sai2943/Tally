@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.88 (localStorage保存・完全オフライン)
+   Tally 5.89 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.88";
+const APP_VERSION = "5.89";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1032,8 +1032,10 @@ function subnavExtra(sc){
   if(sc==="tredit" && UI.trForm) return [["[data-te='save']",'更新する',SV]];
   /* v5.34: 半荘の記録。**打ちながら押す**ので下バーの定位置に置く */
   /* v5.44: 精算が入って締められる状態なら、下バーを「締める」に切り替える。
-     **記録するより締めるが優先**——締めるのは卓の終わりで、その時は記録が済んでいる */
-  if(sc==="mjlog" && (()=>{ const t=mjLogTotals(); return t.settled && t.n; })())
+     v5.89【修正】**入れかけの半荘があるなら、締めるより記録が先**(ユーザー指摘: 切り替わる条件がおかしい)。
+     v5.44は「締める時は記録が済んでいる」と決めつけていた。実際は、精算を先に打ってから最後の半荘の着順を押すことがあり、
+     その状態で締めると**押した着順が記録されずに卓が閉じる**。前の半荘を直している最中に「更新する」が消える穴も同じ原因 */
+  if(sc==="mjlog" && (()=>{ const t=mjLogTotals(); return t.settled && t.n && !mjlPending(); })())
     return [["[data-ml='close']",'この卓を締める','color:var(--teal);font-weight:700']];
   if(sc==="mjlog") return [["[data-ml='add']",
     ((UI.mjlForm&&UI.mjlForm.editIdx!=null) ? '更新する' : '記録する'), SV]];
@@ -5085,6 +5087,8 @@ function mjlName(id){ return id==="me" ? "自分" : (mjlPeople()[id] || "?"); }
 function mjlRoster(){ return mjlSeat().filter(x=>x!=="me"); }
 /* 席がそろっていれば(仮称でもよい)全員の着順で入れる */
 function mjlFull(){ const st=mjlSeat(); return st.length===mjLogConf().seats && st.indexOf("me")>=0; }
+/* v5.89: 入れかけの半荘があるか(着順を1人でも押した・自分の着順や馬身を選んだ・前の半荘を直している) */
+function mjlPending(){ const f=UI.mjlForm||{}; return f.editIdx!=null || ((f.order||[]).length>0) || num(f.rank)>0 || num(f.uma)!==0; }
 /* 今座っている人と、残っている記録に出てくる人だけを残す(リセット・締めの後に呼ぶ) */
 function mjlPrune(){
   if(!S.mjLog) return;
