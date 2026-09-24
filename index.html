@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.86 (localStorage保存・完全オフライン)
+   Tally 5.87 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.86";
+const APP_VERSION = "5.87";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1864,9 +1864,21 @@ function viewMjLog(){
     if(pids.length){
       const sa=(L.sa||{}), um=(L.um||{});
       const sv=v=>'<span class="mono '+(v<0?'red':v>0?'teal':'muted')+'" style="font-weight:700">'+(v>=0?'+':'−')+Math.abs(v)+'</span>';
-      h+='<div class="card" style="margin-bottom:12px"><div class="fxl">相手ごとの成績'+
-        infoBtn("全員の着順を入れた半荘から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>その相手と賭けをしていたら、下のボタンで選びます。両方でも、どちらかだけでも、何人でも選べます。終わってから選び直しても大丈夫です。<br><br><b>差し馬</b>: 1半荘ごとに、相手より上なら +1、下なら −1。着順の差は関係ありません。例: 上2回・下1回なら +1。差し馬の単価(1回あたり)で金額になります。<br><br><b>馬身</b>: 着順の差を数えます。例: 自分が1着・相手が3着なら +2、自分が3着・相手が2着なら −1。馬身の単価で金額になります。<br><br>単価は右上の「単価」で決めます。")+'</div>'+
-        pids.map(pid=>{ const x=vs[pid];
+      /* v5.87: **畳めるようにする**(ユーザー要望)。相手が増えると1人3行ずつ伸び、精算の欄が下へ押し出される。
+         打っている最中に要るのは着順を押すことで、成績と賭けの選択は締める時に見れば足りるので**既定は畳む**。
+         畳んでいる間も、選んだ差し馬・馬身の合計(選んでいなければ人数)を見出しの右に出す */
+      const vOpen=!!UI.mjlVsOpen;
+      const selSa=pids.some(k=>sa[k]), selUm=pids.some(k=>um[k]);
+      const sg=v=>(v>=0?'+':'−')+Math.abs(v);
+      const vSum=(selSa||selUm)
+        ? [selSa?'差し馬 '+sg(t.sashi):'', selUm?'馬身 '+sg(t.uma):''].filter(Boolean).join(' · ')
+        : pids.length+'人';
+      h+='<div class="card" style="margin-bottom:12px">'+
+        '<div class="row between" style="align-items:center;cursor:pointer" data-ml="vstog">'+
+        '<span class="fxl" style="margin:0">相手ごとの成績'+
+        infoBtn("全員の着順を入れた半荘から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>その相手と賭けをしていたら、下のボタンで選びます。両方でも、どちらかだけでも、何人でも選べます。終わってから選び直しても大丈夫です。<br><br><b>差し馬</b>: 1半荘ごとに、相手より上なら +1、下なら −1。着順の差は関係ありません。例: 上2回・下1回なら +1。差し馬の単価(1回あたり)で金額になります。<br><br><b>馬身</b>: 着順の差を数えます。例: 自分が1着・相手が3着なら +2、自分が3着・相手が2着なら −1。馬身の単価で金額になります。<br><br>単価は右上の「単価」で決めます。<br><br>見出しを押すと畳めます。畳んでいる間は、選んだ差し馬・馬身の合計(選んでいなければ人数)を右に出します。")+'</span>'+
+        '<span class="muted mono" style="font-size:12px">'+esc(vSum)+' '+(vOpen?'▾':'▸')+'</span></div>'+
+        (!vOpen ? '' : pids.map(pid=>{ const x=vs[pid];
           return '<div style="padding:8px 0;border-top:1px solid var(--line)">'+
             '<div class="row between" style="align-items:baseline">'+
             '<span class="ellip" style="font-size:13px;min-width:0">'+esc(mjlName(pid))+'</span>'+
@@ -1875,7 +1887,7 @@ function viewMjLog(){
             '<button class="btn'+(sa[pid]?' sel':'')+'" style="flex:1;font-size:12px;padding:7px 0" data-ml="sa" data-v="'+esc(pid)+'">差し馬 '+sv(x.sa)+'</button>'+
             '<button class="btn'+(um[pid]?' sel':'')+'" style="flex:1;font-size:12px;padding:7px 0" data-ml="um" data-v="'+esc(pid)+'">馬身 '+sv(x.uma)+'</button>'+
             '</div></div>';
-        }).join("")+'</div>';
+        }).join(""))+'</div>';
     } }
   h+='<button style="display:none" data-ml="add">'+(_ed?'更新する':'記録する')+'</button>';
   /* 精算——**スコアは消去法**。実際にやり取りした額を入れると残りがスコア分 */
@@ -2016,6 +2028,7 @@ function bindMjLog(){
         save(); render(); toast("リセットしました"); return;
       }
       /* v5.79: 座席 */
+      if(a==="vstog"){ UI.mjlVsOpen=!UI.mjlVsOpen; render(); return; }   /* v5.87: 相手ごとの成績を畳む/開く */
       if(a==="memtog"){ const cur=(UI.mjlMemOpen!=null?UI.mjlMemOpen:!mjLogRows().length); UI.mjlMemOpen=!cur; UI.mjlSeatEd=null; UI.mjlMoving=false; render(); return; }
       if(a==="seatcancel"){ UI.mjlSeatEd=null; render(); return; }
       if(a==="seatsub"){ UI.mjlSeatEd=num(v); UI.mjlNewName=""; UI.mjlMoving=false; render(); return; }
