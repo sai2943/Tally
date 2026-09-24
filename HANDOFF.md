@@ -195,6 +195,10 @@ open('_all.js','w',encoding='utf-8').write('\n;\n'.join(blocks))
 - **★iOS 26の62pt問題(結論済み・再調査不要)**: スタンドアロンPWAのレイアウトビューポートが物理画面より約62pt短い(実測 inner=812/scr=874/sab=34)。fixed/フローとも62pt持ち上がる。manifest display:fullscreen実験→不発。**OS予約領域でWeb側からは越えられない=iOS修正待ち**。iOSが直れば--navpad機構が自動で適正位置(下端22pt)に降ろす。この件で追加のCSS実験をしないこと。
 
 ## 5. データモデル(S, localStorage KEY="kakeibo:v1", Supabase同期)
+- **【Supabaseの仕様変更・2026-10-30から】publicスキーマに新しく作るテーブルは、Data APIのGRANTが自動で付かなくなる**(2026-09-23のSupabaseからの通知)。
+  **既存のテーブルは今のまま動く**。Tallyが使うのは本体・ウィジェットとも既存の`app_data`1つ(+認証)だけなので**影響なし**。
+  **今後テーブルを足す時は**、作成と同じSQLで `grant select … to anon` / `grant select, insert, update, delete … to authenticated` を付け、RLSも忘れないこと
+  (付け忘れるとAPIが permission denied を返す)。
 - `S.entries`: 家計簿 `{id,date,type,category,amount,memo,src,fixedId,store,item}`。src="slot"/"mahjong"=遊技連携(linkId="mj-"+id等), "daida"=代打ち, "fixed"=固定費。
 - `S.sessions`: パチスロ `{id,date,store,mode[nori/dai/solo],partnerName,fee,exchange,pExchange,pushPayout,pushDraw,machines[],expenses[],memo,`**`startAt,endAt`**`}`。**startAt/endAt(HH:MM文字列・任意)はv2.48で追加。時給分析用。カード等には表示しない(記録のみ)**。
 - `S.mjSessions`: 麻雀 `{id,date,store(ルール名),category[free/set],rule[3/4],score,chips,scoreRate,chipRate,ranks[4],players[](同卓者最大5),baseFee,topBonus,drinkFee,setFee,memo,fromTable,`**`startAt,endAt,expenses[]`**`}`。**expenses[](v2.49)=セット飲食等の私的経費 {id,label,amount}、スロットと同型UI。mjFinal = mjRaw − mjGameFee − mjExpTotal**。
