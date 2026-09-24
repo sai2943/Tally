@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.80 (localStorage保存・完全オフライン)
+   Tally 5.81 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.80";
+const APP_VERSION = "5.81";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1760,27 +1760,31 @@ function viewMjLog(){
     const nmHtml=pid=> pid==="me" ? '<b>自分</b>' : esc(P[pid])+(mjlIsX(P[pid])?' <span class="muted" style="font-size:11px">(仮称)</span>':'');
     h+='<div class="card" style="margin-bottom:12px">'+
       '<div class="row between" style="align-items:center">'+
-      '<span class="fxl" style="margin:0;cursor:pointer" data-ml="memtog">座席'+infoBtn("卓の座順を A・B・C(4麻ならD)として、それぞれの席に誰が座っているかを入れます。自分もどこかの席に座ります。<br><br><b>知らない人</b>は X・Y・Z などの仮の名前(仮称)で座らせておけます。名前が分かったら、名前を押して直してください。直すと、それまでの記録もその名前になります(同じ人のまま)。<br><br><b>交代</b>: その席の人が入れ替わった時に使います。次の半荘から新しい人になり、それまでの記録は前の人のまま残ります。一度抜けた人が戻ってきた時は、候補からその人を選ぶと成績がつながります。<br><br><b>卓移動</b>: 自分が別の卓へ移った時に使います。自分以外の席を新しい仮称で埋め直します。前の卓の記録はそのまま残ります。<br><br><b>席を変える</b>: 自分が座っている席を入れ替えます。<br><br>全員の着順を入れておくと、後から相手ごとの成績や、差し馬・馬身(特定の相手との着順の賭け)を計算できます。")+'</span>'+
+      '<span class="fxl" style="margin:0;cursor:pointer" data-ml="memtog">座席'+infoBtn("卓の座順を A・B・C(4麻ならD)として、それぞれの席に誰が座っているかを入れます。自分もどこかの席に座ります。<br><br><b>知らない人</b>は X・Y・Z などの仮の名前(仮称)で座らせておけます。名前が分かったら、名前を押して直してください。直すと、それまでの記録もその名前になります(同じ人のまま)。<br><br><b>交代</b>: その席の人が入れ替わった時に使います。次の半荘から新しい人になり、それまでの記録は前の人のまま残ります。一度抜けた人が戻ってきた時は、候補からその人を選ぶと成績がつながります。<br><br><b>自分の席</b>: 自分が座っているのが A・B・C のどこかを選びます。選んだ席に座っていた人とは、席が入れ替わります。<br><br><b>卓移動</b>: 自分が別の卓へ移った時に使います。押すと新しい卓での自分の席を聞くので、A・B・C から選ぶと移動が終わります。自分以外の席は新しい仮称で埋め直し、前の卓の記録はそのまま残ります。<br><br>全員の着順を入れておくと、後から相手ごとの成績や、差し馬・馬身(特定の相手との着順の賭け)を計算できます。")+'</span>'+
       '<span class="row" style="gap:8px;align-items:center">'+
       (open ? '<button class="btn" style="font-size:11px;padding:4px 10px" data-ml="tmove">卓移動</button>' : '')+
       '<span class="muted" style="font-size:12px;cursor:pointer" data-ml="memtog">'+(open?'▾':esc(st.map((x,i)=>MJL_SEATS[i]+" "+(x==="me"?"自分":P[x])).join("・"))+' ▸')+'</span>'+
       '</span></div>'+
       (open
         ? '<div style="margin-top:8px">'+
+          /* v5.81: **自分の席をA・B・Cから直接選ぶ**(ユーザー要望: 最初に自分の座席を選べるように)。
+             卓移動を押した時は、ここが「新しい卓の自分の席」を聞く行に変わる——選ぶと移動が完了する */
+          (UI.mjlMoving
+            ? '<div class="row" style="align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--line)">'+
+              '<span style="font-size:12px;color:var(--amber);flex:1;min-width:0" class="ellip">新しい卓の自分の席</span>'+
+              st.map((_,k)=>'<button class="btn" style="font-size:12px;padding:5px 12px" data-ml="tmovepick" data-v="'+k+'">'+MJL_SEATS[k]+'</button>').join("")+
+              '<button class="btn" style="font-size:11px;padding:5px 8px" data-ml="tmovecancel">やめる</button></div>'
+            : '<div class="row" style="align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--line)">'+
+              '<span class="muted" style="font-size:12px;flex:1">自分の席</span>'+
+              st.map((_,k)=>'<button class="btn'+(st[k]==="me"?' sel':'')+'" style="font-size:12px;padding:5px 12px" data-ml="mepick" data-v="'+k+'">'+MJL_SEATS[k]+'</button>').join("")+'</div>')+
           st.map((pid,i)=>{
             const L0=MJL_SEATS[i];
             let row0='<div class="row between" style="align-items:center;padding:7px 0;border-top:1px solid var(--line)">'+
               '<span style="font-size:13px;min-width:0" class="ellip"><span class="mono muted" style="display:inline-block;width:18px">'+L0+'</span>'+
               (pid==="me" ? nmHtml(pid) : '<span style="cursor:pointer" data-ml="seatname" data-v="'+esc(pid)+'">'+nmHtml(pid)+'</span>')+'</span>'+
-              (pid==="me"
-                ? '<button class="btn" style="font-size:11px;padding:4px 10px;flex-shrink:0" data-ml="meseat">席を変える</button>'
+              (pid==="me" ? ''
                 : '<button class="btn" style="font-size:11px;padding:4px 12px;flex-shrink:0" data-ml="seatsub" data-v="'+i+'">交代</button>')+
               '</div>';
-            /* 自分の席を変える: 行き先の席を選ぶと、その席の人と入れ替わる */
-            if(pid==="me" && UI.mjlMeSeat){
-              row0+='<div class="row" style="gap:6px;flex-wrap:wrap;padding:0 0 8px 18px">'+
-                st.map((x,k)=> x==="me" ? '' : '<button class="chip" data-ml="mepick" data-v="'+k+'">'+MJL_SEATS[k]+' へ</button>').join("")+'</div>';
-            }
             /* 交代の入力: 仮称・戻ってきた人・過去の同卓者・名前を入れる */
             if(ed===i){
               const seated=new Set(st), cand=[];
@@ -2001,14 +2005,13 @@ function bindMjLog(){
         save(); render(); toast("リセットしました"); return;
       }
       /* v5.79: 座席 */
-      if(a==="memtog"){ const cur=(UI.mjlMemOpen!=null?UI.mjlMemOpen:!mjLogRows().length); UI.mjlMemOpen=!cur; UI.mjlSeatEd=null; UI.mjlMeSeat=false; render(); return; }
+      if(a==="memtog"){ const cur=(UI.mjlMemOpen!=null?UI.mjlMemOpen:!mjLogRows().length); UI.mjlMemOpen=!cur; UI.mjlSeatEd=null; UI.mjlMoving=false; render(); return; }
       if(a==="seatcancel"){ UI.mjlSeatEd=null; render(); return; }
-      if(a==="seatsub"){ UI.mjlSeatEd=num(v); UI.mjlNewName=""; UI.mjlMeSeat=false; render(); return; }
-      if(a==="meseat"){ UI.mjlMeSeat=!UI.mjlMeSeat; UI.mjlSeatEd=null; render(); return; }
+      if(a==="seatsub"){ UI.mjlSeatEd=num(v); UI.mjlNewName=""; UI.mjlMoving=false; render(); return; }
       /* 自分の席を変える: 行き先の人と入れ替わる */
       if(a==="mepick"){
         const k=num(v), st=mjlSeat(), me=st.indexOf("me"); if(k===me||st[k]==null) return;
-        st[me]=st[k]; st[k]="me"; S.mjLog.seat=st; UI.mjlMeSeat=false; save(); render(); return;
+        st[me]=st[k]; st[k]="me"; S.mjLog.seat=st; save(); render(); return;
       }
       /* 席 i に人を座らせる(交代)。id があればその人(戻ってきた人)、無ければ新しい人。次の半荘から効く */
       const seatPut=(i,id,nm)=>{
@@ -2046,12 +2049,15 @@ function bindMjLog(){
         }
         S.mjLog.people=Object.assign({}, P, {[v]:nm}); save(); render(); return;
       }
-      /* 卓移動: 自分以外の席を新しい仮称で埋め直す。前の卓の記録は前の人のまま */
-      if(a==="tmove"){
-        if(!confirm("卓を移ります。\n\n自分以外の席を新しい仮称(X・Y…)で埋め直します。前の卓の記録は、前の人のまま残ります。")) return;
-        S.mjLog.seat=mjlSeat().map(x=> x==="me" ? "me" : mjlNewX());
-        UI.mjlSeatEd=null; UI.mjlMeSeat=false; UI.mjlMemOpen=true;
-        save(); render(); toast("卓を移りました"); return;
+      /* v5.81: 卓移動は2段——押すと「新しい卓の自分の席」を聞き、席を選んだ時点で移動が終わる。
+         席を選ぶこと自体が確認になるので、確認の画面は出さない(やめるで戻れる) */
+      if(a==="tmove"){ UI.mjlMoving=!UI.mjlMoving; UI.mjlSeatEd=null; UI.mjlMemOpen=true; render(); return; }
+      if(a==="tmovecancel"){ UI.mjlMoving=false; render(); return; }
+      if(a==="tmovepick"){
+        const k=num(v), n=mjlSeat().length; if(k<0||k>=n) return;
+        const st=[]; for(let i=0;i<n;i++) st.push(i===k ? "me" : mjlNewX());
+        S.mjLog.seat=st; UI.mjlMoving=false; UI.mjlSeatEd=null; UI.mjlMemOpen=true;
+        save(); render(); toast("卓を移りました(自分は"+MJL_SEATS[k]+"席)"); return;
       }
 
       /* **1着から順に押す**。押した人を押し直すと、その順位から後ろをやり直す。残り1人は自動で決まる */
