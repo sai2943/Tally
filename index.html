@@ -166,6 +166,15 @@
   .toast.show{opacity:1;}
   /* v5.75: **説明はⓘに畳む**(ユーザー要望: 余計な説明文が嫌。押したらポップアップで出す)。
      見た目は16pxの丸、押せる範囲は28px(負のmarginで行の高さは増やさない) */
+  /* v5.80: 半荘の記録の表(席を列に固定し、各マスに着順)。スコア表と同じ読み方 */
+  .mjl-tbl{width:100%; border-collapse:collapse; table-layout:fixed; font-size:13px;}
+  .mjl-tbl th{font-size:11px; color:var(--muted); font-weight:600; padding:4px 2px 6px; text-align:center;}
+  .mjl-tbl td{text-align:center; padding:7px 2px; border-top:1px solid var(--line);
+    font-family:ui-monospace,'SF Mono',Menlo,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .mjl-tbl td.no{width:34px; color:var(--muted); font-size:11px;}
+  .mjl-tbl td.x{width:26px; color:var(--red);}
+  .mjl-tbl tr.nm td{font-family:inherit; font-size:11px; color:var(--muted); background:var(--surface2); padding:5px 2px;}
+  .mjl-tbl tr.ed td{background:rgba(242,179,61,.12);}
   .ibtn{display:inline-flex; align-items:center; justify-content:center; padding:6px; margin:-6px -6px -6px 0;
     background:none; border:0; cursor:pointer; flex-shrink:0; vertical-align:middle;}
   .ibtn span{display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%;
@@ -256,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.79 (localStorage保存・完全オフライン)
+   Tally 5.80 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -957,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.79";
+const APP_VERSION = "5.80";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1903,27 +1912,60 @@ function viewMjLog(){
   if(t.settled && t.n){
     h+='<button style="display:none" data-ml="close">この卓を締める</button>';
   }
-  /* 記録した半荘(新しい順) */
+  /* v5.80: **記録は表で出す——席を列に固定し、各マスに着順**(ユーザー要望: スコア表のように。途中交代にも対応する工夫を)。
+     ・列は人ではなく**席**(A・B・C…)。人は入れ替わるが席は変わらないので、列が増え続けない
+     ・**顔ぶれが変わった所に名前の行を挟む**(最初の行も)。変わった名前は琥珀で示し、
+       行頭に「交代」「卓移動」「席替え」を出す(自分以外が全員変われば卓移動、顔ぶれが同じで並びだけ変われば席替え)
+     ・着順の色は成績画面と同じ体系(1着=緑・最下位=赤・2着=琥珀・4麻の3着=紫)。自分のマスは太字
+     ・古い順(1回戦が上)。スコア表と同じ向きで、最新の行が下の記録ボタンに近い
+     ・行を押すと直せる。✕で消す(従来どおり) */
   if(rows.length){
     h+=band("この卓の記録");
-    h+='<div class="card">'+rows.slice().reverse().map((r,ri)=>{
-      const i=rows.length-1-ri;
-      return '<div class="row between" style="align-items:baseline;padding:9px 0;font-size:13px'+
-        (ri?';border-top:1px solid var(--line)':'')+'">'+
-        '<span class="ellip" style="min-width:0;cursor:pointer" data-ml="edit" data-v="'+i+'">'+
-        '<span class="mono muted" style="margin-right:10px">'+(i+1)+'</span>'+
-        (r.ranks
-          /* v5.77: 全員の着順がある行は「1着 自分 → 2着 ツルさん…」の並びで見せる */
-          ? Object.keys(r.ranks).sort((a,b)=>num(r.ranks[a])-num(r.ranks[b])).map(pid=>
-              '<span style="margin-right:8px'+(pid==="me"?';font-weight:700':';color:var(--muted)')+'">'+num(r.ranks[pid])+'着 '+esc(mjlName(pid))+'</span>').join("")
-          : '<span style="font-weight:700">'+(r.rank||'-')+'着</span>'+
-            (c.useUma&&num(r.uma)?'<span class="mono '+(num(r.uma)<0?'red':'muted')+'" style="margin-left:10px">馬身'+(num(r.uma)>0?'+':'−')+Math.abs(num(r.uma))+'</span>':''))+
-        '</span>'+
-        '<span class="mono" style="color:var(--red);margin-left:10px;cursor:pointer" data-ml="del" data-v="'+i+'">✕</span></div>';
-    }).join("")+'</div>';
+    const stOf=r=> r.st ? r.st : (r.ranks ? ['me'].concat(Object.keys(r.ranks).filter(k=>k!=="me")) : null);
+    const ncol=Math.max(c.seats, ...rows.map(r=>{ const st=stOf(r); return st?st.length:0; }));
+    const RK=ncol>=4 ? ["var(--teal)","var(--amber)","#B39DDB","var(--red)"] : ["var(--teal)","var(--amber)","var(--red)"];
+    let prev=null, body='';
+    rows.forEach((r,i)=>{
+      const st=stOf(r), edc=(f.editIdx!=null && num(f.editIdx)===i) ? ' class="ed"' : '';
+      if(!st){
+        /* メンバー無しで入れた古い行: 席が分からないので、自分の着順だけを1行で */
+        body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
+          '<td colspan="'+ncol+'" data-ml="edit" data-v="'+i+'" style="font-family:inherit;text-align:left;padding-left:8px">'+
+          '<b>自分 '+(r.rank||'-')+'着</b>'+(c.useUma&&num(r.uma)?' <span class="muted">馬身'+(num(r.uma)>0?'+':'−')+Math.abs(num(r.uma))+'</span>':'')+'</td>'+
+          '<td class="x" data-ml="del" data-v="'+i+'">✕</td></tr>';
+        prev=null; return;
+      }
+      if(!prev || prev.join(",")!==st.join(",")){
+        let lab='';
+        if(prev){
+          const same=prev.length===st.length && prev.slice().sort().join(",")===st.slice().sort().join(",");
+          const others=st.filter(x=>x!=="me"), allNew=others.length && others.every(x=>prev.indexOf(x)<0);
+          lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
+        }
+        body+='<tr class="nm"><td class="no" style="color:var(--amber);font-size:10px">'+lab+'</td>'+
+          Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
+            if(pid==null) return '<td></td>';
+            const chg=prev && prev[k]!==pid;
+            return '<td style="'+(pid==="me"?'font-weight:700;color:var(--text)':'')+(chg?';color:var(--amber)':'')+'">'+esc(mjlName(pid))+'</td>'; }).join("")+
+          '<td></td></tr>';
+        prev=st;
+      }
+      body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
+        Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
+          if(pid==null) return '<td data-ml="edit" data-v="'+i+'"></td>';
+          const rk=num(r.ranks&&r.ranks[pid]);
+          const col= rk===1 ? RK[0] : (rk===st.length ? RK[RK.length-1] : (RK[rk-1]||"var(--text)"));
+          return '<td data-ml="edit" data-v="'+i+'" style="color:'+col+(pid==="me"?';font-weight:700':'')+'">'+(rk||'')+'</td>'; }).join("")+
+        '<td class="x" data-ml="del" data-v="'+i+'">✕</td></tr>';
+    });
+    h+='<div class="card" style="padding:6px 10px 2px">'+
+      '<table class="mjl-tbl"><thead><tr><th style="width:34px">回</th>'+
+      MJL_SEATS.slice(0,ncol).map(L=>'<th>'+L+'</th>').join("")+'<th style="width:26px"></th></tr></thead>'+
+      '<tbody>'+body+'</tbody></table></div>';
   }
   return h;
 }
+
 function bindMjLog(){
   const f=UI.mjlForm||(UI.mjlForm={rank:0, uma:0});
   /* v5.26の教訓: **`oninput`で`render()`を呼ばない**(テンキーが閉じる)。値を持つだけ。
