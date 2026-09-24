@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.82 (localStorage保存・完全オフライン)
+   Tally 5.84 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.82";
+const APP_VERSION = "5.84";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1940,7 +1940,8 @@ function viewMjLog(){
         prev=null; return;
       }
       if(!prev || prev.join(",")!==st.join(",") || r.ev==="卓移動"){
-        let lab='';
+        /* v5.84: 最初の顔ぶれにも「スタート」を出す(ユーザー要望: 卓移動と同じく、卓の始まりが見えるように) */
+        let lab='スタート';
         if(prev){
           if(r.ev) lab=r.ev;   /* v5.82: 実際に行った操作 */
           else {               /* 印の無い古い行だけ、並びの変化から推測する */
@@ -1949,8 +1950,8 @@ function viewMjLog(){
             lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
           }
         }
-        /* 卓移動は**別の卓の始まり**なので、青い太線で区切り、名前ごとの色付けはしない(全員が新しい卓の顔ぶれ) */
-        const mv=(lab==='卓移動');
+        /* 卓移動とスタートは**卓の始まり**なので、どちらも青い太線とラベルで揃える。名前ごとの色付けはしない */
+        const mv=(lab==='卓移動' || lab==='スタート');
         const labCol = mv ? 'var(--blue)' : (lab==='交代' ? 'var(--amber)' : 'var(--muted)');
         body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:10px;font-weight:700'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
           Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
@@ -7969,8 +7970,21 @@ function parseReceipt(txt){
    取りこぼしとブロックの取り違えを機械に言わせる。
    `#total`(レシートの請求額)と明細の合計が合わなければ、読み落としか按分ミス。
    トーストは1.2秒で消えるため**警告はalertで止める**(routineな確認とは surface を分ける) */
+/* v5.83: **#wallet に軍資金の置き場も書ける**(`軍資金:財布` の形)。遊技経費を軍資金から払った時・
+   生活の支払いを軍資金でした時(v5.70/v5.72)に、取り込みでも同じ扱いにするため。
+   財布と置き場は名前が被りうる(例: 所持金の「財布」と軍資金の「財布」)ので、**接頭辞で明示**させる */
+function receiptSrc(wallet){
+  const w=String(wallet||"").trim(); if(!w) return {};
+  const m=/^軍資金\s*[:：]\s*(.+)$/.exec(w);
+  if(m){ const b=bankPots().find(x=>x.name===m[1].trim()); return b ? {bk:String(b.id)} : {bad:w}; }
+  if(w==="軍資金"){ const b=bankPots()[0]; return b ? {bk:String(b.id)} : {bad:w}; }
+  const p=walletPots().find(x=>x.name===w); return p ? {wal:String(p.id)} : {bad:w};
+}
 function receiptNote(r){
   const w=[];
+  /* v5.83: 財布の書き間違いは黙って既定の財布に入れない */
+  if(r.wallet && receiptSrc(r.wallet).bad) w.push("⚠ 財布「"+r.wallet+"」が見つかりません\n"+
+    (r.items.some(x=>x.date) ? "既定の財布("+walletPots()[0].name+")で取り込みました。" : "記録の画面で選び直してください。"));
   if(r.blocks>1) w.push("⚠ ブロックが"+r.blocks+"個あります\n最初の1つだけ取り込みました。\n残りはもう一度貼ってください。");
   if(r.totalNum!=null){
     const sum=r.items.reduce((a,x)=>a+num(x.amount),0);
@@ -7985,8 +7999,9 @@ function receiptNote(r){
 function applyReceiptDated(r){
   const cats = r.type==="income" ? INCOME_CATS : EXPENSE_CATS;
   const cat = (r.category && cats.indexOf(r.category)>=0) ? r.category : (r.type==="income"?"臨時":"消費");
-  const w = walletPots().find(x=>x.name===r.wallet);
-  const wal = String(w ? w.id : walletPots()[0].id);
+  const rs = receiptSrc(r.wallet);
+  const wal = String(rs.wal || walletPots()[0].id);
+  const bk = rs.bk || "";   /* v5.83: 軍資金の置き場から払った */
   const store = (r.store||"").trim();
   const rows = r.items.filter(x=>x.date);
   const total = rows.reduce((a,x)=>a+num(x.amount),0);
@@ -7994,12 +8009,23 @@ function applyReceiptDated(r){
   /* v4.67: **保存前に止められる唯一の場所**なので、警告はここに出す */
   const note=receiptNote(r);
   if(!confirm((note?note+"\n\n":"")+rows.length+"件を取り込みます\n\n"+days[0]+" 〜 "+days[days.length-1]+"\n"+
-      (store?store+"\n":"")+walName(wal)+" / "+cat+"\n合計 ¥"+total.toLocaleString("ja-JP")+"\n\nよろしいですか?")) return 0;
+      (store?store+"\n":"")+(bk?"軍資金:"+bankName(bk):walName(wal))+" / "+cat+"\n合計 ¥"+total.toLocaleString("ja-JP")+"\n\nよろしいですか?")) return 0;
+  const typ=(r.type==="income"?"income":"expense");
   rows.forEach(x=>{
-    const item=(x.item||"").trim();
-    S.entries.push({id:uid(), date:x.date, type:(r.type==="income"?"income":"expense"),
-      category:cat, amount:num(x.amount), store:store, item:item,
-      memo:[store,item].filter(Boolean).join(" "), wal:wal});
+    const item=(x.item||"").trim(), am=num(x.amount);
+    const e={id:uid(), date:x.date, type:typ, category:cat, amount:am, store:store, item:item,
+      memo:[store,item].filter(Boolean).join(" "), wal:wal};
+    S.entries.push(e);
+    /* v5.83: **画面から保存した時と同じ扱いにする**。v5.72までこの経路は項目を置くだけで、
+       遊技経費を取り込むと src が付かず遊技の収支に入らない・軍資金と紐づかない**半端な記録**になっていた */
+    const gsrc = (typ==="expense") ? (GAME_CATS[cat]||"") : "";
+    if(gsrc){
+      const bw = bk || String(bankPots()[0].id);
+      e.src=gsrc; e.bwal=bw;
+      if(!bk) entryGtSync(e, wal, am, x.date, bw);   /* 所持金から払った遊技経費 → 所持金→軍資金の補充 */
+    } else if(typ==="expense" && bk){
+      entryBkSync(e, bk, am, x.date, wal);            /* 軍資金で払った生活の支出 → 軍資金→所持金の戻し */
+    }
   });
   save();
   return rows.length;
@@ -8015,6 +8041,7 @@ function applyReceipt(txt){
      消さないと**前のレシートで選んだ箱が次のレシートに黙って付く**(取り込み→箱を選ぶ→保存せず再度取り込み、の経路)。
      交通コンポーザと同じ扱い——取り込みは「新しい記録の中身」で上書きするもの */
   f.svPot=""; f.svDraw=undefined;
+  f.bkSrc="";   /* v5.83: 軍資金の指定も同じ理由で消す(前のレシートの指定が黙って付かないように) */
   if(r.items.length===1 && !r.items[0].date){
     const st=(r.store||"").trim(), it=(r.items[0].item||"").trim();
     const arrow=/^(.+?)\s*(?:→|->|＞|>)\s*(.+)$/.exec(it);
@@ -8030,8 +8057,9 @@ function applyReceipt(txt){
   if(r.type==="income"||r.type==="expense") f.type=r.type;
   const cats = f.type==="income" ? INCOME_CATS : EXPENSE_CATS;
   if(r.category && cats.indexOf(r.category)>=0) f.category=r.category;
-  const w = walletPots().find(x=>x.name===r.wallet);
-  if(w) f.wal=String(w.id);
+  { const rs=receiptSrc(r.wallet);   /* v5.83: 財布か、軍資金の置き場か */
+    if(rs.wal) f.wal=rs.wal;
+    if(rs.bk && f.type!=="income") f.bkSrc=rs.bk; }
   f.item=r.items[0].item; f.amount=r.items[0].amount;
   f.extra=r.items.slice(1).map(x=>({item:x.item, amount:x.amount}));
   return r.items.length;
