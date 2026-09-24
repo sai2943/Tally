@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.84 (localStorage保存・完全オフライン)
+   Tally 5.86 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.84";
+const APP_VERSION = "5.86";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1837,7 +1837,10 @@ function viewMjLog(){
       '<button class="btn" style="font-size:11px;padding:3px 12px" data-ml="cancel">やめる</button></div>' : '')+
     /* v5.77: **全員の着順**(メンバーがそろっている時・または全員の着順で入れた行を直す時)。
        1着から順に名前を押すだけ。最後の1人は自動で決まる。馬身は押さない——差し馬の相手を選べば後から計算される */
-    ((f.parts || (!_ed && mjlFull()))
+    /* v5.86【修正】**席で記録した半荘を直す時に、席の着順の画面を出していなかった**(ユーザー報告: 前の半荘を直すが働かない)。
+       v5.79で直す時の並びを`f.st`に持たせたのに、この条件に`f.st`を足し忘れていた——画面は古い「自分の着順」の欄を出し、
+       保存は`f.st`の並び(=直す前のまま)で書くので、**押しても何も変わらなかった**。保存側(fullIn)と同じ条件に揃える */
+    ((f.st || f.parts || (!_ed && mjlFull()))
       ? (()=>{ const parts=(f.st || (f.parts ? ['me'].concat(f.parts) : mjlSeat())), ord=f.order||[];   /* v5.79: 席順で並べる */
           return '<div class="fxl">着順(1着から順に名前を押す)</div>'+
             '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:6px">'+
@@ -1940,8 +1943,9 @@ function viewMjLog(){
         prev=null; return;
       }
       if(!prev || prev.join(",")!==st.join(",") || r.ev==="卓移動"){
-        /* v5.84: 最初の顔ぶれにも「スタート」を出す(ユーザー要望: 卓移動と同じく、卓の始まりが見えるように) */
-        let lab='スタート';
+        /* v5.84: 最初の顔ぶれにもラベルを出す(ユーザー要望: 卓移動と同じく、卓の始まりが見えるように)。
+           v5.85: 「スタート」は4文字で列(34px)に収まらず「スタ…」と切れたので「開始」に(ユーザー提案) */
+        let lab='開始';
         if(prev){
           if(r.ev) lab=r.ev;   /* v5.82: 実際に行った操作 */
           else {               /* 印の無い古い行だけ、並びの変化から推測する */
@@ -1950,8 +1954,8 @@ function viewMjLog(){
             lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
           }
         }
-        /* 卓移動とスタートは**卓の始まり**なので、どちらも青い太線とラベルで揃える。名前ごとの色付けはしない */
-        const mv=(lab==='卓移動' || lab==='スタート');
+        /* 卓移動と開始は**卓の始まり**なので、どちらも青い太線とラベルで揃える。名前ごとの色付けはしない */
+        const mv=(lab==='卓移動' || lab==='開始');
         const labCol = mv ? 'var(--blue)' : (lab==='交代' ? 'var(--amber)' : 'var(--muted)');
         body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:10px;font-weight:700'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
           Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
