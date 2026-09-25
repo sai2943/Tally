@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.96 (localStorage保存・完全オフライン)
+   Tally 5.97 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -974,7 +974,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.96";
+const APP_VERSION = "5.97";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -6493,15 +6493,24 @@ function potBackList(pid){
       ((String(e.inPot||"")===String(pid) && isOffPL(e)) || String(e.shPot||"")===String(pid)))
     .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
 }
-/* 紐づけ漏れの候補: 紐づいた記録の期間の前後3日(無ければ今月)で、どの箱にも紐づいていない承認と一部負担 */
-function potCands(pid){
+/* 紐づけ漏れの候補。v5.97【修正】(ユーザー報告: 大量にある紐づけたい明細が出てこない)。
+   v5.96は期間を「紐づいた記録の前後3日」にしていた——旅行は**予約(8月)と旅行中(9月)が離れる**ので、
+   航空券・宿を紐づけると候補の窓が8月に張り付き、旅行中の明細が1件も出なかった。
+   ・期間は**箱に覚えさせる**(p.useFrom/useTo・利用者が選べる)。未設定なら「最初に紐づけた記録の3日前〜今日」
+   ・分類は選べる(既定は承認。旅行中の食事などを消費・娯楽で入れていても拾えるように)。一部負担は常に出す */
+function potPeriod(pid){
+  const p=savingsPots().find(x=>String(x.id)===String(pid))||{};
   const ds=potUseList(pid).concat(potBackList(pid)).map(e=>e.date).sort();
-  let from, to;
-  if(ds.length){ from=potDay(ds[0],-3); to=potDay(ds[ds.length-1],3); }
-  else { const t=todayStr(); from=t.slice(0,8)+"01"; to=t; }
-  const inRange=e=>e.date>=from && e.date<=to;
-  return {from:from, to:to,
-    exp:(S.entries||[]).filter(e=>e.type==="expense" && e.category==="承認" && !isNet(e) && !String(e.svPot||"") && inRange(e)),
+  const t=todayStr();
+  const from=p.useFrom || (ds.length ? potDay(ds[0],-3) : t.slice(0,8)+"01");
+  const to=p.useTo || t;
+  return {from:from, to:to, set:!!(p.useFrom||p.useTo)};
+}
+function potCands(pid){
+  const pr=potPeriod(pid), cats=(UI.puCats&&UI.puCats.length)?UI.puCats:["承認"];
+  const inRange=e=>e.date>=pr.from && e.date<=pr.to;
+  return {from:pr.from, to:pr.to,
+    exp:(S.entries||[]).filter(e=>e.type==="expense" && cats.indexOf(e.category)>=0 && !isNet(e) && !String(e.svPot||"") && inRange(e)),
     inc:(S.entries||[]).filter(e=>e.type==="income" && e.category===SHARE_INC && !String(e.inPot||"") && !String(e.shPot||"") && inRange(e))};
 }
 /* 消えた箱を指したままの記録(箱を削除すると、残高と履歴は移るが記録の紐づけは宙に浮く) */
@@ -6729,27 +6738,53 @@ function viewPotUse(){
     });
     h+='</div>';
   }
-  /* 紐づけ漏れの候補 */
-  if(cd.exp.length||cd.inc.length){
-    h+=band("この箱の分にしていない記録("+md(cd.from)+"〜"+md(cd.to)+")");
-    h+='<div class="card" style="padding:6px 12px;margin-bottom:12px">'+
-      cd.exp.concat(cd.inc).sort((a,b)=>a.date<b.date?-1:1).slice(0,40).map(e=>
-        '<div class="row between" style="align-items:center;padding:6px 0;border-top:1px solid var(--line)">'+
-        '<span class="ellip" style="font-size:12px;min-width:0;flex:1"><span class="muted mono" style="font-size:11px">'+md(e.date)+'</span> '+lab(e)+
-          ' <span class="muted" style="font-size:10px">'+esc(e.category)+'</span></span>'+
-        '<span class="mono" style="font-size:12px;flex-shrink:0;margin-left:6px">'+(e.type==="income"?"+":"")+"¥"+num(e.amount).toLocaleString("ja-JP")+'</span>'+
-        '<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:8px;flex-shrink:0;color:var(--teal)" data-pu="'+(e.type==="income"?"lnb":"lnu")+'" data-v="'+e.id+'">この箱の分にする</button></div>'
-      ).join("")+'</div>';
+  /* 紐づけ漏れの候補(v5.97: 期間と分類を選べる・まとめて紐づけられる) */
+  { const cats=(UI.puCats&&UI.puCats.length)?UI.puCats:["承認"];
+    const list=cd.exp.concat(cd.inc).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+    const lsum=list.reduce((a,e)=>a+(e.type==="income"?0:num(e.amount)),0);
+    h+=band("この箱の分にしていない記録");
+    h+='<div class="card" style="padding:10px 12px;margin-bottom:12px">'+
+      '<div class="row" style="gap:6px;align-items:center;margin-bottom:8px">'+
+      '<span class="muted" style="font-size:11px;flex-shrink:0">期間</span>'+
+      '<input class="input sm mono" type="date" id="pu-from" value="'+esc(cd.from)+'" style="flex:1;min-width:0">'+
+      '<span class="muted">〜</span>'+
+      '<input class="input sm mono" type="date" id="pu-to" value="'+esc(cd.to)+'" style="flex:1;min-width:0"></div>'+
+      '<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'+
+      '<span class="muted" style="font-size:11px">分類</span>'+
+      ["承認","消費","娯楽"].map(c=>'<button class="chip'+(cats.indexOf(c)>=0?' sel':'')+'" data-pu="cat" data-v="'+c+'">'+c+'</button>').join("")+
+      '</div>'+
+      (list.length
+        ? list.slice(0,200).map(e=>
+          '<div class="row between" style="align-items:center;padding:6px 0;border-top:1px solid var(--line)">'+
+          '<span class="ellip" style="font-size:12px;min-width:0;flex:1"><span class="muted mono" style="font-size:11px">'+md(e.date)+'</span> '+lab(e)+
+            ' <span class="muted" style="font-size:10px">'+esc(e.category)+'</span></span>'+
+          '<span class="mono" style="font-size:12px;flex-shrink:0;margin-left:6px">'+(e.type==="income"?"+":"")+"¥"+num(e.amount).toLocaleString("ja-JP")+'</span>'+
+          '<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:8px;flex-shrink:0;color:var(--teal)" data-pu="'+(e.type==="income"?"lnb":"lnu")+'" data-v="'+e.id+'">この箱の分にする</button></div>'
+          ).join("")+
+          '<button class="btn full" style="margin-top:10px;font-size:12px;padding:9px 0;color:var(--teal)" data-pu="lnall">表示中の'+list.length+'件'+(lsum?'(¥'+lsum.toLocaleString("ja-JP")+')':'')+'をまとめてこの箱の分にする</button>'
+        : '<div class="muted" style="font-size:12px;text-align:center;padding:14px 0 6px;border-top:1px solid var(--line)">この期間・分類には、まだ紐づけていない記録がありません。</div>')+
+      '</div>';
   }
-  if(!use.length && !back.length && !cd.exp.length && !cd.inc.length)
-    h+='<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">まだ紐づいた記録がありません。</div>';
+
   return h;
 }
 function bindPotUse(){
+  /* v5.97: 期間は箱に覚えさせる(一度旅行の日付にすれば、次に開いた時もその期間) */
+  const pid0=String(UI.potUseId||""), pot=((S.savings||{}).pots||[]).find(x=>String(x.id)===pid0);
+  const fi=document.getElementById("pu-from"), ti=document.getElementById("pu-to");
+  if(fi) fi.onchange=e=>{ if(pot){ pot.useFrom=e.target.value||""; if(!pot.useFrom) delete pot.useFrom; save(); } render(); };
+  if(ti) ti.onchange=e=>{ if(pot){ pot.useTo=e.target.value||""; if(!pot.useTo) delete pot.useTo; save(); } render(); };
   document.querySelectorAll("[data-pu]").forEach(el=>{
     const a=el.dataset.pu, v=el.dataset.v, pid=String(UI.potUseId||"");
     el.onclick=()=>{
       if(a==="back"){ UI.screen="savings"; render(); return; }
+      if(a==="cat"){ const cur=(UI.puCats&&UI.puCats.length)?UI.puCats.slice():["承認"];
+        const i=cur.indexOf(v); if(i>=0){ if(cur.length>1) cur.splice(i,1); } else cur.push(v); UI.puCats=cur; render(); return; }
+      if(a==="lnall"){ const cd=potCands(pid), list=cd.exp.concat(cd.inc);
+        if(!list.length) return;
+        if(!confirm("表示中の"+list.length+"件を、この箱の分にします。\nお金は動きません(あとで1件ずつ外せます)。")) return;
+        list.forEach(x=>{ if(x.type==="income") x.shPot=pid; else { x.svPot=pid; delete x.svTx; } });
+        save(); render(); toast(list.length+"件をこの箱の分にしました"); return; }
       const e=(S.entries||[]).find(x=>String(x.id)===String(v)); if(!e) return;
       /* 紐づけるだけ(お金は動かさない)。支出は svPot(引き出し無し=v4.92の「紐づけだけ」)、一部負担は shPot */
       if(a==="lnu"){ e.svPot=pid; delete e.svTx; }
