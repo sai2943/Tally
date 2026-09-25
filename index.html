@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.97 (localStorage保存・完全オフライン)
+   Tally 5.98 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -974,7 +974,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.97";
+const APP_VERSION = "5.98";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -6498,6 +6498,20 @@ function potBackList(pid){
    航空券・宿を紐づけると候補の窓が8月に張り付き、旅行中の明細が1件も出なかった。
    ・期間は**箱に覚えさせる**(p.useFrom/useTo・利用者が選べる)。未設定なら「最初に紐づけた記録の3日前〜今日」
    ・分類は選べる(既定は承認。旅行中の食事などを消費・娯楽で入れていても拾えるように)。一部負担は常に出す */
+/* v5.98: **旅行の期間の承認は、記録する時に自動でその箱の分にする**(ユーザー: 記録の段階で入れられたら楽。
+   品目をレシート機能で入れているので、後から紐づけるのが面倒)。
+   期間は使い道の画面で箱に覚えさせたもの(useFrom/useTo)を使う。**紐づけだけ**(お金は動かない・v4.92の財布から払う形)。
+   新しい記録だけ(既存の記録は変えない)。利用者が外したら、その記録ではもう自動で付けない */
+function svPeriodPot(date){
+  const ps=((S.savings||{}).pots||[]).filter(p=>p.useFrom && p.useTo && date>=p.useFrom && date<=p.useTo);
+  return ps.length ? ps[ps.length-1] : null;   /* 期間が重なる時は後から作った箱 */
+}
+function svAutoPick(f){
+  if(!f || UI.editEntryId!=null) return;
+  const hit=(f.type==="expense" && f.category==="承認" && !f.bkSrc && !f.svNoAuto) ? svPeriodPot(f.date) : null;
+  if(hit){ if(!f.svPot){ f.svPot=String(hit.id); f.svDraw=false; f.svAuto=true; } }
+  else if(f.svAuto){ f.svPot=""; f.svDraw=undefined; f.svAuto=false; }   /* 自動で付けた分だけ外す */
+}
 function potPeriod(pid){
   const p=savingsPots().find(x=>String(x.id)===String(pid))||{};
   const ds=potUseList(pid).concat(potBackList(pid)).map(e=>e.date).sort();
@@ -6707,7 +6721,7 @@ function viewPotUse(){
     '<span style="font-size:'+(strong?'13px;font-weight:700':'12px')+'">'+l+'</span>'+
     '<span class="mono '+(strong?'':'muted')+'" style="font-size:'+(strong?'18px;font-weight:700':'13px')+'">'+y+'</span></div>';
   let h='<div class="hdr"><button class="navbtn" data-pu="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">'+esc(name)+'の使い道'+
-    infoBtn("この箱に紐づけた記録の一覧と合計です。旅行など、箱の目的にいくら使ったかを後から確かめられます。完了にした箱でも見られます。<br><br><b>使った合計</b>: 箱から払った支出と、財布から払って「この箱の分」にした支出。<br><b>一部負担で戻った</b>: 家族などに一部負担してもらい、この箱の分にしたお金。<br><b>実質の負担</b>: 使った合計 − 戻った分。<br><br>下の「この箱の分にする」で、紐づけ忘れた承認や一部負担を後から足せます。お金は動きません。")+
+    infoBtn("この箱に紐づけた記録の一覧と合計です。旅行など、箱の目的にいくら使ったかを後から確かめられます。完了にした箱でも見られます。<br><br><b>使った合計</b>: 箱から払った支出と、財布から払って「この箱の分」にした支出。<br><b>一部負担で戻った</b>: 家族などに一部負担してもらい、この箱の分にしたお金。<br><b>実質の負担</b>: 使った合計 − 戻った分。<br><br>下の「この箱の分にする」で、紐づけ忘れた承認や一部負担を後から足せます。お金は動きません。<br><br><b>期間を旅行の日付にしておくと</b>、その期間の承認は記録する時に自動でこの箱の分になります(レシートの取り込みでも)。旅行の前に決めておくのがおすすめです。")+
     '</div><div style="width:44px"></div></div>';
   h+='<div class="card" style="margin-bottom:12px">'+
     line("使った合計 <span class=\"muted\" style=\"font-size:11px\">"+use.length+"件</span>", "¥"+usum.toLocaleString("ja-JP"))+
@@ -8209,7 +8223,7 @@ function normDate(v){
   return m ? (m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0")) : "";
 }
 function parseReceipt(txt){
-  const out={date:"",store:"",wallet:"",category:"",type:"",total:"",items:[],blocks:0,totalNum:null};
+  const out={date:"",store:"",wallet:"",category:"",type:"",total:"",box:"",items:[],blocks:0,totalNum:null};   /* v5.98: #box */
   /* v4.67: **コードフェンスがあれば中だけを読む**。
      ショートカットで自動化すると**モデルの出力が丸ごとクリップボードに入る**ため、
      前後の散文が混ざる。「合計 5,432円」のような行は品目として拾えてしまうので、
@@ -8280,6 +8294,9 @@ function applyReceiptDated(r){
   const rs = receiptSrc(r.wallet);
   const wal = String(rs.wal || walletPots()[0].id);
   const bk = rs.bk || "";   /* v5.83: 軍資金の置き場から払った */
+  /* v5.98: #box で指定された箱、または旅行の期間に入る承認は、その箱の分にする(紐づけだけ) */
+  const boxP = r.box ? savingsPots().find(p=>p.name===String(r.box).trim()) : null;
+  const linkTo = x => (r.type!=="income" && !bk && !GAME_CATS[r.category||""]) ? (boxP || (((r.category||"")==="承認") ? svPeriodPot(x.date) : null)) : null;
   const store = (r.store||"").trim();
   const rows = r.items.filter(x=>x.date);
   const total = rows.reduce((a,x)=>a+num(x.amount),0);
@@ -8287,7 +8304,10 @@ function applyReceiptDated(r){
   /* v4.67: **保存前に止められる唯一の場所**なので、警告はここに出す */
   const note=receiptNote(r);
   if(!confirm((note?note+"\n\n":"")+rows.length+"件を取り込みます\n\n"+days[0]+" 〜 "+days[days.length-1]+"\n"+
-      (store?store+"\n":"")+(bk?"軍資金:"+bankName(bk):walName(wal))+" / "+cat+"\n合計 ¥"+total.toLocaleString("ja-JP")+"\n\nよろしいですか?")) return 0;
+      (store?store+"\n":"")+(bk?"軍資金:"+bankName(bk):walName(wal))+" / "+cat+"\n合計 ¥"+total.toLocaleString("ja-JP")+
+      (()=>{ const ls=rows.map(linkTo).filter(Boolean); if(!ls.length) return ""; const nm=[...new Set(ls.map(p=>p.name))].join("・");
+        return "\n"+nm+"の分にします("+ls.length+"件)"; })()+
+      "\n\nよろしいですか?")) return 0;
   const typ=(r.type==="income"?"income":"expense");
   rows.forEach(x=>{
     const item=(x.item||"").trim(), am=num(x.amount);
@@ -8304,6 +8324,7 @@ function applyReceiptDated(r){
     } else if(typ==="expense" && bk){
       entryBkSync(e, bk, am, x.date, wal);            /* 軍資金で払った生活の支出 → 軍資金→所持金の戻し */
     }
+    { const lp=linkTo(x); if(lp && typ==="expense" && !gsrc && !bk) e.svPot=String(lp.id); }   /* v5.98 */
   });
   save();
   return rows.length;
@@ -8318,7 +8339,7 @@ function applyReceipt(txt){
   /* v4.85: **貯金の箱の指定もリセットする**。applyReceiptは既存のフォームを上書きする方式なので、
      消さないと**前のレシートで選んだ箱が次のレシートに黙って付く**(取り込み→箱を選ぶ→保存せず再度取り込み、の経路)。
      交通コンポーザと同じ扱い——取り込みは「新しい記録の中身」で上書きするもの */
-  f.svPot=""; f.svDraw=undefined;
+  f.svPot=""; f.svDraw=undefined; f.svAuto=false; f.svNoAuto=false;
   f.bkSrc="";   /* v5.83: 軍資金の指定も同じ理由で消す(前のレシートの指定が黙って付かないように) */
   if(r.items.length===1 && !r.items[0].date){
     const st=(r.store||"").trim(), it=(r.items[0].item||"").trim();
@@ -8338,6 +8359,10 @@ function applyReceipt(txt){
   { const rs=receiptSrc(r.wallet);   /* v5.83: 財布か、軍資金の置き場か */
     if(rs.wal) f.wal=rs.wal;
     if(rs.bk && f.type!=="income") f.bkSrc=rs.bk; }
+  /* v5.98: #box があればその箱の分に(紐づけだけ)。無ければ旅行の期間で自動 */
+  { const bp=r.box ? savingsPots().find(p=>p.name===String(r.box).trim()) : null;
+    if(bp && f.type==="expense" && !f.bkSrc){ f.svPot=String(bp.id); f.svDraw=false; f.svAuto=false; }
+    else svAutoPick(f); }
   f.item=r.items[0].item; f.amount=r.items[0].amount;
   f.extra=r.items.slice(1).map(x=>({item:x.item, amount:x.amount}));
   return r.items.length;
@@ -8607,6 +8632,8 @@ function viewEntry(){
 function bindEntry(){
   const f = UI.entryForm;
   document.getElementById("e-date").oninput = e=>f.date=e.target.value;
+  /* v5.98: 日付を決めた時に、旅行の期間なら箱の分に(期間から外れたら自動で付けた分を外す)。日付の選択は打鍵ではないので描き直してよい */
+  document.getElementById("e-date").onchange = e=>{ f.date=e.target.value; const was=f.svPot; svAutoPick(f); if(f.svPot!==was) render(); };
   { const ea=document.getElementById("e-amount"); if(ea) ea.oninput = e=>f.amount=e.target.value; }
   /* v4.35: 追加した品目行。**再描画で消えないようUI側に保持**する(入力のたびにrenderはしない) */
   { const pt=document.getElementById("e-paste"); if(pt) pt.oninput = e=>{ UI.pasteText=e.target.value; }; }
@@ -8632,7 +8659,9 @@ function bindEntry(){
       /* v5.70: 軍資金の置き場。**同じものをもう一度押すと解除**。選んだら箱の補填は外す(出所は1つ) */
       else if(a==="ebk"){ f.bkSrc = (String(f.bkSrc||"")===String(v)) ? "" : String(v); if(f.bkSrc) f.svPot=""; render(); }
       /* v4.85: 貯金の箱の選択。**同じ箱をもう一度押すと解除**(任意の指定なので取り消せる必要がある) */
-      else if(a==="espot"){ f.svPot = (String(f.svPot||"")===String(v)) ? "" : String(v); if(f.svPot) f.bkSrc=""; render(); }
+      else if(a==="espot"){ const was=String(f.svPot||""); f.svPot = (was===String(v)) ? "" : String(v);
+        if(!f.svPot && f.svAuto) f.svNoAuto=true;   /* v5.98: 自動で付いた箱を外したら、この記録ではもう付けない */
+        f.svAuto=false; if(f.svPot) f.bkSrc=""; render(); }
       /* v4.92: 補填するかの切替。既定ONなので、undefinedはtrueとして扱う */
       else if(a==="espdraw"){ f.svDraw = (f.svDraw===false); render(); }
       /* v4.66: **まずクリップボードから直接読む**(ユーザー要望: ワンタッチにしたい)。
@@ -8677,7 +8706,7 @@ function bindEntry(){
           UI.draft={id:uid(),date:(f.date||todayStr()),store:"",mode:"dai",partnerName:"",fee:"",startAt:"",endAt:"",
             exchange:S.rates.exchange||"",pExchange:S.rates.pExchange||"",pushPayout:S.rates.pushPayout||"",pushDraw:S.rates.pushDraw||"",machines:[],expenses:[],memo:""};
           UI.whoTab="me"; UI.isNewSess=true; UI.screen="session"; render(); }
-      else if(a==="ecat"){ f.category=v; render(); }
+      else if(a==="ecat"){ f.category=v; svAutoPick(f); render(); }   /* v5.98 */
       else if(a==="cmore"){ UI.chipMore=!UI.chipMore; render(); }
       else if(a==="ustore"){ f.tmode=""; f.store=el.dataset.v; f.item=""; const c=entryChipCat(f.type,f.store,null); if(c) f.category=c; render(); }
       else if(a==="uitem"){ f.item=el.dataset.v; const c=entryChipCat(f.type,f.store,f.item); if(c) f.category=c; render(); }
@@ -8743,6 +8772,7 @@ function bindEntry(){
         save(); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
       }
       else if(a==="esave"){
+        svAutoPick(f);   /* v5.98: 日付を後から変えた場合も含め、保存の直前にもう一度 */
         const amt = num(f.amount);
         if(!f.date || amt<=0) return;
         /* v4.05: 振替はS.entriesに書かない(収支ではない)。doTransferが各台帳のtxnへ落とす */
