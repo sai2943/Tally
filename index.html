@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.91 (localStorage保存・完全オフライン)
+   Tally 5.92 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -966,7 +966,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.91";
+const APP_VERSION = "5.92";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -8162,7 +8162,8 @@ function viewEntry(){
 
   let transHtml="", composerHtml="";
   if(f.type==="expense" && UI.editEntryId===null){
-    transHtml='<div class="muted" style="font-size:11px;margin:0 2px 6px">交通で記帳</div>'+
+    transHtml='<div class="muted" style="font-size:11px;margin:0 2px 6px">交通で記帳'+
+      infoBtn("地下鉄・バス・電車・駐輪を、決まった形で記録する入力補助です。<br><br><b>地下鉄・バス・電車</b>: 店名が乗り物の種類(例: 地下鉄)、品目が「乗車駅→降車駅」になります。<br><b>駐輪</b>: 店名が場所、品目が「駐輪」になります。<br><br>形がそろうので、駅名や場所が候補として育ち、次から押すだけで入れられます。<br><br>分類は上で選べます。旅行中の移動なら承認、出張なら立替、雀荘やパチンコ店への移動なら遊技経費にできます。")+'</div>'+
       '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
       TRANS_MODES.map(mo=>'<button class="chip '+(f.tmode===mo?"sel":"")+'" data-a="tmode" data-v="'+mo+'">'+mo+'</button>').join("")+'</div>';
     if(f.tmode){
@@ -8177,7 +8178,7 @@ function viewEntry(){
         composerHtml='<input class="input" id="t-from" placeholder="乗車駅・停" value="'+esc(f.tfrom||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkf")+
           '<input class="input" id="t-to" placeholder="降車駅・停" value="'+esc(f.tto||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkt");
       }
-      composerHtml+='<div class="muted" style="font-size:11px;margin:0 2px 14px">保存時: 店名='+(f.tmode==="駐輪"?"場所":esc(f.tmode))+' / 品目='+(f.tmode==="駐輪"?"駐輪":"乗車→降車")+' / 分類=消費</div>';
+      composerHtml+='<div style="height:6px"></div>';   /* v5.92: 保存の形の説明は見出しのⓘへ(分類はもう消費に固定しない) */
     }
   }
   /* v4.36: **品目と金額を同じ行に置く**(ユーザー指摘: 1件目だけ金額が画面上端にあって戻る必要があった)。
@@ -8359,7 +8360,10 @@ function viewEntry(){
     ((isTr || f.tmode) ? '<input class="input mono r" type="number" inputmode="numeric" id="e-amount" placeholder="金額" value="'+esc(f.amount)+'" style="width:100%;margin-bottom:12px">' : '')+
     (isTr ? trHtml
       : f.type==="expense"
-      ? ((f.tmode && UI.editEntryId===null) ? '' :
+      /* v5.92【修正】**交通で記帳の時も分類を出す**(ユーザー報告: 移動を承認や経費で記録できない。一度支出で記録した後なら変えられる)。
+         以前は「交通=消費」と決めつけて新規の時だけ分類を隠し、保存も消費になっていた。
+         実際は旅行中の移動(承認)・出張(立替)・雀荘への移動(遊技経費)がある */
+      ? (
         '<div class="muted" style="font-size:11px;margin:0 2px 6px">支出の分類</div>'+
         /* v5.71: 分類が6つになったので**折り返す等幅グリッド**へ(財布・箱と同じ仕組み・v4.38)。
            1行に詰めると「パチスロ」が潰れ、押す位置も毎回ずれる */
@@ -8455,7 +8459,7 @@ function bindEntry(){
       else if(a==="ustore"){ f.tmode=""; f.store=el.dataset.v; f.item=""; const c=entryChipCat(f.type,f.store,null); if(c) f.category=c; render(); }
       else if(a==="uitem"){ f.item=el.dataset.v; const c=entryChipCat(f.type,f.store,f.item); if(c) f.category=c; render(); }
       else if(a==="uamt"){ f.amount=String(num(el.dataset.v)); render(); }
-      else if(a==="tmode"){ f.tmode=(f.tmode===el.dataset.v?"":el.dataset.v); if(f.tmode){ f.category="消費"; f.store=""; f.item=""; } render(); }
+      else if(a==="tmode"){ f.tmode=(f.tmode===el.dataset.v?"":el.dataset.v); if(f.tmode){ if(EXPENSE_CATS.indexOf(f.category)<0) f.category="消費"; f.store=""; f.item=""; } render(); }   /* v5.92: 先に選んだ承認などを消さない */
       else if(a==="tkf"){ f.tfrom=el.dataset.v; render(); }
       else if(a==="tkt"){ f.tto=el.dataset.v; render(); }
       else if(a==="tkp"){ f.tplace=el.dataset.v; render(); }
@@ -8560,7 +8564,8 @@ function bindEntry(){
         if(f.type==="expense" && f.tmode && UI.editEntryId===null){
           if(f.tmode==="駐輪"){ const pl=(f.tplace||"").trim(); if(!pl) return; f.store=pl; f.item="駐輪"; }
           else { const ta=(f.tfrom||"").trim(), tb=(f.tto||"").trim(); if(!ta||!tb) return; f.store=f.tmode; f.item=ta+"→"+tb; }
-          f.category="消費";
+          /* v5.92【修正】ここでも「交通=消費」に上書きしていた——画面で承認などを選んでも保存で消費に戻る。選んだ分類を使う */
+          if(EXPENSE_CATS.indexOf(f.category)<0) f.category="消費";
         }
         const store=(f.store||"").trim(), item=(f.item||"").trim();
         const memo=[store,item].filter(Boolean).join(" ");
