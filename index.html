@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.95 (localStorage保存・完全オフライン)
+   Tally 5.96 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -974,7 +974,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.95";
+const APP_VERSION = "5.96";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1162,6 +1162,7 @@ function _renderScreen(app){
   if(UI.screen==="investdetail"){ app.innerHTML = viewInvestDetail(); bindInvest(); return; }
   if(UI.screen==="bank"){ app.innerHTML = viewBank(); bindBank(); return; }
   if(UI.screen==="savings"){ app.innerHTML = viewSavings(); bindSavings(); return; }
+  if(UI.screen==="potuse"){ app.innerHTML = viewPotUse(); bindPotUse(); return; }   /* v5.96 */
   document.body.classList.toggle("sheet-light", UI.screen==="mjsheet");
   document.body.classList.toggle("nopad-top", UI.screen==="mjplay"||UI.screen==="mjsheet");
   if(UI.screen==="mjplay"){ app.innerHTML = viewMjPlay(); bindMjTable(); return; }
@@ -6478,6 +6479,41 @@ function potUsed(potId){
   return (S.entries||[]).filter(e=>e.type==="expense" && String(e.svPot||"")===String(potId))
     .reduce((a,e)=>a+num(e.amount),0);
 }
+/* v5.96: **箱の使い道**(ユーザー: 大阪旅行を承認で計上しているが、後から旅行でいくら使ったか分からない)。
+   箱は「その目的の枠」。紐づいた支出(箱から払った分+財布から払って箱の分にした分)と、
+   一部負担で戻った分(収入を箱に入れた一部負担=inPot、または後から紐づけた一部負担=shPot)から、実質の負担を出す */
+const potDay=(d,n)=>{ const t=new Date(d+"T12:00:00"); t.setDate(t.getDate()+n);
+  return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0"); };
+function potUseList(pid){
+  return (S.entries||[]).filter(e=>e.type==="expense" && !isNet(e) && String(e.svPot||"")===String(pid))
+    .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+}
+function potBackList(pid){
+  return (S.entries||[]).filter(e=>e.type==="income" &&
+      ((String(e.inPot||"")===String(pid) && isOffPL(e)) || String(e.shPot||"")===String(pid)))
+    .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+}
+/* 紐づけ漏れの候補: 紐づいた記録の期間の前後3日(無ければ今月)で、どの箱にも紐づいていない承認と一部負担 */
+function potCands(pid){
+  const ds=potUseList(pid).concat(potBackList(pid)).map(e=>e.date).sort();
+  let from, to;
+  if(ds.length){ from=potDay(ds[0],-3); to=potDay(ds[ds.length-1],3); }
+  else { const t=todayStr(); from=t.slice(0,8)+"01"; to=t; }
+  const inRange=e=>e.date>=from && e.date<=to;
+  return {from:from, to:to,
+    exp:(S.entries||[]).filter(e=>e.type==="expense" && e.category==="承認" && !isNet(e) && !String(e.svPot||"") && inRange(e)),
+    inc:(S.entries||[]).filter(e=>e.type==="income" && e.category===SHARE_INC && !String(e.inPot||"") && !String(e.shPot||"") && inRange(e))};
+}
+/* 消えた箱を指したままの記録(箱を削除すると、残高と履歴は移るが記録の紐づけは宙に浮く) */
+function orphanPots(){
+  const ids=new Set(savingsPots().map(p=>String(p.id))), by={};
+  (S.entries||[]).forEach(e=>{ ["svPot","inPot","shPot"].forEach(k=>{ const v=String(e[k]||"");
+    if(!v || ids.has(v)) return;
+    const o=by[v]||(by[v]={id:v, n:0, sum:0, from:e.date, to:e.date});
+    o.n++; if(e.type==="expense") o.sum+=num(e.amount);
+    if(e.date<o.from) o.from=e.date; if(e.date>o.to) o.to=e.date; }); });
+  return Object.keys(by).map(k=>by[k]);
+}
 function potProgress(){
   return savingsPots().map(p=>{
     const bal=savingsBalance(p.id), t=potTarget(p), tgt=t.v;
@@ -6604,6 +6640,7 @@ function viewSavings(){
       : '<span></span>';
     h+='<div class="row between" style="gap:6px;align-items:center;margin-top:11px">'+_mv+
       '<span class="row" style="gap:6px;justify-content:flex-end">'+
+      '<button class="btn" style="font-size:11px;padding:3px 12px" data-sa="potuse" data-v="'+pt.id+'">使い道</button>'+   /* v5.96 */
       /* v4.89: **完了の宣言**。目標を下回って終わった箱を畳めるようにする。
          出すのは「空になっていて、かつ実際に使った」箱だけ——まだ使っていない箱を
          完了にしても意味がなく、押し間違いの余地だけが増える。取り消せる(戻す)ので確認は挟まない */
@@ -6620,6 +6657,15 @@ function viewSavings(){
   });
   /* v4.07: 調整は各箱の小ボタンへ移したのでここには置かない。説明文も撤去。
      振替は**箱の操作を一通り見せた後**に置く方が動線として自然(ユーザー指摘) */
+  /* v5.96: **消えた箱を指したままの記録**があれば、完了した箱として戻せるようにする(削除すると使い道が見えなくなっていた) */
+  orphanPots().forEach(o=>{
+    h+='<div class="card" style="margin-bottom:8px;padding:12px;border-color:var(--amber)">'+
+      '<div class="row between" style="align-items:center;gap:8px">'+
+      '<span style="font-size:12px;min-width:0">削除した箱に紐づく記録 <span class="mono">'+o.n+'件 ¥'+o.sum.toLocaleString("ja-JP")+'</span>'+
+        '<span class="muted mono" style="font-size:11px"> ('+o.from.slice(5).replace("-","/")+'〜'+o.to.slice(5).replace("-","/")+')</span>'+
+        infoBtn("削除した箱に紐づいていた記録です。箱を削除すると、残高と入出金の履歴は別の箱へ移りますが、支出と箱のつながりは残ったままになり、どこにも表示されなくなります。<br><br>「箱として戻す」を押して名前を入れると、<b>完了した箱</b>として戻ります。残高は移った先のままで、使い道(いくら使ったか)が見られるようになります。")+'</span>'+
+      '<button class="btn" style="font-size:11px;padding:4px 10px;flex-shrink:0;color:var(--amber)" data-sa="porestore" data-v="'+esc(o.id)+'">箱として戻す</button></div></div>';
+  });
   h+='<button class="btn full" style="padding:9px 0;font-size:12px;border-style:dashed;color:var(--muted);margin-top:2px" data-sa="potadd">＋ 箱を追加</button>';
 
   /* v4.08: 振替の累計2行を撤去(ユーザー指摘)。**貯金画面で「どこから来たか」を出しても行動が変わらない**。
@@ -6640,6 +6686,79 @@ function viewSavings(){
     });
   }
   return h;
+}
+function viewPotUse(){
+  const pid=String(UI.potUseId||""), p=savingsPots().find(x=>String(x.id)===pid);
+  const name=p?p.name:"箱";
+  const use=potUseList(pid), back=potBackList(pid), cd=potCands(pid);
+  const usum=use.reduce((a,e)=>a+num(e.amount),0), bsum=back.reduce((a,e)=>a+num(e.amount),0);
+  const md=d=>d.slice(5).replace("-","/");
+  const lab=e=>esc([e.store,(e.item!=null?e.item:e.memo)].filter(Boolean).join(" ")||e.category);
+  const line=(l,y,strong)=>'<div class="row between" style="padding:'+(strong?'8px':'3px')+' 0;align-items:baseline">'+
+    '<span style="font-size:'+(strong?'13px;font-weight:700':'12px')+'">'+l+'</span>'+
+    '<span class="mono '+(strong?'':'muted')+'" style="font-size:'+(strong?'18px;font-weight:700':'13px')+'">'+y+'</span></div>';
+  let h='<div class="hdr"><button class="navbtn" data-pu="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">'+esc(name)+'の使い道'+
+    infoBtn("この箱に紐づけた記録の一覧と合計です。旅行など、箱の目的にいくら使ったかを後から確かめられます。完了にした箱でも見られます。<br><br><b>使った合計</b>: 箱から払った支出と、財布から払って「この箱の分」にした支出。<br><b>一部負担で戻った</b>: 家族などに一部負担してもらい、この箱の分にしたお金。<br><b>実質の負担</b>: 使った合計 − 戻った分。<br><br>下の「この箱の分にする」で、紐づけ忘れた承認や一部負担を後から足せます。お金は動きません。")+
+    '</div><div style="width:44px"></div></div>';
+  h+='<div class="card" style="margin-bottom:12px">'+
+    line("使った合計 <span class=\"muted\" style=\"font-size:11px\">"+use.length+"件</span>", "¥"+usum.toLocaleString("ja-JP"))+
+    (bsum ? line("一部負担で戻った", "−¥"+bsum.toLocaleString("ja-JP")) : '')+
+    '<div style="border-top:1px solid var(--line);margin-top:4px"></div>'+
+    line("実質の負担", "¥"+(usum-bsum).toLocaleString("ja-JP"), true)+'</div>';
+  /* 分類ごと(2つ以上ある時だけ) */
+  const byCat={}; use.forEach(e=>{ byCat[e.category]=(byCat[e.category]||0)+num(e.amount); });
+  if(Object.keys(byCat).length>1){
+    h+='<div class="card" style="margin-bottom:12px">'+Object.keys(byCat).map(c=>line(esc(c), "¥"+byCat[c].toLocaleString("ja-JP"))).join("")+'</div>';
+  }
+  /* 日ごとの一覧 */
+  if(use.length||back.length){
+    h+=band("記録");
+    const all=use.map(e=>({e:e,k:"u"})).concat(back.map(e=>({e:e,k:"b"}))).sort((a,b)=>a.e.date<b.e.date?-1:a.e.date>b.e.date?1:0);
+    let cur="";
+    h+='<div class="card" style="padding:6px 12px;margin-bottom:12px">';
+    all.forEach(x=>{
+      const e=x.e;
+      if(e.date!==cur){ cur=e.date; h+='<div class="muted mono" style="font-size:11px;padding:8px 0 2px">'+md(e.date)+'</div>'; }
+      const linkOnly = x.k==="u" ? (e.svTx==null) : (String(e.shPot||"")===pid);
+      h+='<div class="row between" style="align-items:center;padding:5px 0;border-top:1px solid var(--line)">'+
+        '<span class="ellip" style="font-size:12px;min-width:0;flex:1">'+lab(e)+
+          (x.k==="u" && e.svTx!=null ? ' <span class="muted" style="font-size:10px">箱から</span>' : '')+'</span>'+
+        '<span class="mono '+(x.k==="b"?'teal':'')+'" style="font-size:13px;flex-shrink:0;margin-left:8px">'+(x.k==="b"?"+":"")+"¥"+num(e.amount).toLocaleString("ja-JP")+'</span>'+
+        (linkOnly ? '<button class="btn" style="font-size:10px;padding:2px 8px;margin-left:8px;flex-shrink:0" data-pu="'+(x.k==="u"?"unu":"unb")+'" data-v="'+e.id+'">外す</button>' : '')+
+        '</div>';
+    });
+    h+='</div>';
+  }
+  /* 紐づけ漏れの候補 */
+  if(cd.exp.length||cd.inc.length){
+    h+=band("この箱の分にしていない記録("+md(cd.from)+"〜"+md(cd.to)+")");
+    h+='<div class="card" style="padding:6px 12px;margin-bottom:12px">'+
+      cd.exp.concat(cd.inc).sort((a,b)=>a.date<b.date?-1:1).slice(0,40).map(e=>
+        '<div class="row between" style="align-items:center;padding:6px 0;border-top:1px solid var(--line)">'+
+        '<span class="ellip" style="font-size:12px;min-width:0;flex:1"><span class="muted mono" style="font-size:11px">'+md(e.date)+'</span> '+lab(e)+
+          ' <span class="muted" style="font-size:10px">'+esc(e.category)+'</span></span>'+
+        '<span class="mono" style="font-size:12px;flex-shrink:0;margin-left:6px">'+(e.type==="income"?"+":"")+"¥"+num(e.amount).toLocaleString("ja-JP")+'</span>'+
+        '<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:8px;flex-shrink:0;color:var(--teal)" data-pu="'+(e.type==="income"?"lnb":"lnu")+'" data-v="'+e.id+'">この箱の分にする</button></div>'
+      ).join("")+'</div>';
+  }
+  if(!use.length && !back.length && !cd.exp.length && !cd.inc.length)
+    h+='<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">まだ紐づいた記録がありません。</div>';
+  return h;
+}
+function bindPotUse(){
+  document.querySelectorAll("[data-pu]").forEach(el=>{
+    const a=el.dataset.pu, v=el.dataset.v, pid=String(UI.potUseId||"");
+    el.onclick=()=>{
+      if(a==="back"){ UI.screen="savings"; render(); return; }
+      const e=(S.entries||[]).find(x=>String(x.id)===String(v)); if(!e) return;
+      /* 紐づけるだけ(お金は動かさない)。支出は svPot(引き出し無し=v4.92の「紐づけだけ」)、一部負担は shPot */
+      if(a==="lnu"){ e.svPot=pid; delete e.svTx; }
+      else if(a==="lnb"){ e.shPot=pid; }
+      else if(a==="unu"){ if(e.svTx==null) delete e.svPot; }
+      else if(a==="unb"){ delete e.shPot; }
+      save(); render();
+    };
+  });
 }
 function bindSavings(){
   document.querySelectorAll("[data-sa]").forEach(el=>{
@@ -6690,9 +6809,18 @@ function bindSavings(){
         applyPotTarget(pt, tg); save(); render(); return; }
       /* v4.04: どの箱も削除できる(最後の1つを除く)。**残高と履歴の引き取り先はユーザーが選ぶ**——
          勝手に特定の箱へ寄せると、目的の違う金が混ざって箱を分けた意味が消える */
+      if(a==="potuse"){ UI.potUseId=String(v); UI.screen="potuse"; render(); return; }   /* v5.96 */
+      if(a==="porestore"){
+        const nm=prompt("この記録を持っていた箱の名前を入れてください(例: 大阪旅行)。\n完了した箱として戻します。",""); if(nm===null||!nm.trim()) return;
+        sv.pots=(sv.pots||[]).concat([{id:String(v), name:nm.trim(), closed:true}]); UI.svDoneOpen=true;
+        save(); render(); toast("「"+nm.trim()+"」を完了した箱として戻しました"); return;
+      }
       if(a==="potdel"){ if(ev&&ev.stopPropagation) ev.stopPropagation();
         const all=savingsPots();
         if(all.length<=1){ toast("最後の箱は削除できません"); return; }
+        /* v5.96: **使い道が紐づいている箱は、削除より完了を勧める**(削除すると使い道が見えなくなる) */
+        { const ln=(S.entries||[]).filter(e=>[e.svPot,e.inPot,e.shPot].some(x=>String(x||"")===String(v)));
+          if(ln.length && !confirm("「"+potName(v)+"」には使い道の記録が"+ln.length+"件紐づいています。\n削除すると、この箱でいくら使ったかは見られなくなります。\n\n削除せずに「完了」にすれば、記録を残したまま畳めます。\n\nそれでも削除しますか?")) return; }
         const others=all.filter(x=>String(x.id)!==String(v));
         let dest=others[0].id;
         if(others.length>1){
@@ -9828,6 +9956,7 @@ function dataAudit(){
   ok("軍資金との紐づけ", lostB.length, lostB.length+"件の記録が、消えた振替を指しています");
   const lostS=E.filter(e=>(e.svTx!=null&&!st.has(String(e.svTx)))||(e.inSvTx!=null&&!st.has(String(e.inSvTx))));
   ok("貯金の箱との紐づけ", lostS.length, lostS.length+"件の記録が、消えた引き出しを指しています");
+  { const op=orphanPots(); ok("消えた箱を指す記録", op.length, op.reduce((a,o)=>a+o.n,0)+"件(貯金の画面の「箱として戻す」で直ります)"); }   /* v5.96 */
   /* 稼働と家計簿(本体+分け先の合計 = 稼働の最終収支) */
   const sums={};
   E.forEach(e=>{ const m=String(e.id).match(/^(mj|slot)-([^~]+)/); if(!m) return;
