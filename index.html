@@ -265,11 +265,11 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.92 (localStorage保存・完全オフライン)
+   Tally 5.94 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
-const INCOME_CATS = ["給与","賞与","副業","臨時","家庭内","立替精算"];  /* 家庭内=配偶者からの生活費等の世帯内移転(v3.32)。salary集計はカテゴリ不問の全収入なので滝原資に乗る——支出側が既に家計混在のため対称で正しい */
+const INCOME_CATS = ["給与","賞与","副業","臨時","家庭内","一部負担","立替精算"];   /* v5.94: 一部負担 */  /* 家庭内=配偶者からの生活費等の世帯内移転(v3.32)。salary集計はカテゴリ不問の全収入なので滝原資に乗る——支出側が既に家計混在のため対称で正しい */
 const UNIT_LABEL = {medal:"枚", ball:"玉", yen:"円"};
 const WD = ["日","月","火","水","木","金","土"];
 
@@ -303,6 +303,14 @@ const isGameCat = e => !!e && Object.prototype.hasOwnProperty.call(GAME_CATS, St
    遊技(isNet)と違って明細から消さないので、**別の判定**にする。 */
 const ADV_EXP = "立替", ADV_INC = "立替精算";
 const isAdv = e => !!e && (e.category===ADV_EXP || e.category===ADV_INC);
+/* v5.94: **一部負担**(ユーザー: 旅行中に食費の一部を妻が出す。立替は「全額立て替えて返してもらう」なので違う)。
+   貯金の箱から払った支出(旅行など)を、家族などに**一部だけ負担してもらったお金**。
+   箱から出た支出は可処分の外なので、その負担分を収入(家庭内)にすると**可処分だけが膨らみ、貯金へ回す額がずれる**。
+   立替精算と同じく**収支の外**(可処分・月別収支・着金判定・漏れ係数に数えない)で、所持金・明細・照合には出す。
+   立替と違って**組になる相手がいない**ので、未精算(advOutstanding)には入れない。
+   生活の予算で払った支出(消費など)の分担は、今まで通り家庭内(v3.32: 支出側と対称になるので収入で正しい) */
+const SHARE_INC = "一部負担";
+const isOffPL = e => isAdv(e) || (!!e && e.category===SHARE_INC);
 /* 未精算=会社に貸している額。今日までに払った立替 − 戻った精算。
    **件ごとに紐づけない**——出張2回分がまとめて1回で振り込まれることもあり、残高で見る方が現実に合う */
 function advOutstanding(){
@@ -966,7 +974,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.92";
+const APP_VERSION = "5.94";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2561,7 +2569,7 @@ function viewLedgerDetail(mk){
           const signedAmt = e.type==="income" ? e.amount : -e.amount;
           const isFuture = e.date > todayS;
           /* v5.69: 立替・立替精算は**自分の金ではない**ので、良し悪しの色を付けない(枠だけ無彩色) */
-          const cc = isAdv(e) ? "var(--muted)" : isGameCat(e) ? "var(--amber)" : e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
+          const cc = isOffPL(e) ? "var(--muted)" : isGameCat(e) ? "var(--amber)" : e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
           const sep = row++ ? 'border-top:1px solid var(--line);' : '';
           /* v5.58: 照合中はタップの意味が変わる(✓の付け外し)。**編集は開かない**——
              消し込みの最中に編集画面が開くと、指が滑るたびに作業が止まる */
@@ -3094,7 +3102,7 @@ function viewLedger(){
       h += '<div class="card" style="margin-bottom:12px;padding:11px 14px">'+
         '<div class="row between" style="align-items:baseline">'+
         '<span style="font-size:13px;font-weight:700">立替 '+(_adv>0?'未精算':'精算が多い')+
-          (_adv>0 ? infoBtn("<b>立替</b>は、会社の経費(出張の新幹線代など)を一時的に自分で払ったお金です。自分の支出ではないので、予算や月の収支には数えません。<br><br>ここには、立て替えたのにまだ戻ってきていない合計を出しています。会社から振り込まれたら、収入の分類「<b>立替精算</b>」で記録すると、その分が減って0に戻ります。") : '')+'</span>'+
+          (_adv>0 ? infoBtn("<b>立替</b>は、会社や家族の分を一時的に自分で払ったお金です(出張の新幹線代、旅行で家族の分までまとめて払った食事代など)。自分の支出ではないので、予算や月の収支には数えません。<br><br>ここには、立て替えたのにまだ戻ってきていない合計を出しています。返してもらったら、収入の分類「<b>立替精算</b>」で記録すると、その分が減って0に戻ります。<br><br>返してもらったお金を「収入」で記録すると、可処分(自由に使えるお金)が増えたことになり、貯金へ回す額がずれます。") : '')+'</span>'+
         '<span class="mono amber" style="font-size:17px;font-weight:700">'+yen(_adv)+'</span></div>'+
         /* v5.75: **矛盾の警告は状態なので本文に残す**(読めば行動が変わる)。使い方はⓘへ */
         (_adv>0 ? ''
@@ -3534,7 +3542,7 @@ function summaryText(){
   L.push("## この数字の読み方");
   L.push("- 所持金 = 帳簿上の残高。カード払いの決済ズレは反映しないので実口座とは差が出る");
   L.push("- 軍資金 = 遊技専用の資金。生活費・貯金とは分離しており、勝ち負けはこの中だけで増減する");
-  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外) / 立替=会社の経費を一時的に払ったもの(収入の「立替精算」で戻る。収支・予算に数えない) / 遊技経費=遊技の経費(所持金か軍資金から出て遊技収支に入る。家計の収支・予算には数えない)");
+  L.push("- 分類: 消費=生活に要る支出 / 娯楽=裁量の支出 / 承認=自分で決めた必要経費(予算バーの対象外) / 立替=会社や家族の分を一時的に払ったもの(収入の「立替精算」で戻る。収支・予算に数えない) / 一部負担(収入)=貯金の箱から払った支出を家族などに一部負担してもらったお金(収支・可処分に数えない) / 遊技経費=遊技の経費(所持金か軍資金から出て遊技収支に入る。家計の収支・予算には数えない)");
   L.push("- 遊技の収支は当月収支に含まれるが、**所持金ではなく軍資金**を増減させる");
   L.push("- 振替(財布間・貯金へ・軍資金へ)は収支ではない。総資産は動かない");
   L.push("- 「確定」= 今日までに発生した分。「予定込」= 未来日の固定費・定期収入を含む見込み");
@@ -3622,7 +3630,7 @@ function monthlyRows(){
     const mk=String(e.date||"").slice(0,7); if(!mk) return;
     const b=by[mk]=by[mk]||{mk:mk,inc:0,exp:0,live:0,fun:0,game:0};
     if(isNet(e)){ b.game += (e.type==="income"?e.amount:-e.amount); return; }
-    if(isAdv(e)) return;   /* v5.69: 立替は月の収入・支出のどちらでもない */
+    if(isOffPL(e)) return;   /* v5.69: 立替は月の収入・支出のどちらでもない(v5.94: 一部負担も) */
     if(e.type==="income") b.inc+=e.amount;
     else { b.exp+=e.amount;
       if(LIVING_CATS.indexOf(e.category)>=0) b.live+=e.amount;
@@ -3634,7 +3642,7 @@ function monthlyRows(){
 function viewMonthly(){
   const rows=monthlyRows();
   let h='<div class="hdr"><button class="navbtn" data-a="monback">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">月別の収支'+infoBtn("月ごとの収入と支出の推移です。<br><br><b>生活費</b> = 消費 + 承認(予算の枠とは別に、自分で認めた特別な支出)。<br><b>遊技</b>(パチスロ・麻雀)の勝ち負けは収支に含めますが、お金は財布ではなく<b>軍資金</b>(遊技専用に分けて管理しているお金)の増減として扱います。<br>立替(会社の経費の立て替え)とその精算は、収入にも支出にも数えません。")+'</div><div style="width:44px"></div></div>';
+    '<div style="font-size:14px;font-weight:700">月別の収支'+infoBtn("月ごとの収入と支出の推移です。<br><br><b>生活費</b> = 消費 + 承認(予算の枠とは別に、自分で認めた特別な支出)。<br><b>遊技</b>(パチスロ・麻雀)の勝ち負けは収支に含めますが、お金は財布ではなく<b>軍資金</b>(遊技専用に分けて管理しているお金)の増減として扱います。<br>立替(会社や家族の分の立て替え)とその精算、一部負担(箱から払った旅行費などを家族に一部出してもらったお金)は、収入にも支出にも数えません。")+'</div><div style="width:44px"></div></div>';
   if(!rows.length) return h+'<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">まだ記録がありません。</div>';
   const mx=Math.max.apply(null, rows.map(b=>Math.max(b.inc,b.exp)))||1;
   const yen=n=>"¥"+Math.round(n).toLocaleString("ja-JP");
@@ -4805,7 +4813,7 @@ function nextIncomeDate(){
   const t=todayStr();
   /* v5.69: 立替精算は「次の収入」ではない(窓が精算日で切れて、確定済みの支出を取りこぼす) */
   const ds=(S.entries||[]).filter(e=>e.date&&e.date>t&&e.type==="income"
-      &&!isNet(e)&&!isAdv(e)).map(e=>e.date).sort();
+      &&!isNet(e)&&!isOffPL(e)).map(e=>e.date).sort();
   return ds.length ? ds[0] : null;
 }
 function futureNet(mk){
@@ -4915,7 +4923,7 @@ function preSplit(mk){
    臨時収入では発火せず、給料が入った瞬間に発火する。カテゴリ名に依存しないのも利点 */
 function mainIncomeLanded(mk){
   /* v5.69: 立替精算で「給料が入った」と判定しない(先取りの催促が早まる) */
-  const me=(S.entries||[]).filter(e=>inBudget(e.date,mk)&&e.type==="income"&&!isNet(e)&&!isAdv(e));
+  const me=(S.entries||[]).filter(e=>inBudget(e.date,mk)&&e.type==="income"&&!isNet(e)&&!isOffPL(e));
   const all=me.reduce((a,e)=>a+e.amount,0);
   if(all<=0) return false;
   const got=me.filter(e=>e.date<=todayStr()).reduce((a,e)=>a+e.amount,0);
@@ -5314,7 +5322,7 @@ function curBudgetMk(){
 function budgetMk(mk){ return (mk===todayStr().slice(0,7)) ? curBudgetMk() : mk; }
 function disposableBase(mk){
   const me=(S.entries||[]).filter(e=>inBudget(e.date, mk));   /* v5.49: 予算の期間で絞る */
-  const inc=me.filter(e=>e.type==="income"&&!isNet(e)&&!isAdv(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69: 立替精算は収入ではない */
+  const inc=me.filter(e=>e.type==="income"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69: 立替精算は収入ではない */
   const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
   const fs=furusatoDue(mk);                      /* v3.99: 貯金で賄えない分(short)だけをフローから確保する */
   return Math.max(0, inc-fx-(fs.active?fs.short:0));
@@ -5392,8 +5400,8 @@ function securedSplit(mk){
 function leakAgg(mk){
   const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
   /* v5.32: グローバルの isNet を使う */
-  const salary=me.filter(e=>e.type==="income"&&!isNet(e)&&!isAdv(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69 */
-  const spend=me.filter(e=>e.type==="expense"&&!isNet(e)&&!isAdv(e)).reduce((a,e)=>a+e.amount,0);
+  const salary=me.filter(e=>e.type==="income"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69 */
+  const spend=me.filter(e=>e.type==="expense"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);
   const gnet=me.filter(isNet).reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
   const _ss=securedSplit(mk); const secured=_ss.sv+_ss.iv;
   return {mk:mk, salary:salary, spend:spend, gnet:gnet, secured:secured};
@@ -8369,7 +8377,9 @@ function viewEntry(){
            1行に詰めると「パチスロ」が潰れ、押す位置も毎回ずれる */
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(60px,1fr));gap:8px;margin-bottom:12px">'+   /* v5.73: 5つが1行に収まる幅 */
         EXPENSE_CATS.map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="padding:2px;font-size:13px;min-height:44px" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>')
-      : '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
+      : '<div class="muted" style="font-size:11px;margin:0 2px 6px">収入の分類'+
+        infoBtn("<b>給与・賞与・副業・臨時</b>: 自分の収入です。<br><br><b>家庭内</b>: 家族から受け取る生活費など。生活の予算で払う支出の元手になるので、収入として数えます。<br><br><b>一部負担</b>: 旅行費のように<b>貯金の箱から払った支出</b>を、家族などに一部負担してもらったお金。箱から出た支出は可処分(自由に配分できるお金)の外なので、その負担分も可処分には数えません。収入で入れると、貯金へ回す額がずれます。<br><br><b>立替精算</b>: 全額を立て替えたお金(支出の分類「立替」)を返してもらったもの。<br><br>生活の支出(消費など)の一部を家族に出してもらった時は、一部負担ではなく家庭内にします。")+'</div>'+
+        '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
         INCOME_CATS.map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>'+
         /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
            日付はフォームの値を引き継ぐ */
