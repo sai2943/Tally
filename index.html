@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.98 (localStorage保存・完全オフライン)
+   Tally 5.99 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -974,7 +974,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.98";
+const APP_VERSION = "5.99";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -6518,14 +6518,20 @@ function potPeriod(pid){
   const t=todayStr();
   const from=p.useFrom || (ds.length ? potDay(ds[0],-3) : t.slice(0,8)+"01");
   const to=p.useTo || t;
-  return {from:from, to:to, set:!!(p.useFrom||p.useTo)};
+  return {from:from, to:to, set:!!(p.useFrom&&p.useTo)};   /* v5.99: 自動の紐づけ(svPeriodPot)と同じく、両方そろって設定済み */
 }
 function potCands(pid){
   const pr=potPeriod(pid), cats=(UI.puCats&&UI.puCats.length)?UI.puCats:["承認"];
   const inRange=e=>e.date>=pr.from && e.date<=pr.to;
-  return {from:pr.from, to:pr.to,
-    exp:(S.entries||[]).filter(e=>e.type==="expense" && cats.indexOf(e.category)>=0 && !isNet(e) && !String(e.svPot||"") && inRange(e)),
-    inc:(S.entries||[]).filter(e=>e.type==="income" && e.category===SHARE_INC && !String(e.inPot||"") && !String(e.shPot||"") && inRange(e))};
+  /* v5.99: **この箱の対象外にした記録**(ユーザー提案: Nudgeだけ対象外で後は対象。特定の品目を除外して残りを計上したい)。
+     箱ごとに覚える(p.useSkip)——期間を広げても、除外したものは候補に戻ってこない */
+  const p=savingsPots().find(x=>String(x.id)===String(pid))||{};
+  const skip=new Set((p.useSkip||[]).map(String));
+  const exp=(S.entries||[]).filter(e=>e.type==="expense" && cats.indexOf(e.category)>=0 && !isNet(e) && !String(e.svPot||"") && inRange(e));
+  const inc=(S.entries||[]).filter(e=>e.type==="income" && e.category===SHARE_INC && !String(e.inPot||"") && !String(e.shPot||"") && inRange(e));
+  return {from:pr.from, to:pr.to, set:pr.set,
+    exp:exp.filter(e=>!skip.has(String(e.id))), inc:inc.filter(e=>!skip.has(String(e.id))),
+    skipped:exp.concat(inc).filter(e=>skip.has(String(e.id)))};
 }
 /* 消えた箱を指したままの記録(箱を削除すると、残高と履歴は移るが記録の紐づけは宙に浮く) */
 function orphanPots(){
@@ -6758,6 +6764,12 @@ function viewPotUse(){
     const lsum=list.reduce((a,e)=>a+(e.type==="income"?0:num(e.amount)),0);
     h+=band("この箱の分にしていない記録");
     h+='<div class="card" style="padding:10px 12px;margin-bottom:12px">'+
+      /* v5.99: 期間が**未設定**だと、日付が入って見えても自動の紐づけは働かない(ユーザー報告: なってない)。状態として出す */
+      (cd.set
+        ? '<div class="row between" style="align-items:center;margin-bottom:4px"><span class="tag" style="border:1px solid var(--teal);color:var(--teal);font-size:10px">自動で紐づけ中</span>'+
+          '<button class="navbtn" style="font-size:11px;color:var(--muted);text-decoration:underline" data-pu="pclear">期間を消す</button></div>'
+        : '<div class="row" style="align-items:center;gap:2px;margin-bottom:4px"><span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:10px">期間は未設定</span>'+
+          infoBtn("期間を選ぶと、その期間の承認は、記録する時に自動でこの箱の分になります(レシートの取り込みでも)。<br><br>未設定の間に入っている日付は、下の一覧を出すための仮の期間です。<b>自動では付きません</b>。")+'</div>')+
       '<div class="row" style="gap:6px;align-items:center;margin-bottom:8px">'+
       '<span class="muted" style="font-size:11px;flex-shrink:0">期間</span>'+
       '<input class="input sm mono" type="date" id="pu-from" value="'+esc(cd.from)+'" style="flex:1;min-width:0">'+
@@ -6770,13 +6782,24 @@ function viewPotUse(){
       (list.length
         ? list.slice(0,200).map(e=>
           '<div class="row between" style="align-items:center;padding:6px 0;border-top:1px solid var(--line)">'+
-          '<span class="ellip" style="font-size:12px;min-width:0;flex:1"><span class="muted mono" style="font-size:11px">'+md(e.date)+'</span> '+lab(e)+
-            ' <span class="muted" style="font-size:10px">'+esc(e.category)+'</span></span>'+
+          /* v5.99: 名前は1行で切り、分類は複数選んでいる時だけ下に小さく(旧版は分類の札が折り返して「認」だけ次の行に出ていた) */
+          '<div style="flex:1;min-width:0"><div class="ellip" style="font-size:12px"><span class="muted mono" style="font-size:11px">'+md(e.date)+'</span> '+lab(e)+'</div>'+
+            ((cats.length>1||e.type==="income") ? '<div class="muted" style="font-size:10px">'+esc(e.category)+'</div>' : '')+'</div>'+
           '<span class="mono" style="font-size:12px;flex-shrink:0;margin-left:6px">'+(e.type==="income"?"+":"")+"¥"+num(e.amount).toLocaleString("ja-JP")+'</span>'+
-          '<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:8px;flex-shrink:0;color:var(--teal)" data-pu="'+(e.type==="income"?"lnb":"lnu")+'" data-v="'+e.id+'">この箱の分にする</button></div>'
+          '<button class="btn" style="font-size:10px;padding:3px 6px;margin-left:6px;flex-shrink:0;color:var(--muted)" data-pu="skip" data-v="'+e.id+'">除外</button>'+
+          '<button class="btn" style="font-size:10px;padding:3px 6px;margin-left:4px;flex-shrink:0;color:var(--teal)" data-pu="'+(e.type==="income"?"lnb":"lnu")+'" data-v="'+e.id+'">この箱の分</button></div>'
           ).join("")+
           '<button class="btn full" style="margin-top:10px;font-size:12px;padding:9px 0;color:var(--teal)" data-pu="lnall">表示中の'+list.length+'件'+(lsum?'(¥'+lsum.toLocaleString("ja-JP")+')':'')+'をまとめてこの箱の分にする</button>'
         : '<div class="muted" style="font-size:12px;text-align:center;padding:14px 0 6px;border-top:1px solid var(--line)">この期間・分類には、まだ紐づけていない記録がありません。</div>')+
+      /* v5.99: 除外した記録(畳んで出す。戻せる) */
+      (cd.skipped.length
+        ? '<div class="row between" style="align-items:center;margin-top:10px;cursor:pointer" data-pu="skiptog"><span class="muted" style="font-size:11px">除外した記録 '+cd.skipped.length+'件</span><span class="muted" style="font-size:11px">'+(UI.puSkipOpen?'▾':'▸')+'</span></div>'+
+          (UI.puSkipOpen ? cd.skipped.map(e=>
+            '<div class="row between" style="align-items:center;padding:5px 0;border-top:1px solid var(--line)">'+
+            '<div class="ellip muted" style="font-size:12px;flex:1;min-width:0"><span class="mono" style="font-size:11px">'+md(e.date)+'</span> '+lab(e)+'</div>'+
+            '<span class="mono muted" style="font-size:12px;flex-shrink:0;margin-left:6px">¥'+num(e.amount).toLocaleString("ja-JP")+'</span>'+
+            '<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:6px;flex-shrink:0" data-pu="unskip" data-v="'+e.id+'">戻す</button></div>').join("") : '')
+        : '')+
       '</div>';
   }
 
@@ -6786,12 +6809,21 @@ function bindPotUse(){
   /* v5.97: 期間は箱に覚えさせる(一度旅行の日付にすれば、次に開いた時もその期間) */
   const pid0=String(UI.potUseId||""), pot=((S.savings||{}).pots||[]).find(x=>String(x.id)===pid0);
   const fi=document.getElementById("pu-from"), ti=document.getElementById("pu-to");
-  if(fi) fi.onchange=e=>{ if(pot){ pot.useFrom=e.target.value||""; if(!pot.useFrom) delete pot.useFrom; save(); } render(); };
-  if(ti) ti.onchange=e=>{ if(pot){ pot.useTo=e.target.value||""; if(!pot.useTo) delete pot.useTo; save(); } render(); };
+  /* v5.99【修正】片方だけ選ぶと期間が「未設定」のままで、自動の紐づけが働かなかった(両方そろって初めて有効)。
+     どちらかを選んだら、もう片方も画面に出ている日付で一緒に保存する */
+  const setBoth=()=>{ if(!pot) return; const f0=(fi&&fi.value)||"", t0=(ti&&ti.value)||"";
+    if(f0&&t0){ pot.useFrom=(f0<=t0?f0:t0); pot.useTo=(f0<=t0?t0:f0); } save(); render(); };
+  if(fi) fi.onchange=setBoth;
+  if(ti) ti.onchange=setBoth;
   document.querySelectorAll("[data-pu]").forEach(el=>{
     const a=el.dataset.pu, v=el.dataset.v, pid=String(UI.potUseId||"");
     el.onclick=()=>{
       if(a==="back"){ UI.screen="savings"; render(); return; }
+      if(a==="pclear"){ const p0=((S.savings||{}).pots||[]).find(x=>String(x.id)===pid); if(p0){ delete p0.useFrom; delete p0.useTo; save(); } render(); return; }
+      if(a==="skiptog"){ UI.puSkipOpen=!UI.puSkipOpen; render(); return; }
+      if(a==="skip"||a==="unskip"){ const p0=((S.savings||{}).pots||[]).find(x=>String(x.id)===pid); if(!p0) return;
+        const sk=(p0.useSkip||[]).map(String).filter(x=>x!==String(v)); if(a==="skip") sk.push(String(v));
+        if(sk.length) p0.useSkip=sk; else delete p0.useSkip; save(); render(); return; }
       if(a==="cat"){ const cur=(UI.puCats&&UI.puCats.length)?UI.puCats.slice():["承認"];
         const i=cur.indexOf(v); if(i>=0){ if(cur.length>1) cur.splice(i,1); } else cur.push(v); UI.puCats=cur; render(); return; }
       if(a==="lnall"){ const cd=potCands(pid), list=cd.exp.concat(cd.inc);
