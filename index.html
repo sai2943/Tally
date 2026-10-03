@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 5.99 (localStorage保存・完全オフライン)
+   Tally 6.00 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -974,7 +974,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "5.99";
+const APP_VERSION = "6.00";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5793,12 +5793,20 @@ function bindInvest(){
    記録セクションに出ていたのは下4つだけで、**一番大きく動かす遊技の勝ち負けが明細に存在しなかった**。
    残高が減っていても理由が読めない状態だったので、月ごとに何で動いたかを分解する。
    「負けた月にいくら補充したか」が読める=漏れ係数の材料そのもの */
+/* v6.00【修正】(ユーザー指摘: 収支と振替額が混同している)。
+   ・**遊技の判定を`isNet`に**——v5.73で遊技経費(gexp)を足した時、ここだけ`slot/mahjong`の直書きが残っていた。
+     月別の遊技収支に遊技経費が入らず、**月別の合計が「遊技収支 累計」と合わなかった**(スクショで¥900のズレ)。
+   ・`gn`=その月の遊技の記録の件数(遊技をしなかった月を「—」と出すため。収支が±0の月と区別する)。
+   ・`io`=振替の入−出。振替枠の判定はv5.63から差引なので、**月別の「超過」も同じ定義に揃える**
+     (上の「今月の振替(入−出)」は差引、月別だけ入の総額で判定していて、同じ月で¥1,000超過/¥21,000超過と食い違っていた) */
 function bankMonthly(){
   const M={};
-  const put=(mk,k,v)=>{ if(!mk) return; (M[mk]=M[mk]||{mk:mk,game:0,topup:0,sweep:0,ret:0,adj:0})[k]+=v; };
+  const put=(mk,k,v)=>{ if(!mk) return; (M[mk]=M[mk]||{mk:mk,game:0,gn:0,topup:0,sweep:0,ret:0,adj:0})[k]+=v; };
   (S.entries||[]).forEach(e=>{
-    if(e.src!=="slot" && e.src!=="mahjong") return;
-    put(String(e.date||"").slice(0,7), "game", e.type==="income"? e.amount : -e.amount);
+    if(!isNet(e)) return;
+    const mk=String(e.date||"").slice(0,7);
+    put(mk, "game", e.type==="income"? e.amount : -e.amount);
+    put(mk, "gn", 1);
   });
   ((S.bank&&S.bank.txns)||[]).forEach(t=>{
     const mk=String(t.date||"").slice(0,7), v=num(t.amount);
@@ -5807,7 +5815,8 @@ function bankMonthly(){
     else if(t.type==="return") put(mk,"ret",v);
     else if(t.type==="adjust") put(mk,"adj",v);
   });
-  return Object.values(M).map(x=>Object.assign(x,{net:x.game+x.topup-x.sweep-x.ret+x.adj}))
+  /* net=その月の残高の増減(画面には出さない。不変量: 月別netの合計=残高−開始時の残高) */
+  return Object.values(M).map(x=>Object.assign(x,{net:x.game+x.topup-x.sweep-x.ret+x.adj, io:x.topup-x.sweep-x.ret}))
     .sort((a,b)=>a.mk<b.mk?1:-1);
 }
 /* v4.11: **その暦月に軍資金へ入れた合計**(=補充実績)。
@@ -6191,30 +6200,51 @@ function viewBank(){
     '<div class="row between" style="margin-bottom:5px"><span class="muted">遊技収支 累計</span><span class="mono '+clsPM(gnet)+'">'+signYen(gnet)+'</span></div>'+
     /* v4.25: 出/入の内訳を撤去(ユーザー指摘)。**振替は金の移動なので差分以外に価値がない**——
        内訳が分かっても行動は変わらない(収支とは違う) */
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">振替 累計</span>'+
+    /* v6.00: **向きを見出しに書く**(ユーザー指摘: 収支と振替額が混同)。累計は出−入(プラス=家計へ戻せている・v4.24)、
+       すぐ下の今月は入−出(プラス=枠を使った・v5.63)で**符号の向きが逆**なのに、どちらも「振替」としか書いていなかった */
+    '<div class="row between" style="margin-bottom:5px"><span class="muted" style="display:inline-flex;align-items:center">振替 累計(出−入)'+
+      infoBtn("<b>振替</b>は、軍資金と、所持金・貯金のあいだでお金を動かすことです。勝ち負け(遊技収支)とは別に数えます。<br><br>"+
+        "<b>振替 累計(出−入)</b> = 記録を始めてから、軍資金から出した額(貯金へ・所持金へ)から、軍資金へ入れた額を引いた差です。<br>"+
+        "プラスなら、入れた以上のお金を遊技から家計へ戻せています。マイナスなら、家計のお金が遊技に回ったままです。<br><br>"+
+        "<b>今月の振替(入−出)</b>は向きが逆で、今月入れた額から出した額を引いた差です。「/」の右が月の振替枠(下の「編集」で変えられます)で、枠に届くと赤になります。<br>"+
+        "例: 今月5万円入れて2万円戻したなら +¥30,000。<br><br>"+
+        "入れた額には、所持金から払った遊技経費と、収入を軍資金に入れた分も含みます(どちらも家計のお金が遊技に回るため)。")+'</span>'+
       '<span class="mono '+clsPM(tAll.net)+'" style="font-weight:700">'+signYen(tAll.net)+'</span></div>'+
     /* v4.11: 補充枠は**使い切る前に見えていないと意味がない**ので常設で出す */
     /* v5.63: 差引になったので**負になりうる**。`yen()`は絶対値を返すので符号が消える——ここはsignYenで出す */
     '<div class="row between"><span class="muted">今月の振替(入−出)</span><span class="mono '+(rUsed>=rCap?"red":rUsed>0?"amber":"muted")+'">'+signYen(rUsed)+' / ¥'+rCap.toLocaleString("ja-JP")+'</span></div></div>';
-  /* v4.12: 月別の増減内訳。1行目=その月の残高変化、2行目=その内訳 */
+  /* v4.12: 月別の増減内訳。
+     v6.00【作り直し】(ユーザー指摘: 収支と振替額が混同している)。右の大きい数字は**残高の増減**(遊技収支+振替+補正)だったが、
+     月別の見出しの位置で収支の色(緑/赤)を付けていたので**勝ち負けにしか読めなかった**——
+     遊技をしていない10月が「+¥31,000」(=振替の入−出)の緑、貯金へ¥17,000移した8月が「−¥17,250」の赤。
+     **右の数字は遊技収支だけ**にし、振替は下の行に分けて書く(勝ち負けと、置き場が変わっただけの金を混ぜない)。
+     残高の増減は画面から外した(遊技収支と振替の行から読めるうえ、並べるとまた混ざる)。`net`は不変量のために残す */
   const mon=bankMonthly();
   if(mon.length){
-    h+=band("月別");
+    h+=band("月別", null,
+      "月ごとに、<b>遊技収支</b>(勝ち負け)と<b>振替</b>(お金の移動)を分けて並べています。<br><br>"+
+      "<b>右の数字 = 遊技収支</b>。パチスロ・麻雀の結果に、遊技経費(雀荘までの交通費など)を含めた額です。遊技をしなかった月は「—」です。<br><br>"+
+      "<b>下の行 = 振替</b>。勝ち負けではなく、お金の置き場が変わっただけです。<br>"+
+      "・振替入 = 軍資金へ入れた額(所持金・貯金から移した額のほか、収入を軍資金に入れた分や、所持金から払った遊技経費の分も含みます)<br>"+
+      "・貯金へ / 所持金へ = 軍資金から出した額<br>"+
+      "・補正 = 実際の残高に合わせて直した額<br><br>"+
+      "入れた額から出した額を引いた差(入−出)が月の振替枠を超えた月は、赤い行で知らせます。例: 5万円入れて2万円戻した月は、差が3万円です。");
     mon.forEach(m=>{
       const parts=[];
-      if(m.game!==0)  parts.push('<span class="'+clsPM(m.game)+'">遊技収支 '+signYen(m.game)+'</span>');
       /* v4.24: 語彙を振替に統一。**向きと行き先が読めるように**入/貯金へ/所持金へ で書き分ける */
       if(m.topup>0)   parts.push('<span class="amber">振替入 +¥'+m.topup.toLocaleString("ja-JP")+'</span>');
       if(m.sweep>0)   parts.push('<span class="teal">貯金へ −¥'+m.sweep.toLocaleString("ja-JP")+'</span>');
       if(m.ret>0)     parts.push('<span class="muted">所持金へ −¥'+m.ret.toLocaleString("ja-JP")+'</span>');
       if(m.adj!==0)   parts.push('<span class="muted">補正 '+signYen(m.adj)+'</span>');
-      const cap=bankRefillCap(), overCap=m.topup>cap;
+      const cap=bankRefillCap(), overCap=m.io>cap;   /* v6.00: 上の「今月の振替(入−出)」と同じ差引で判定 */
       h+='<div class="card" style="margin-bottom:8px;padding:11px 12px">'+
         '<div class="row between" style="align-items:baseline">'+
         '<span style="font-size:13px;font-weight:700">'+m.mk.slice(0,4)+'年 '+num(m.mk.slice(5))+'月</span>'+
-        '<span class="mono '+clsPM(m.net)+'" style="font-size:16px;font-weight:700">'+signYen(m.net)+'</span></div>'+
+        '<span><span class="muted" style="font-size:11px">遊技収支 </span>'+
+        (m.gn ? '<span class="mono '+clsPM(m.game)+'" style="font-size:16px;font-weight:700">'+signYen(m.game)+'</span>'
+              : '<span class="mono muted" style="font-size:15px">—</span>')+'</span></div>'+
         (parts.length?'<div class="mono" style="font-size:11px;margin-top:5px;line-height:1.8">'+parts.join('　')+'</div>':'')+
-        (overCap?'<div class="red" style="font-size:11px;margin-top:3px">振替枠 ¥'+cap.toLocaleString("ja-JP")+' を ¥'+(m.topup-cap).toLocaleString("ja-JP")+' 超過</div>':'')+
+        (overCap?'<div class="red" style="font-size:11px;margin-top:3px">振替枠 ¥'+cap.toLocaleString("ja-JP")+' を ¥'+(m.io-cap).toLocaleString("ja-JP")+' 超過(入−出 +¥'+m.io.toLocaleString("ja-JP")+')</div>':'')+
         '</div>';
     });
   }
@@ -6223,7 +6253,8 @@ function viewBank(){
     h+=band("記録");
     const LBL={topup:"振替(所持金から)",sweep:"振替(貯金へ)",return:"振替(所持金へ)",adjust:"補正"};
     txns.forEach(t=>{
-      const amt = t.type==="topup"? num(t.amount) : t.type==="sweep"? -num(t.amount) : num(t.amount);
+      /* v6.00【修正】所持金へ(return)が「+」の緑で出ていた(月別では「所持金へ −」)。軍資金から出た金なので貯金へと同じくマイナス */
+      const amt = t.type==="topup"? num(t.amount) : (t.type==="sweep"||t.type==="return")? -num(t.amount) : num(t.amount);
       h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+'</div><div class="muted mono" style="font-size:11px">'+esc(t.date)+'</div></div>'+
         '<div class="mono '+clsPM(amt)+'" style="font-size:14px;font-weight:700">'+signYen(amt)+'</div>'+
         '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0" data-ba="txndel" data-v="'+t.id+'">×</button></div>';
