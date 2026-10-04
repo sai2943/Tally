@@ -210,6 +210,9 @@
   .listitem{background:var(--surface); border:1px solid var(--line); border-radius:10px;
     padding:11px 14px; margin-bottom:8px; display:flex; align-items:center; cursor:pointer;}
   .ellip{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* v6.03: 一覧の名前を切らずに折り返す。.wseg=折り返しても割らない塊(店名・ルール名・品目など)。塊より長い時だけ中で折る */
+  .wrapname{overflow-wrap:anywhere;}
+  .wseg{display:inline-block; max-width:100%;}
   .bar{height:5px; background:var(--surface2); border-radius:3px;}
   .bar>div{height:5px; border-radius:3px; opacity:.85;}
   .xbtn{background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:0 2px;}
@@ -265,7 +268,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.02 (localStorage保存・完全オフライン)
+   Tally 6.04 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -934,6 +937,14 @@ function mjShopHints(){
 function mjWhere(s, sep){
   return [String((s&&s.shop)||"").trim(), String((s&&s.store)||"").trim()].filter(Boolean).join(sep==null?" ・ ":sep);
 }
+/* v6.03: 一覧の名前を**塊ごと**に折り返すHTML(ユーザー指摘: 名前と店名が一覧で切れる)。
+   1行に収まれば「店 ・ ルール」のまま、収まらなければ**塊の境目で**改行する——
+   普通に折り返すと「…RED BEAR ・ ザンルー/ルペアマッチ」のように名前の途中で割れるため。
+   区切り(sep)は前の塊の末尾に付ける(行頭に「・」が来ないように)。joinは塊の間(空白なら見た目の隙間も兼ねる) */
+function wsegHtml(parts, sep, join){
+  const ps=(parts||[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);
+  return ps.map((x,i)=>'<span class="wseg">'+esc(x)+(i<ps.length-1?(sep||""):"")+'</span>').join(join==null?" ":join);
+}
 /* 家計簿の行のメモ(保存・スコア表の反映・名前の書き換えで同じ形にする) */
 function mjMemo(s){
   const w=mjWhere(s, "・");
@@ -1000,7 +1011,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.02";
+const APP_VERSION = "6.04";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3167,8 +3178,10 @@ function gameRowSlot(s, first){
     '<span class="tag" style="border:1px solid '+bc+';color:'+bc+'">'+modeShort(s.mode)+'</span>'+
     (s.lotteryOnly?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">抽選</span>':'')+
     ((s.partnerName||"").trim()?personTag(s.partnerName.trim()):'')+'</div>'+
-    '<div class="muted ellip" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
-    (machLine?'<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+esc(machLine)+'</div>':'')+
+    /* v6.03: 店名・機種名を切らずに折り返す(機種名は1台ずつの塊) */
+    '<div class="muted wrapname" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
+    (machLine?'<div class="wrapname" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+
+      (mnames.length?wsegHtml(mnames,"・","<wbr>"):esc(machLine))+'</div>':'')+
     '</div>'+
     '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
 }
@@ -3182,8 +3195,10 @@ function gameRowMj(s, first){
     '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(s.category==="free"?"フリー":"セット")+'</span>'+
     '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>'+
     (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>'+
-    '<div class="muted ellip" style="font-size:11px">'+esc(mjWhere(s)||"店名未入力")+'</div>'+   /* v6.02: 店名 ・ ルール名 */
-    '<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+mjHanchan(s)+'半荘 ・ 平均'+(av!==null?av.toFixed(2):"—")+'着 ・ トップ'+topPct+'%</div>'+
+    /* v6.02: 店名 ・ ルール名。v6.03: 切らずに、店名とルール名の境目で折り返す */
+    '<div class="muted wrapname" style="font-size:11px">'+(mjWhere(s)?wsegHtml([s.shop,s.store]," ・"):"店名未入力")+'</div>'+
+    /* v6.03: 着順を入れていない卓(金額だけの記録)は「0半荘 ・ 平均—着 ・ トップ0%」になるだけなので出さない */
+    (mjHanchan(s)>0?'<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+mjHanchan(s)+'半荘 ・ 平均'+(av!==null?av.toFixed(2):"—")+'着 ・ トップ'+topPct+'%</div>':'')+
     '</div>'+
     '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
 }
@@ -3196,12 +3211,12 @@ function gameRowExp(e, first){
   /* v5.73: タグは「経費」1つ(区分をやめたので、麻雀/パチスロのタグと二重に言わない) */
   const from = (e.gtTx!=null) ? (walletPots().find(w=>String(w.id)===String(e.wal))||{name:"所持金"}).name+"から"
                               : (bankPots().length>1 ? "軍資金:"+bankName(eBWal(e))+"から" : "軍資金から");
-  const nm = [e.store||"", (e.item!=null?e.item:"")].filter(Boolean).join(" ") || "経費";
+  const nmParts = [e.store||"", (e.item!=null?e.item:"")].filter(x=>String(x).trim());   /* v6.03: 店と品目を別の塊に */
   return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="eedit" data-v="'+e.id+'">'+
     '<div style="flex:1;min-width:0">'+
     '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
     '<span class="tag" style="border:1px solid var(--amber);color:var(--amber)">経費</span></div>'+
-    '<div class="muted ellip" style="font-size:11px">'+esc(nm)+'</div>'+
+    '<div class="muted wrapname" style="font-size:11px">'+(nmParts.length?wsegHtml(nmParts):"経費")+'</div>'+
     '<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+esc(from)+'</div>'+
     '</div>'+
     '<div class="mono red" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(-e.amount)+'</div></div>';
@@ -3339,7 +3354,7 @@ function viewMjStatsPage(){
         '<div class="row between" style="align-items:center;gap:8px">'+
         '<div class="row" style="align-items:center;gap:6px;min-width:0">'+
         '<span class="tag" style="border:1px solid '+catC+';color:'+catC+';flex-shrink:0">'+(G.category==="free"?"フリー":"セット")+'</span>'+
-        '<span class="ellip" style="font-weight:700;font-size:13px">'+esc(G.store)+'</span></div>'+
+        '<span class="wrapname" style="font-weight:700;font-size:13px">'+esc(G.store)+'</span></div>'+   /* v6.03: 長いルール名も切らない */
         '<span style="font-size:18px;color:var(--muted);flex-shrink:0">›</span></div>'+
         '<div class="row between" style="margin-top:8px;font-size:11px">'+
         '<span class="muted">'+A.H+'半荘 / '+A.days+'日</span>'+
@@ -3792,6 +3807,9 @@ const fmtPt = v => Number.isInteger(v) ? String(v) : String(Math.round(v*10)/10)
 function mjtInProgress(t){
   return !!(t && (t.playersLocked || (t.rows||[]).some((r,ri)=>(t.players||[]).some((p,ci)=>mjtScore(t,ri,ci)!==null))));
 }
+/* v6.04: **途中経過にチップの開始枚数**(ユーザー要望)。入っている人が1人もいなければ出さない(チップを使わない卓で「– – –」の行を置かない)。
+   枚数であって金額ではないので、途中経過の「対局中は金額を見せない」(v2.70)には触れない */
+function mjtChipStarts(t){ return (t.players||[]).map((p,ci)=>String(((t.chipStart||[])[ci])==null?"":(t.chipStart||[])[ci]).trim()); }
 /* ---------- 途中経過の画像生成(Canvas)と共有 ----------
    LINE等への共有用。HTML→画像変換(foreignObject)はiOS WebKitで不安定なため、canvasへ直接描画する */
 function mjtMidImage(t, full){
@@ -3808,7 +3826,8 @@ function mjtMidImage(t, full){
   const cd=mjtChartData(t);
   /* 高さの見積り */
   const rowH=52, histH=46, chartH=cd?340:0;
-  const sumRows = 4 + (full? 2 + (anyFee?1:0) + (anyPexp?1:0) + (anyAdj?1:0) + ((anyFee||anyPexp)?1:0) : 0);
+  const chipSt=mjtChipStarts(t), showCS=!full && chipSt.some(x=>x!=="");   /* v6.04 */
+  const sumRows = 4 + (showCS?1:0) + (full? 2 + (anyFee?1:0) + (anyPexp?1:0) + (anyAdj?1:0) + ((anyFee||anyPexp)?1:0) : 0);
   const PADT = 110;  /* iPhone写真アプリのフルスクリーン表示でDynamic Islandに隠れない上部安全余白 */
   const H = PAD + PADT + 46 + 22 + 10          /* 安全余白+タイトル+サブ */
     + (rowH*sumRows) + (full&&notes.length? notes.length*20+6 : 0) + 14
@@ -3849,6 +3868,11 @@ function mjtMidImage(t, full){
   P.forEach((p,ci)=>cell(PAD+lblW+colW*ci,y,colW,rowH,mjtRankCounts(t,ci).slice(0,seats).join("·"),{size:20})); y+=rowH;
   cell(PAD,y,lblW,rowH,"合計",{bg:lblBg,bold:true,size:20});
   calcs.forEach((c,ci)=>cell(PAD+lblW+colW*ci,y,colW,rowH,fmtPt(c.sum),{bold:true,size:28,color:c.sum<0?red:"#000"})); y+=rowH;
+  /* v6.04: チップの開始枚数(途中経過のみ・入っている時だけ) */
+  if(showCS){
+    cell(PAD,y,lblW,rowH,"チップ開始",{bg:lblBg,bold:true,size:20});
+    chipSt.forEach((x,ci)=>cell(PAD+lblW+colW*ci,y,colW,rowH,x===""?"–":x,{size:22,color:x===""?gray:(num(x)<0?red:"#000")})); y+=rowH;
+  }
   /* 精算(清算シートのみ) */
   if(full){
     cell(PAD,y,lblW,rowH,"チップ",{bg:lblBg,bold:true,size:20});
@@ -4073,11 +4097,15 @@ function mjtPrintHtml(t, mode){
   if(anyFee && notes.length) sum+='<div class="pr-foot" style="margin:-4px 0 10px">'+notes.map(esc).join(" ／ ")+'</div>';
   const foot='<div class="pr-foot">スコア1点=¥'+(num(t.scoreRate)||0)+(num(t.chipRate)>0?" / チップ1枚=¥"+num(t.chipRate):"")+" ・ Tally</div>";
 
-  /* 途中経過用: 平均着順・着順内訳・合計(点)のみ。円換算・場代・支払は出さない */
+  /* 途中経過用: 平均着順・着順内訳・合計(点)のみ。円換算・場代・支払は出さない。v6.04: チップの開始枚数(枚数なので可) */
   let sumMid='<table class="pr-tbl pr-sum"><thead><tr><th></th>'+P.map((p,i)=>'<th>'+esc(p||("P"+(i+1)))+'</th>').join("")+'</tr></thead><tbody>';
   sumMid+='<tr><td class="pr-lbl">平均着順</td>'+P.map((p,ci)=>{const av=mjtAvgRank(t,ci);return '<td>'+(av===null?"–":av.toFixed(2))+'</td>';}).join("")+'</tr>';
   sumMid+='<tr><td class="pr-lbl">着順内訳</td>'+P.map((p,ci)=>'<td>'+mjtRankCounts(t,ci).slice(0,seats).join("·")+'</td>').join("")+'</tr>';
   sumMid+='<tr class="pr-final"><td class="pr-lbl">合計</td>'+calcs.map(c=>'<td class="'+(c.sum<0?"pr-neg":"")+'">'+fmtPt(c.sum)+'</td>').join("")+'</tr>';
+  /* v6.04: チップの開始枚数。ラベルの列は56px(4文字まで)なので「チップ/開始」の2行にする(5文字を1行に入れると切れる・v5.84の教訓) */
+  { const _cs=mjtChipStarts(t);
+    if(_cs.some(x=>x!=="")) sumMid+='<tr><td class="pr-lbl" style="line-height:1.15">チップ<br>開始</td>'+
+      _cs.map(x=>'<td class="'+(x!==""&&num(x)<0?"pr-neg":"")+'"'+(x===""?' style="color:#999 !important"':'')+'>'+(x===""?"–":esc(x))+'</td>').join("")+'</tr>'; }
   sumMid+='</tbody></table>';
   const headMid='<div class="pr-title">途中経過</div>'+
     '<div class="pr-sub">'+esc(t.date||"")+(t.ruleName?" ・ "+esc(t.ruleName):"")+" ・ "+seats+"人打ち</div>";
