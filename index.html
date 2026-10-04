@@ -268,7 +268,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.04 (localStorage保存・完全オフライン)
+   Tally 6.06 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1011,7 +1011,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.04";
+const APP_VERSION = "6.06";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3808,8 +3808,62 @@ function mjtInProgress(t){
   return !!(t && (t.playersLocked || (t.rows||[]).some((r,ri)=>(t.players||[]).some((p,ci)=>mjtScore(t,ri,ci)!==null))));
 }
 /* v6.04: **途中経過にチップの開始枚数**(ユーザー要望)。入っている人が1人もいなければ出さない(チップを使わない卓で「– – –」の行を置かない)。
-   枚数であって金額ではないので、途中経過の「対局中は金額を見せない」(v2.70)には触れない */
+   枚数であって金額ではないので、途中経過の「対局中は金額を見せない」(v2.70)には触れない。
+   v6.05: **呼び名を「基準」に・マイナスを赤にしない**(ユーザー指摘: 高いレートだとチップの売り買いが頻繁で、売った人の数がマイナスになるが実態はプラス。
+   赤だと負けに見える)。この数は「精算で終了枚数から引く数」で、売り買いのたびに買った人は足し・売った人は引く(合計は変わらない)。
+   **符号に勝ち負けの意味は無い**ので色を付けない。勝ち負けは 終了 − 基準(増減)で決まる */
 function mjtChipStarts(t){ return (t.players||[]).map((p,ci)=>String(((t.chipStart||[])[ci])==null?"":(t.chipStart||[])[ci]).trim()); }
+/* v6.06: **チップの売り買い**(ユーザー要望: 売り買いのたびに2人分の基準を手で計算し直していた)。
+   「誰から誰へ何枚」を入れると、**渡した人の基準から引き、受け取った人の基準に足す**(全員の合計は変わらない=増減の逆算も崩れない)。
+   記録は`t.chipTrades=[{id,from,to,n,at}]`(from/toは席の番号)。取り消しは逆向きに足し引きして消すだけ。
+   **注意(ⓘにも書いた)**: 基準を動かすのは代金を**この表の精算でまとめて払う**時。その場で現金を払い、しかもチップをこの表の精算(チップ単価)にも
+   入れていると、同じチップを二重に数える(買った人が多く払う)。どちらの運用かはユーザーに確認中 */
+const MJT_TRADE_INFO = "チップを<b>渡した人(売った人)の基準から枚数を引き、受け取った人(買った人)の基準に足します</b>。全員の基準の合計は変わりません。<br><br>"+
+  "例: ゴリ(基準50)がツルさん(基準150)に30枚売ったら、ゴリ 20・ツルさん 180。<br><br>"+
+  "記録した売り買いは下に並び、「取消」で元に戻せます。<br><br>"+
+  "<b>注意</b>: これは、売り買いの代金を<b>最後の精算でまとめて払う</b>時の記録です。代金を<b>その場で現金で払った</b>のに、チップもこの表の精算に入れていると、"+
+  "同じチップを二重に数えてしまいます(買った人が多く払う)。その場で払った売り買いは記録しないでください。";
+function mjtTradeName(t, i){ const p=(t.players||[])[i]; return (p&&String(p).trim()) || ("P"+(num(i)+1)); }
+function mjtTradePrev(t){
+  const f=UI.mjtTrade||{}, n=num(f.n);
+  if(f.from==null || f.to==null || !(n>0)) return "";
+  const a=mjtChipStart(t,f.from), b=mjtChipStart(t,f.to);
+  return "基準: "+esc(mjtTradeName(t,f.from))+" "+a+" → "+(a-n)+" ／ "+esc(mjtTradeName(t,f.to))+" "+b+" → "+(b+n);
+}
+function mjtTradeHtml(t){
+  const P=t.players||[], log=(t.chipTrades||[]), f=UI.mjtTrade;
+  if(!f){
+    return '<button class="btn full" data-mt="tropen" style="margin-bottom:8px;padding:10px 0;font-size:13px;font-weight:700">⇄ チップの売り買い'+
+      (log.length?'<span class="muted" style="font-weight:400;font-size:11px"> ・ '+log.length+'件</span>':'')+'</button>';
+  }
+  const chipRow=(kind,sel,dis)=>'<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">'+
+    P.map((p,ci)=>'<button class="chip'+(sel===ci?' sel':'')+'" data-mt="'+kind+'" data-v="'+ci+'"'+(dis===ci?' style="opacity:.35"':'')+'>'+esc(mjtTradeName(t,ci))+'</button>').join("")+'</div>';
+  let h='<div class="card" style="margin-bottom:8px;padding:10px 12px">'+
+    '<div class="row between" style="align-items:center;margin-bottom:8px">'+
+      '<span style="font-size:13px;font-weight:700;display:inline-flex;align-items:center">⇄ チップの売り買い'+infoBtn(MJT_TRADE_INFO)+'</span>'+
+      '<button class="navbtn" data-mt="trclose" style="font-size:12px;color:var(--muted)">閉じる</button></div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:5px">売った人(チップを渡す)</div>'+chipRow("trfrom", f.from, null)+
+    '<div class="muted" style="font-size:11px;margin-bottom:5px">買った人(チップを受け取る)</div>'+chipRow("trto", f.to, f.from)+
+    '<div class="row" style="gap:8px;align-items:center">'+
+      '<input class="input mono r" type="number" inputmode="numeric" pattern="[0-9]*" placeholder="枚数" value="'+esc(f.n||"")+'" data-mt="trn" style="flex:1;min-width:0">'+
+      '<button class="btn tealb" data-mt="trdo" style="flex:none;padding:10px 18px;font-weight:700">記録する</button></div>'+
+    '<div class="muted mono" id="tr-prev" style="font-size:11px;margin-top:6px;min-height:14px">'+mjtTradePrev(t)+'</div>';
+  if(log.length){
+    h+='<div style="margin-top:8px;border-top:1px solid var(--line)">'+
+      log.slice().reverse().map(x=>'<div class="row between" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'+
+        '<span style="font-size:12px;min-width:0" class="wrapname"><span class="muted mono">'+esc(x.at||"")+'</span> '+
+          esc(mjtTradeName(t,x.from))+' → '+esc(mjtTradeName(t,x.to))+' <b class="mono">'+num(x.n)+'枚</b></span>'+
+        '<button class="btn" data-mt="trundo" data-v="'+esc(x.id)+'" style="flex:none;margin-left:8px;font-size:11px;padding:4px 10px;color:var(--muted)">取消</button></div>').join("")+
+      '</div>';
+  }
+  return h+'</div>';
+}
+/* 基準を足し引きする本体(記録・取消で共通)。基準が空欄なら0として扱う */
+function mjtTradeApply(t, from, to, n){
+  t.chipStart=t.chipStart||[];
+  t.chipStart[from]=String(mjtChipStart(t,from)-n);
+  t.chipStart[to]=String(mjtChipStart(t,to)+n);
+}
 /* ---------- 途中経過の画像生成(Canvas)と共有 ----------
    LINE等への共有用。HTML→画像変換(foreignObject)はiOS WebKitで不安定なため、canvasへ直接描画する */
 function mjtMidImage(t, full){
@@ -3868,10 +3922,10 @@ function mjtMidImage(t, full){
   P.forEach((p,ci)=>cell(PAD+lblW+colW*ci,y,colW,rowH,mjtRankCounts(t,ci).slice(0,seats).join("·"),{size:20})); y+=rowH;
   cell(PAD,y,lblW,rowH,"合計",{bg:lblBg,bold:true,size:20});
   calcs.forEach((c,ci)=>cell(PAD+lblW+colW*ci,y,colW,rowH,fmtPt(c.sum),{bold:true,size:28,color:c.sum<0?red:"#000"})); y+=rowH;
-  /* v6.04: チップの開始枚数(途中経過のみ・入っている時だけ) */
+  /* v6.04: チップの開始枚数(途中経過のみ・入っている時だけ)。v6.05: 呼び名は「基準」 */
   if(showCS){
-    cell(PAD,y,lblW,rowH,"チップ開始",{bg:lblBg,bold:true,size:20});
-    chipSt.forEach((x,ci)=>cell(PAD+lblW+colW*ci,y,colW,rowH,x===""?"–":x,{size:22,color:x===""?gray:(num(x)<0?red:"#000")})); y+=rowH;
+    cell(PAD,y,lblW,rowH,"チップ基準",{bg:lblBg,bold:true,size:20});   /* v6.05: 開始→基準・マイナスも黒 */
+    chipSt.forEach((x,ci)=>cell(PAD+lblW+colW*ci,y,colW,rowH,x===""?"–":x,{size:22,color:x===""?gray:"#000"})); y+=rowH;
   }
   /* 精算(清算シートのみ) */
   if(full){
@@ -4097,15 +4151,15 @@ function mjtPrintHtml(t, mode){
   if(anyFee && notes.length) sum+='<div class="pr-foot" style="margin:-4px 0 10px">'+notes.map(esc).join(" ／ ")+'</div>';
   const foot='<div class="pr-foot">スコア1点=¥'+(num(t.scoreRate)||0)+(num(t.chipRate)>0?" / チップ1枚=¥"+num(t.chipRate):"")+" ・ Tally</div>";
 
-  /* 途中経過用: 平均着順・着順内訳・合計(点)のみ。円換算・場代・支払は出さない。v6.04: チップの開始枚数(枚数なので可) */
+  /* 途中経過用: 平均着順・着順内訳・合計(点)のみ。円換算・場代・支払は出さない。v6.04: チップの基準(枚数なので可) */
   let sumMid='<table class="pr-tbl pr-sum"><thead><tr><th></th>'+P.map((p,i)=>'<th>'+esc(p||("P"+(i+1)))+'</th>').join("")+'</tr></thead><tbody>';
   sumMid+='<tr><td class="pr-lbl">平均着順</td>'+P.map((p,ci)=>{const av=mjtAvgRank(t,ci);return '<td>'+(av===null?"–":av.toFixed(2))+'</td>';}).join("")+'</tr>';
   sumMid+='<tr><td class="pr-lbl">着順内訳</td>'+P.map((p,ci)=>'<td>'+mjtRankCounts(t,ci).slice(0,seats).join("·")+'</td>').join("")+'</tr>';
   sumMid+='<tr class="pr-final"><td class="pr-lbl">合計</td>'+calcs.map(c=>'<td class="'+(c.sum<0?"pr-neg":"")+'">'+fmtPt(c.sum)+'</td>').join("")+'</tr>';
-  /* v6.04: チップの開始枚数。ラベルの列は56px(4文字まで)なので「チップ/開始」の2行にする(5文字を1行に入れると切れる・v5.84の教訓) */
+  /* v6.04: チップの開始枚数。ラベルの列は56px(4文字まで)なので「チップ/開始」の2行にする(5文字を1行に入れると切れる・v5.84の教訓)。v6.05:「チップ/基準」 */
   { const _cs=mjtChipStarts(t);
-    if(_cs.some(x=>x!=="")) sumMid+='<tr><td class="pr-lbl" style="line-height:1.15">チップ<br>開始</td>'+
-      _cs.map(x=>'<td class="'+(x!==""&&num(x)<0?"pr-neg":"")+'"'+(x===""?' style="color:#999 !important"':'')+'>'+(x===""?"–":esc(x))+'</td>').join("")+'</tr>'; }
+    if(_cs.some(x=>x!=="")) sumMid+='<tr><td class="pr-lbl" style="line-height:1.15">チップ<br>基準</td>'+   /* v6.05: 開始→基準・マイナスも黒 */
+      _cs.map(x=>'<td'+(x===""?' style="color:#999 !important"':'')+'>'+(x===""?"–":esc(x))+'</td>').join("")+'</tr>'; }
   sumMid+='</tbody></table>';
   const headMid='<div class="pr-title">途中経過</div>'+
     '<div class="pr-sub">'+esc(t.date||"")+(t.ruleName?" ・ "+esc(t.ruleName):"")+" ・ "+seats+"人打ち</div>";
@@ -4254,7 +4308,13 @@ function viewMjTable(){
   h += '<div class="card" style="margin-bottom:8px;padding:6px 12px">'+
     '<div class="row" style="gap:8px;align-items:center;padding:4px 0 2px">'+
     '<span class="muted" style="flex:1;font-size:11px;text-align:center">プレイヤー</span>'+
-    '<span class="muted" style="width:62px;text-align:center;font-size:11px;flex:none">開始</span>'+
+    /* v6.05: 「開始」→「基準」+ⓘ(売り買いでマイナスになっても負けではない、を説明) */
+    '<span class="muted" style="width:62px;text-align:center;font-size:11px;flex:none;display:inline-flex;align-items:center;justify-content:center">基準'+
+      infoBtn("<b>基準</b>は、精算のときに、終わった時のチップの枚数から引く数です。<b>終了 − 基準</b> が、その人のチップの増減になります。<br><br>"+
+        "最初は、配った枚数を入れます。途中でチップを売り買いして、代金を<b>最後の精算でまとめて払う</b>なら、買った人は買った枚数を足し、売った人は売った枚数を引きます(下の「⇄ チップの売り買い」で記録すると自動で足し引きします)。"+
+        "<b>その場で現金を払った売り買いは、基準を動かしません</b>(動かすと精算で二重に数えます)。<br>"+
+        "例: 基準50の人が30枚売ったら基準は20。さらに40枚売ったら −20 になります。<br><br>"+
+        "売った人の基準はマイナスになることがありますが、<b>負けているという意味ではありません</b>。渡したチップの分は、精算の 終了 − 基準 で受け取れます。そのため色は付けていません。")+'</span>'+
     '<span class="muted" style="width:62px;text-align:center;font-size:11px;flex:none">終了</span>'+
     '<span class="muted" style="width:50px;text-align:center;font-size:11px;flex:none">増減</span>'+
     '<span style="width:26px;flex:none"></span></div>'+
@@ -4262,7 +4322,7 @@ function viewMjTable(){
       const clk=!!((t.chipLocked||[])[ci]);
       const selS=!clk&&UI.mjtCell&&UI.mjtCell.k==="cs"&&UI.mjtCell.c===ci;
       const selE=!clk&&UI.mjtCell&&UI.mjtCell.k==="ce"&&UI.mjtCell.c===ci;
-      const xs=(t.chipStart||[])[ci]||""; const negS=(num(xs)||0)<0;
+      const xs=(t.chipStart||[])[ci]||""; const negS=false;   /* v6.05: 基準のマイナスは負けではないので赤にしない */
       const er=mjtChipEndRaw(t,ci); const autoE=mjtChipAutoIdx(t)===ci;
       let endInner=""; if(er!==null){ endInner=esc(String((t.chipEnd||[])[ci])); } else if(autoE){ endInner='<span class="mjt-auto">'+mjtChipEndDisp(t,ci)+'</span>'; } else endInner='<span class="mjt-ph">·</span>';
       const net=mjtChipNet(t,ci);
@@ -4281,6 +4341,7 @@ function viewMjTable(){
     (P.length<6?'<button class="btn dash" data-mt="addp" style="flex:1;padding:8px 0;font-size:12px">＋ プレイヤーを追加</button>':'<div style="flex:1"></div>')+
     (!t.playersLocked && P.length>mjtSeats(t)?'<button class="btn '+(UI.pdelMode?"sel":"")+'" data-mt="pdelmode" style="flex:none;font-size:11px;padding:8px 12px;color:var(--red);border-color:var(--red)">'+(UI.pdelMode?"削除中…":"削除")+'</button>':'')+
     '<button class="btn '+(t.playersLocked?"sel":"")+'" data-mt="plock" style="flex:none;font-size:11px;padding:8px 14px">'+(t.playersLocked?"🔒 メンバー確定済":"メンバー確定")+'</button></div>';
+  h += mjtTradeHtml(t);   /* v6.06: チップの売り買い */
   }
   h += '<button class="btn tealb full" style="padding:13px 0;font-size:15px;font-weight:700;margin-bottom:14px" data-mt="toPlay">▶ 対局モード(スコアの入力・閲覧)</button>';
 
@@ -4356,11 +4417,11 @@ function mjtKeypadHtml(t){
     const cell=UI.mjtCell, isScore=cell.k==="s";
     let who=P[cell.c]||("P"+(cell.c+1)), ctx, curVal;
     if(isScore){ ctx=(cell.r+1)+"回戦"; curVal=t.rows[cell.r][cell.c]; }
-    else if(cell.k==="cs"){ ctx="チップ開始"; curVal=(t.chipStart||[])[cell.c]; }
+    else if(cell.k==="cs"){ ctx="チップ基準"; curVal=(t.chipStart||[])[cell.c]; }   /* v6.05 */
     else if(cell.k==="ce"){ ctx="チップ終了"; curVal=(t.chipEnd||[])[cell.c]; }
     else if(cell.k==="uma"){ who="ウマ"; ctx=({uma1:"1着",uma2:"2着",uma3:"3着",uma4:"4着"})[cell.key]; curVal=t[cell.key]; }
     let disp = curVal==="x" ? "抜番" : (curVal===""||curVal==null ? "0" : curVal);
-    const dispCol = (curVal==="x") ? "var(--amber)" : (num(curVal)<0 ? "var(--red)" : num(curVal)>0 ? "var(--blue)" : "var(--text)");
+    const dispCol = (curVal==="x") ? "var(--amber)" : (cell.k==="cs" ? "var(--text)" : num(curVal)<0 ? "var(--red)" : num(curVal)>0 ? "var(--blue)" : "var(--text)");   /* v6.05: 基準は符号で色を変えない */
     const showTobi = isScore && mjtHasTobi(t);
     /* スコア入力時: ミニ表示行は撤去済み(直上の実テーブル行が選択ハイライト付きで見えるため重複) */
     let headHtml = "";
@@ -4463,6 +4524,10 @@ function viewMjPlay(){
   h += '<div class="row" style="gap:6px;margin-top:8px">'+
     '<button class="btn" data-mt="tomid" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">途中経過を表示</button>'+
     '<button class="btn" data-mt="midshare" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">画像で共有</button></div>';
+  /* v6.06: 売り買いは打っている最中に起きるので、対局モードからも記録できるように(チップを使う卓だけ) */
+  if(mjtChipStarts(t).some(x=>x!=="") || num(t.chipRate)>0 || (t.chipTrades||[]).length){
+    h += '<div style="margin-top:8px">'+mjtTradeHtml(t)+'</div>';
+  }
   h += '<div class="muted" style="font-size:11px;text-align:right;margin-top:6px">ヘッダー: 上段=合計 / 下段=1着·2着·3着'+(mjtSeats(t)>3?"·4着":"")+'の回数</div>';
   h += '<div style="height:40px"></div>';
   return h;
@@ -4492,18 +4557,45 @@ function bindMjTable(){
   document.querySelectorAll("[data-mt='pexp']").forEach(el=>{ el.oninput=e=>{ (t.pexp=t.pexp||[])[num(el.dataset.c)]=e.target.value; saveMjt(false); }; el.onchange=()=>render(); });
   document.querySelectorAll("[data-mt='framt']").forEach(el=>{ el.oninput=e=>{ const r=(t.feeRelief=t.feeRelief||[])[num(el.dataset.c)]; if(r) r.v=e.target.value; saveMjt(false); }; el.onchange=()=>render(); });
   const ftt=document.querySelector("[data-mt='ftotal']"); if(ftt) ftt.onchange=()=>render();
+  /* v6.06: 売り買いの枚数。打っても描き直さず、下の「基準: 前 → 後」だけ書き換える(描き直すとキーボードが閉じる) */
+  const trn=document.querySelector("[data-mt='trn']"); if(trn) trn.oninput=e=>{ if(UI.mjtTrade){ UI.mjtTrade.n=String(e.target.value||"").replace(/[^0-9]/g,""); const pv=document.getElementById("tr-prev"); if(pv) pv.innerHTML=mjtTradePrev(t); } };
 
   document.querySelectorAll("[data-mt]").forEach(el=>{
     const a=el.dataset.mt;
-    if(["pname","rate","fee","rname","rd","ftotal","umaabs","pexp","framt"].includes(a)) return;
+    if(["pname","rate","fee","rname","rd","ftotal","umaabs","pexp","framt","trn"].includes(a)) return;
     if(a==="hako"){ el.onchange=()=>{ t.hakoshita=el.checked; saveMjt(false); render(); }; return; }
     el.onclick=()=>{
       if(a==="umasign"){ const f=el.dataset.v; const cur=String(t[f]||""); t[f]=cur.startsWith("-")?cur.slice(1):"-"+cur; saveMjt(false); render(); return; }
       if(a==="savepreset"){ mjtSavePreset(); return; }
+      /* v6.06: チップの売り買い */
+      if(a==="tropen"){ UI.mjtTrade={from:null, to:null, n:""}; UI.mjtCell=null; render(); return; }
+      if(a==="trclose"){ UI.mjtTrade=null; render(); return; }
+      if(a==="trfrom"){ const i=num(el.dataset.v); if(!UI.mjtTrade) return; UI.mjtTrade.from=i; if(UI.mjtTrade.to===i) UI.mjtTrade.to=null; render(); return; }
+      if(a==="trto"){ const i=num(el.dataset.v); if(!UI.mjtTrade || UI.mjtTrade.from===i) return; UI.mjtTrade.to=i; render(); return; }
+      if(a==="trdo"){
+        const f=UI.mjtTrade; if(!f) return;
+        const inp=document.querySelector("[data-mt='trn']"); if(inp) f.n=String(inp.value||"").replace(/[^0-9]/g,"");
+        const n=num(f.n);
+        if(f.from==null){ toast("売った人を選んでください"); return; }
+        if(f.to==null){ toast("買った人を選んでください"); return; }
+        if(!(n>0)){ toast("枚数を入れてください"); return; }
+        const a0=mjtChipStart(t,f.from), b0=mjtChipStart(t,f.to);
+        mjtTradeApply(t, f.from, f.to, n);
+        (t.chipTrades=t.chipTrades||[]).push({id:String(uid()), from:f.from, to:f.to, n:n, at:nowHM()});
+        const msg=mjtTradeName(t,f.from)+" → "+mjtTradeName(t,f.to)+" "+n+"枚(基準 "+a0+"→"+(a0-n)+" / "+b0+"→"+(b0+n)+")";
+        UI.mjtTrade=null; saveMjt(false); render(); toast(msg); return;
+      }
+      if(a==="trundo"){
+        const x=(t.chipTrades||[]).find(y=>String(y.id)===String(el.dataset.v)); if(!x) return;
+        if(!confirm("この売り買いを取り消しますか?\n\n"+mjtTradeName(t,x.from)+" → "+mjtTradeName(t,x.to)+" "+num(x.n)+"枚\n(基準を元に戻します)")) return;
+        mjtTradeApply(t, x.to, x.from, num(x.n));
+        t.chipTrades=(t.chipTrades||[]).filter(y=>y!==x);
+        saveMjt(false); render(); toast("取り消しました"); return;
+      }
       if(a==="editpresets"){ UI.mjtEditPresets = !UI.mjtEditPresets; render(); return; }
       if(a==="applypreset"){ mjtApplyPreset(el.dataset.v); return; }
       if(a==="delpreset"){ mjtDelPreset(el.dataset.v); return; }
-      if(a==="back"){ saveMjt(true); UI.screen="mjtlist"; UI.mjt=null; UI.mjtCell=null; UI.rulesOpen=UI.chipsOpen=UI.feesOpen=null; render(); }
+      if(a==="back"){ saveMjt(true); UI.screen="mjtlist"; UI.mjt=null; UI.mjtCell=null; UI.mjtTrade=null; UI.rulesOpen=UI.chipsOpen=UI.feesOpen=null; render(); }
       else if(a==="pdf"){ mjtPrint(); }
       else if(a==="rule"){ const nv=el.dataset.v; if(nv!==t.rule && confirm((nv==="3"?"3麻":"4麻")+"に変更しますか?\nウマ・着順計算が"+(nv==="3"?"3人":"4人")+"用に変わります(スコアのデータは消えません)。")){ t.rule=nv; const seats=num(t.rule)||3; while(t.players.length<seats){ t.players.push(String.fromCharCode(65+t.players.length)); t.rows.forEach(r=>r.push("")); t.chipStart.push(""); t.chipEnd.push(""); (t.fees=t.fees||[]).push(""); } UI.mjtCell=null; saveMjt(false); render(); } }
       else if(a==="setme"){ const i=num(el.dataset.v); t.meIdx = (t.meIdx===i?null:i); saveMjt(false); render(); }
@@ -4516,6 +4608,9 @@ function bindMjTable(){
           (t.pexp||[]).splice(i,1); (t.chipLocked||[]).splice(i,1); (t.feeRelief||[]).splice(i,1);
           /* 免除の負担者indexを詰める(削除者を指していたら未選択に) */
           (t.feeRelief||[]).forEach(r=>{ if(r&&r.by!=null){ if(r.by===i) r.by=null; else if(r.by>i) r.by--; } });
+          /* v6.06: 売り買いの記録も詰める(消した人が関わる記録は消す——相手の基準はそのまま残る) */
+          t.chipTrades=(t.chipTrades||[]).filter(x=>x.from!==i&&x.to!==i).map(x=>Object.assign(x,{from:x.from>i?x.from-1:x.from, to:x.to>i?x.to-1:x.to}));
+          UI.mjtTrade=null;
           UI.pdelMode=false;
           if(t.meIdx===i) t.meIdx=null; else if(t.meIdx>i) t.meIdx--;
           UI.mjtCell=null; saveMjt(false); render();
@@ -4531,10 +4626,10 @@ function bindMjTable(){
         UI.mjtCell={k:"s",r:r,c:c}; renderKeepScroll();
         const pw=document.querySelector(".mjt-pad-wrap"); if(pw) pw.scrollIntoView({block:"nearest",behavior:"smooth"});
       }
-      else if(a==="toPlay"){ UI.mjtCell=null; UI.lockedOpen=false; UI.screen="mjplay"; render(); }
+      else if(a==="toPlay"){ UI.mjtCell=null; UI.mjtTrade=null; UI.lockedOpen=false; UI.screen="mjplay"; render(); }
       else if(a==="lkopen"){ UI.lockedOpen=true; renderKeepScroll(); }
       else if(a==="lkclose"){ UI.lockedOpen=false; UI.mjtCell=null; render(); }
-      else if(a==="toTable"){ UI.mjtCell=null; saveMjt(false); UI.screen="mjtable"; render(); }
+      else if(a==="toTable"){ UI.mjtCell=null; UI.mjtTrade=null; saveMjt(false); UI.screen="mjtable"; render(); }
       else if(a==="tosheet"){ UI.sheetMode="full"; UI.sheetFrom=UI.screen; UI.mjtCell=null; UI.screen="mjsheet"; render(); }
       else if(a==="tomid"){ UI.sheetMode="mid"; UI.sheetFrom=UI.screen; UI.mjtCell=null; UI.screen="mjsheet"; render(); }
       else if(a==="rpay"){ const cur=(t.roundPay===true?100:(num(t.roundPay)||0)); const v=num(el.dataset.v)||0; t.roundPay=(cur===v?0:v); saveMjt(false); renderKeepScroll(); }
