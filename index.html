@@ -265,7 +265,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.01 (localStorage保存・完全オフライン)
+   Tally 6.02 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -903,21 +903,47 @@ const mjUnknown = m => mjIsCash(m) ? (mjRaw(m) - mjBreakdown(m)) : 0;
    ルール名で1件にまとめ、**最後にその名前で打った時の設定**を採る。
    `S.rates`は「最後に使った1つ」しか持てないので、店を行き来すると毎回入れ直しになる。
    `feeBack`(ゲーム代バック)に至っては`S.rates`にも入っていないので、**ここでしか復元できない**。 */
+/* v6.02: **店名をルール名と別の欄に**(ユーザー要望: ルールと別に店名も入れたい。その方が管理が楽)。
+   麻雀の`store`は歴史的に**ルール名**の欄(「DUO虹」のように店とルールを1つに書いていた)。名前は変えずにそのまま使い、
+   **店名は新しい`shop`**に持つ(既存の記録は`shop`無し=店名なし。読み込み時の移行はしない——「DUO虹」を機械では割れない)。
+   ・過去のルールは**店名+ルール名**で1件にまとめる。単価やゲーム代は店ごとに違うので、同じ「東南」でも店が違えば別の設定。
+   ・一覧(全件・新しい順)を返し、何件出すかは画面側で決める(店で絞るため) */
 function mjRuleHints(){
   const m={};
   (S.mjSessions||[]).slice()
     .sort((a,b)=>String(a.date||"")<String(b.date||"")?-1:1)   /* 古い順に舐めて、後から来た方で上書き */
     .forEach(s=>{
       const n=String(s.store||"").trim(); if(!n) return;
-      m[n]={name:n, date:String(s.date||""), category:s.category||"free", rule:String(s.rule||"4"),
+      const sh=String(s.shop||"").trim();
+      m[sh+"\u0001"+n]={shop:sh, name:n, date:String(s.date||""), category:s.category||"free", rule:String(s.rule||"4"),
         scoreRate:s.scoreRate, chipRate:s.chipRate,
         baseFee:s.baseFee, topBonus:s.topBonus, feeBack:s.feeBack, drinkFee:s.drinkFee};
     });
-  return Object.keys(m).map(k=>m[k]).sort((a,b)=>a.date<b.date?1:-1).slice(0,4);
+  return Object.keys(m).map(k=>m[k]).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
 }
-/* ルールだけを draft に載せる。**スコア・着順・同卓者・経費には触らない** */
+/* v6.02: 過去の店(最後に行った日が新しい順・最大5) */
+function mjShopHints(){
+  const m={};
+  (S.mjSessions||[]).forEach(s=>{
+    const n=String(s.shop||"").trim(); if(!n) return;
+    const d=String(s.date||""); if(!(n in m) || d>m[n]) m[n]=d;
+  });
+  return Object.keys(m).sort((a,b)=>m[a]<m[b]?1:m[a]>m[b]?-1:0).slice(0,5);
+}
+/* v6.02: 店名とルール名を並べた表示名(どちらか無ければある方だけ) */
+function mjWhere(s, sep){
+  return [String((s&&s.shop)||"").trim(), String((s&&s.store)||"").trim()].filter(Boolean).join(sep==null?" ・ ":sep);
+}
+/* 家計簿の行のメモ(保存・スコア表の反映・名前の書き換えで同じ形にする) */
+function mjMemo(s){
+  const w=mjWhere(s, "・");
+  return "麻雀"+(s.category==="free"?"(フリー":"(セット")+"・"+s.rule+"麻)"+(w?" @"+w:"");
+}
+/* ルールだけを draft に載せる。**スコア・着順・同卓者・経費には触らない**。
+   v6.02: 店名は**空の時だけ**埋める——入れてある店名を、別の店のルールを押しただけで書き換えない */
 function mjApplyRule(m, r){
   m.store=r.name; m.category=r.category; m.rule=r.rule;
+  if(r.shop && !String(m.shop||"").trim()) m.shop=r.shop;
   m.scoreRate=r.scoreRate; m.chipRate=r.chipRate;
   m.baseFee=r.baseFee; m.topBonus=r.topBonus; m.feeBack=r.feeBack; m.drinkFee=r.drinkFee;
   return m;
@@ -974,7 +1000,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.01";
+const APP_VERSION = "6.02";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1177,7 +1203,7 @@ function _renderScreen(app){
   if(UI.screen==="tredit"){ app.innerHTML = viewTrEdit(); bindTrEdit(); return; }
   if(UI.screen==="mjlog"){ app.innerHTML = viewMjLog(); bindMjLog(); return; }
   if(UI.screen==="mjconf"){ app.innerHTML = viewMjConf(); bindMjConf(); return; }
-  /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う */
+  /* v4.32: ルール名別 成績(ツールタブ→専用画面)。bindはツールと同じ[data-a]系なのでbindMainを使う。v6.02: 店・ルール別 成績 */
   if(UI.screen==="monthly"){ app.innerHTML = viewMonthly(); bindMain(); return; }
   if(UI.screen==="summary"){ app.innerHTML = viewSummary(); bindMain(); return; }
   if(UI.screen==="mjstats"){ app.innerHTML = viewMjStatsPage(); bindMain(); return; }
@@ -2146,7 +2172,7 @@ function bindMjLog(){
         if(!t.settled){ toast("店での精算額を入れてください"); return; }
         const rc=[1,2,3,4].slice(0,c.seats).map(k=>String(t.rank[k]||0));
         UI.mjDraft={
-          id:uid(), date:todayStr(), store:"", category:"free", rule:String(c.seats),
+          id:uid(), date:todayStr(), shop:"", store:"", category:"free", rule:String(c.seats),
           /* v5.65: 半荘の記録は**卓の精算額**を持っていて、買った額・換金額は知らない。
              無い数字を作らず、この経路は素点(=金額)モードのままにする */
           calc:"score", inAmt:"", outAmt:"",
@@ -3156,7 +3182,7 @@ function gameRowMj(s, first){
     '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(s.category==="free"?"フリー":"セット")+'</span>'+
     '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>'+
     (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>'+
-    '<div class="muted ellip" style="font-size:11px">'+esc(s.store||"店名未入力")+'</div>'+
+    '<div class="muted ellip" style="font-size:11px">'+esc(mjWhere(s)||"店名未入力")+'</div>'+   /* v6.02: 店名 ・ ルール名 */
     '<div class="ellip" style="font-size:11px;color:var(--muted);opacity:.7;margin-top:1px">'+mjHanchan(s)+'半荘 ・ 平均'+(av!==null?av.toFixed(2):"—")+'着 ・ トップ'+topPct+'%</div>'+
     '</div>'+
     '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
@@ -3208,12 +3234,14 @@ function viewGameSessions(){
    ルールが増えると1画面に全部の詳細を積むのは無理があり、しかも累計しか見られなかった。
    一覧(ルールを選ぶ) → 詳細(累計 + 月別・月は切り替え可) に分ける。
    集計本体はmjAgg()に切り出し、期間(全期間 or 特定の月)を渡すだけで使い回す */
+/* v6.02: **店名 × フリー/セット × ルール名**で1組(同じ「東南」でも店が違えば単価もゲーム代も違うので別の組)。
+   `store`は画面に出す組の名前(ルール名。無ければ「(ルール名なし)」)、`shop`/`rule`は生の値(書き換えに使う) */
 function mjGroups(){
   const g={};
   (S.mjSessions||[]).forEach(s=>{
-    const store=(s.store||"").trim()||"(ルール名なし)";
-    const key=s.category+"|"+store;
-    (g[key]=g[key]||{key:key, category:s.category, store:store, list:[]}).list.push(s);
+    const shop=String(s.shop||"").trim(), rule=String(s.store||"").trim();
+    const key=s.category+"|"+shop+"|"+rule;
+    (g[key]=g[key]||{key:key, category:s.category, shop:shop, rule:rule, store:rule||"(ルール名なし)", list:[]}).list.push(s);
   });
   return Object.values(g).filter(G=>G.list.reduce((a,s)=>a+mjHanchan(s),0)>0)
     .sort((a,b)=>{
@@ -3287,23 +3315,37 @@ function mjStatRow(label, val, isYen, raw, unit){
 function viewMjStatsPage(){
   const gs=mjGroups();
   let h='<div class="hdr"><button class="navbtn" data-a="mjstback">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">ルール名別 成績</div><div style="width:44px"></div></div>';
+    '<div style="font-size:14px;font-weight:700">店・ルール別 成績'+
+      infoBtn("麻雀の成績を、<b>店ごと</b>に、ルール名とフリー/セットの組で分けて並べています。見出しの右の金額は、その店での収支(勝ち負け)の合計です。<br><br>"+
+        "組を押すと、累計と月ごとの成績(半荘数・平均着順・収支など)が見られます。<br><br>"+
+        "店名を入れていない記録は「店名なし」にまとまります。前に店名とルール名を1つの欄に入れていた記録(例:「DUO虹」)は、"+
+        "組を開いた先の「店名・ルール名を書き換える」で、店名「DUO」・ルール名「虹」のように<b>まとめて分けられます</b>。")+
+    '</div><div style="width:44px"></div></div>';
   if(!gs.length) return h+'<div style="text-align:center;padding:24px 0;font-size:12px" class="muted">まだ記録がありません。</div>';
-  gs.forEach(G=>{
-    const A=mjAgg(G.list), catC=G.category==="free"?"var(--red)":"var(--amber)";
-    const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
-    const rankCol=r2<line?"teal":(r2>line?"red":"amber");
-    const avg=Math.round(A.final/A.H);
-    h+='<div class="card" style="margin-bottom:8px;cursor:pointer" data-a="mjstopen" data-v="'+esc(G.key)+'">'+
-      '<div class="row between" style="align-items:center;gap:8px">'+
-      '<div class="row" style="align-items:center;gap:6px;min-width:0">'+
-      '<span class="tag" style="border:1px solid '+catC+';color:'+catC+';flex-shrink:0">'+(G.category==="free"?"フリー":"セット")+'</span>'+
-      '<span class="ellip" style="font-weight:700;font-size:13px">'+esc(G.store)+'</span></div>'+
-      '<span style="font-size:18px;color:var(--muted);flex-shrink:0">›</span></div>'+
-      '<div class="row between" style="margin-top:8px;font-size:11px">'+
-      '<span class="muted">'+A.H+'半荘 / '+A.days+'日</span>'+
-      '<span><span class="muted">平均着順 </span><span class="mono '+rankCol+'" style="font-weight:700">'+A.avgRank.toFixed(2)+'</span>'+
-      '<span class="muted">　平均収支 </span><span class="mono '+clsPM(avg)+'" style="font-weight:700">'+signYen(avg)+'</span></span></div></div>';
+  /* v6.02: 店ごとに見出しを立てる。並びは半荘数の多い店から(店名なしは最後)。組の並び(フリー先・半荘数順)はmjGroupsのまま */
+  const byShop={};
+  gs.forEach(G=>{ (byShop[G.shop]=byShop[G.shop]||[]).push(G); });
+  const hOf=list=>list.reduce((a,G)=>a+G.list.reduce((x,s)=>x+mjHanchan(s),0),0);
+  Object.keys(byShop).sort((a,b)=>{ if(!a!==!b) return a?-1:1; return hOf(byShop[b])-hOf(byShop[a]); }).forEach(sh=>{
+    const list=byShop[sh];
+    const tot=list.reduce((a,G)=>a+G.list.reduce((x,s)=>x+mjFinal(s),0),0);
+    h+=band(sh||"店名なし", '<span class="mono '+clsPM(tot)+'" style="font-size:12px;font-weight:700">'+signYen(tot)+'</span>');
+    list.forEach(G=>{
+      const A=mjAgg(G.list), catC=G.category==="free"?"var(--red)":"var(--amber)";
+      const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
+      const rankCol=r2<line?"teal":(r2>line?"red":"amber");
+      const avg=Math.round(A.final/A.H);
+      h+='<div class="card" style="margin-bottom:8px;cursor:pointer" data-a="mjstopen" data-v="'+esc(G.key)+'">'+
+        '<div class="row between" style="align-items:center;gap:8px">'+
+        '<div class="row" style="align-items:center;gap:6px;min-width:0">'+
+        '<span class="tag" style="border:1px solid '+catC+';color:'+catC+';flex-shrink:0">'+(G.category==="free"?"フリー":"セット")+'</span>'+
+        '<span class="ellip" style="font-weight:700;font-size:13px">'+esc(G.store)+'</span></div>'+
+        '<span style="font-size:18px;color:var(--muted);flex-shrink:0">›</span></div>'+
+        '<div class="row between" style="margin-top:8px;font-size:11px">'+
+        '<span class="muted">'+A.H+'半荘 / '+A.days+'日</span>'+
+        '<span><span class="muted">平均着順 </span><span class="mono '+rankCol+'" style="font-weight:700">'+A.avgRank.toFixed(2)+'</span>'+
+        '<span class="muted">　平均収支 </span><span class="mono '+clsPM(avg)+'" style="font-weight:700">'+signYen(avg)+'</span></span></div></div>';
+    });
   });
   return h;
 }
@@ -3311,7 +3353,7 @@ function viewMjStatsPage(){
 function viewMjStatDetail(){
   const G=mjGroups().find(x=>String(x.key)===String(UI.mjStatKey));
   let h='<div class="hdr"><button class="navbtn" data-a="mjstlist">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">'+(G?esc(G.store):"成績")+'</div><div style="width:44px"></div></div>';
+    '<div style="font-size:14px;font-weight:700" class="ellip">'+(G?esc(G.shop?G.shop+" ・ "+G.store:G.store):"成績")+'</div><div style="width:44px"></div></div>';
   if(!G) return h+'<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">この記録は見つかりません。</div>';
   const catC=G.category==="free"?"var(--red)":"var(--amber)";
   h+='<div class="row" style="align-items:center;gap:6px;margin-bottom:12px">'+
@@ -3335,6 +3377,8 @@ function viewMjStatDetail(){
         '<div class="muted" style="font-size:11px;margin-bottom:8px">'+A.H+'半荘 / '+A.days+'日</div>'+
         mjAggHtml(A)+'</div>'
       : '<div class="muted" style="text-align:center;padding:18px 0;font-size:12px">この月の記録はありません。</div>';
+  /* v6.02: **この組の記録の店名・ルール名をまとめて書き換える**(店名の欄ができる前の「DUO虹」を 店名DUO・ルール名虹 に分けるため) */
+  h+='<button class="btn full" style="margin-top:14px;padding:11px 0;font-size:12px" data-a="mjstren">この組の店名・ルール名を書き換える('+G.list.length+'件)</button>';
   return h;
 }
 /* ---------- 麻雀スコア表 一覧(専用画面) ---------- */
@@ -3513,7 +3557,7 @@ function viewTool(){
     ((S.mjTables||[]).length?'<div class="muted mono" style="font-size:11px;margin-top:2px">'+(S.mjTables||[]).length+'件</div>':'')+'</div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += '<div class="card" data-a="mjstats" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div>'+
-    '<div style="font-size:13px;font-weight:600">ルール名別 成績</div></div>'+
+    '<div style="font-size:13px;font-weight:600">店・ルール別 成績</div></div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   /* パチスロ */
   h += band("パチスロ");
@@ -4604,6 +4648,8 @@ function mjtToKakei(){
     startAt:t.startAt||"",
     endAt:t.endAt||"",
     memo:(prev[0]&&prev[0].memo)||"",
+    /* v6.02: 店名もスコア表には欄が無いので、記録の側で入れた値を引き継ぐ(反映し直しで消さない) */
+    shop:(prev[0]&&prev[0].shop)||"",
     /* v5.74: 置き場(と分け先)も私的フィールドとして引き継ぐ。
        これまで置き場を選んでも、表から反映し直すと**先頭の置き場に戻っていた**(同じ穴を一緒に塞ぐ) */
     bwal:(prev[0]&&prev[0].bwal)||undefined,
@@ -4615,7 +4661,7 @@ function mjtToKakei(){
   if(!sess.bwal) delete sess.bwal;
   if(!sess.splits) delete sess.splits;
   writeGameEntries(linkId, {date:sess.date, src:"mahjong", category:"遊技",
-    memo:"麻雀(セット・"+sess.rule+"麻)"+(sess.store?" @"+sess.store:"")}, fin, sess);   /* v5.74 */
+    memo:mjMemo(sess)}, fin, sess);   /* v5.74 / v6.02: メモはmjMemo(店名も入る) */
   t.reflectedKey = pi+":"+c.net;   /* 反映済みキー: スコア/チップ/レート編集で自動的に未反映へ戻る */
   save();
   render();
@@ -7372,15 +7418,33 @@ function viewMj(){
   let h = '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">'+(UI.mjIsNew?"麻雀を記録":"麻雀を編集")+'</div>'+
     (!UI.mjIsNew?'<button class="navbtn" style="color:var(--red);font-weight:700" data-a="mjdel">削除</button>':'<div style="width:44px"></div>')+'</div>';
+  /* v6.02: 1行目は 日付+店名(パチスロの稼働と同じ並び)。ルール名は次の行に1本で */
   h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
     '<input class="input" type="date" id="mj-date" value="'+esc(m.date)+'" style="flex:1">'+
-    '<input class="input" id="mj-store" placeholder="ルール名(例:4麻赤有)" value="'+esc(m.store)+'" style="flex:1.4"></div>';
-  /* v5.62: 過去のルール。**履歴が無いうちは何も出さない**(空の棚を置かない) */
-  { const _rh=mjRuleHints();
+    '<input class="input" id="mj-shop" placeholder="店名" value="'+esc(m.shop||"")+'" style="flex:1.4"></div>';
+  /* v6.02: 過去の店。押すと店名が入り、下の「過去のルール」がその店のものに絞られる */
+  { const _sh=mjShopHints().filter(n=>n!==String(m.shop||"").trim());
+    if(_sh.length){
+      h += '<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">'+
+        '<span class="muted" style="font-size:11px">過去の店</span>'+
+        _sh.map(n=>'<button class="chip" data-a="mjshop" data-v="'+esc(n)+'">'+esc(n)+'</button>').join("")+
+        '</div>';
+    } }
+  h += '<input class="input" id="mj-store" placeholder="ルール名(例:4麻赤有)" value="'+esc(m.store||"")+'" style="margin-bottom:10px">';
+  /* v5.62: 過去のルール。**履歴が無いうちは何も出さない**(空の棚を置かない)。
+     v6.02: 店名が入っていて、その店の履歴があれば**その店のルールだけ**(名前だけ表示)。
+     無ければ全部の店から新しい順(どの店の設定か分かるよう店名を添える)。押すと店名が空の時は店名も入る */
+  { const _all=mjRuleHints(), _sh=String(m.shop||"").trim();
+    const _own=_sh ? _all.filter(r=>r.shop===_sh) : [];
+    const _rh=(_own.length ? _own : _all).slice(0,4);
     if(_rh.length){
       h += '<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">'+
         '<span class="muted" style="font-size:11px">過去のルール</span>'+
-        _rh.map(r=>'<button class="chip'+(String(m.store||"").trim()===r.name?' sel':'')+'" data-a="mjrhint" data-v="'+esc(r.name)+'">'+esc(r.name)+'</button>').join("")+
+        _rh.map(r=>{
+          const lab=(_own.length || !r.shop) ? r.name : r.shop+" "+r.name;
+          const sel=String(m.store||"").trim()===r.name && _sh===r.shop;
+          return '<button class="chip'+(sel?' sel':'')+'" data-a="mjrhint" data-v="'+_all.indexOf(r)+'">'+esc(lab)+'</button>';
+        }).join("")+
         '</div>';
     } }
   h += '<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">'+
@@ -7638,6 +7702,7 @@ function bindMj(){
   const m = UI.mjDraft;
   document.getElementById("mj-date").oninput = e=>m.date=e.target.value;
   document.getElementById("mj-store").oninput = e=>m.store=e.target.value;
+  { const _ms=document.getElementById("mj-shop"); if(_ms) _ms.oninput = e=>m.shop=e.target.value; }   /* v6.02 */
   const mts=document.getElementById("mj-tstart"); if(mts) mts.oninput = e=>m.startAt=e.target.value;
   const mte=document.getElementById("mj-tend"); if(mte) mte.oninput = e=>m.endAt=e.target.value;
   document.querySelectorAll("[data-in]").forEach(el=>{
@@ -7682,18 +7747,20 @@ function bindMj(){
       /* v5.62: 過去のルールを反映。**単価が変われば入っている金額の意味も変わる**ので、
          金額が入っている時だけ 変更前→変更後 を見せて確かめる——
          半荘の記録から来た卓は単価1(スコア欄=円)で、そこにレート30を当てると**黙って30倍**になる */
+      /* v6.02: 店名のチップ。店名だけを入れ、描き直して「過去のルール」をその店に絞る(単価には触らない) */
+      else if(a==="mjshop"){ m.shop=String(v||""); render(); }
       else if(a==="mjrhint"){
-        const r=mjRuleHints().find(x=>x.name===String(v)); if(!r) return;
+        const r=mjRuleHints()[num(v)]; if(!r) return;   /* v6.02: 店名+ルール名で別物になったので、名前ではなく一覧の位置で引く */
         const hasNum=(String(m.score||"").trim()!=="" || String(m.chips||"").trim()!=="");
         if(hasNum){
           const before=mjFinal(m);
           const after=mjFinal(mjApplyRule(Object.assign({},m), r));
-          if(before!==after && !confirm(r.name+" を反映すると金額が変わります。\n\n"+
+          if(before!==after && !confirm(mjWhere({shop:r.shop,store:r.name})+" を反映すると金額が変わります。\n\n"+
              signYen(before)+" → "+signYen(after)+"\n\n反映しますか?")) return;
         }
         mjApplyRule(m, r);
         render();
-        toast(r.name+" を反映("+r.rule+"麻・"+(r.category==="free"?"フリー":"セット")+
+        toast(mjWhere({shop:r.shop,store:r.name})+" を反映("+r.rule+"麻・"+(r.category==="free"?"フリー":"セット")+
           "・単価"+(r.scoreRate||"-")+"/チップ"+(r.chipRate||"-")+")");
       }
       /* v5.65: 入れ方の切り替え。**金額が変わるなら変更前→変更後を見せて確かめる** */
@@ -7809,7 +7876,7 @@ function saveMj(){
   const fin = mjFinal(cleaned);
   /* v5.74: 置き場を分けていれば分け先ごとに書く(分けていなければ従来と同じ1行) */
   writeGameEntries(linkId, {date:cleaned.date, src:"mahjong", category:"遊技",
-    memo:"麻雀"+(cleaned.category==="free"?"(フリー":"(セット")+"・"+cleaned.rule+"麻)"+(cleaned.store?" @"+cleaned.store:"")}, fin, cleaned);
+    memo:mjMemo(cleaned)}, fin, cleaned);   /* v6.02: 店名も入れる(メモの形はmjMemoの1箇所) */
   /* 家計簿からの振替: 選択元の記録をここで削除(保存とワンセット) */
   const _xf = new Set((cleaned.expenses||[]).map(x=>String(x.fromEntry)).filter(x=>x!=="undefined"&&x!=="null"));
   if(_xf.size) S.entries = S.entries.filter(e=>!_xf.has(String(e.id)));
@@ -7875,6 +7942,23 @@ function bindMain(){
       else if(a==="mjstats"){ UI.screen="mjstats"; render(); }
       else if(a==="mjstopen"){ UI.mjStatKey=v; UI.mjStatMonth=null; UI.screen="mjstatd"; render(); }
       else if(a==="mjstlist"){ UI.screen="mjstats"; render(); }
+      /* v6.02: 組の店名・ルール名をまとめて書き換える。同じ店名・ルール名・フリー/セットの組があれば1つにまとまる */
+      else if(a==="mjstren"){
+        const G=mjGroups().find(x=>String(x.key)===String(UI.mjStatKey)); if(!G) return;
+        const sh=prompt("店名(空欄なら店名なし)", G.shop); if(sh===null) return;
+        const rn=prompt("ルール名", G.rule); if(rn===null) return;
+        const nsh=sh.trim(), nrn=rn.trim();
+        if(nsh===G.shop && nrn===G.rule) return;
+        const to=mjWhere({shop:nsh, store:nrn})||"店名・ルール名なし";
+        if(!confirm(G.list.length+"件の記録を「"+to+"」に書き換えます。\n\n収支や着順は変わりません。")) return;
+        G.list.forEach(x=>{
+          x.shop=nsh; x.store=nrn;
+          /* 家計簿の行のメモも同じ形に直す(分け先の行は「→ 置き場」を残す) */
+          (S.entries||[]).forEach(e=>{ if(isLinkOf(e,"mj-"+x.id)) e.memo=mjMemo(x)+(String(e.id).indexOf("~")>0?" → "+bankName(e.bwal):""); });
+        });
+        UI.mjStatKey=G.category+"|"+nsh+"|"+nrn;
+        save(); render(); toast(G.list.length+"件を「"+to+"」にしました");
+      }
       else if(a==="mjstprev"||a==="mjstnext"){
         const G=mjGroups().find(x=>String(x.key)===String(UI.mjStatKey)); if(!G) return;
         const ms=[...new Set(G.list.map(x=>String(x.date||"").slice(0,7)))].filter(Boolean).sort();
@@ -7895,7 +7979,7 @@ function bindMain(){
         UI.screen="entry"; render();
       }
       else if(a==="mjnew"){ UI.tab="games"; 
-          UI.mjDraft={id:uid(),date:todayStr(),store:"",category:"free",rule:"4",startAt:"",endAt:"",
+          UI.mjDraft={id:uid(),date:todayStr(),shop:"",store:"",category:"free",rule:"4",startAt:"",endAt:"",
             calc:"cash", inAmt:"", outAmt:"",   /* v5.65: 新規は金額で入れるのが既定 */
             score:S.rates.mjScore!==undefined?"":"", chips:"",
             scoreRate:S.rates.mjScore||"", chipRate:S.rates.mjChip||"",
