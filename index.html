@@ -268,7 +268,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.07 (localStorage保存・完全オフライン)
+   Tally 6.08 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1011,7 +1011,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.07";
+const APP_VERSION = "6.08";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -8760,11 +8760,22 @@ function viewEntry(){
        押す位置が毎回ずれる。auto-fitなので財布が増減しても等幅のまま折り返す */
     /* v5.72: 遊技の経費は財布が1つでも見せる(どこから出たかを必ず目で確かめられるように) */
     if(walletPots().length>1 || _bk || _gcat){
-      walHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+(f.type==="income"?"どの財布に入る":"どの財布から出す")+'</div>'+
+      /* v6.08【修正】(ユーザー指摘: 軍資金に入れようとすると二重に選択されて見える)。
+         収入の行き先に軍資金の置き場・貯金の箱を選ぶと、財布(経由)と行き先の**両方が同じ琥珀の選択**で出ていた。
+         データは正しい(財布にいったん入って移す・財布は増減ゼロ・v5.95)が、2か所に入るように読める。
+         行き先がある時は見出しを「経由する財布」にし、財布は**点線の枠**で示すだけにする(琥珀の選択は行き先の1つだけ)。
+         財布を隠さない(v4.93のように)のは、照合でこの財布の明細と突き合わせるため——銀行振込なら銀行、現金なら現金を選べる必要がある */
+      const _via = (f.type==="income") && !!(String(f.bkSrc||"") || String(f.svPot||""));
+      walHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+
+          (f.type==="income" ? (_via ? "経由する財布"+infoBtn("軍資金や貯金に入れる収入は、<b>いったんこの財布に入ってから移す</b>扱いです。財布の残高は増えも減りもしません。<br><br>照合(銀行などの明細との突き合わせ)では、この財布の明細と突き合わせます。銀行振込で受け取ったなら銀行、現金で受け取ったなら現金を選んでください。") : "どの財布に入る") : "どの財布から出す")+'</div>'+
         gridOpen+
-        walletPots().map(w=>'<button class="btn '+((f.type==="income"||!_bk)&&cur===String(w.id)?"sel":"")+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
+        walletPots().map(w=>{
+          const on=cur===String(w.id);
+          const cls=(_via ? "" : (((f.type==="income"||!_bk)&&on)?"sel":""));
+          return '<button class="btn '+cls+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px'+(_via&&on?';border:1px dashed var(--muted);color:var(--text)':'')+'">'+
           '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
-          '<span class="mono muted" style="font-size:11px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+          '<span class="mono muted" style="font-size:11px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>';
+        }).join("")+'</div>';
     }
     if(_bkOpts){
       /* v5.75: 金の動きの説明は見出しのⓘへ(選ぶたびに本文へ1行出していた) */
@@ -8787,10 +8798,10 @@ function viewEntry(){
     const cell=(sel,a,id,name,bal)=>'<button class="btn '+(sel?"sel":"")+'" data-a="'+a+'" data-v="'+esc(id)+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
       '<span class="ellip" style="display:block">'+esc(name)+'</span><span class="mono muted" style="font-size:11px;display:block">¥'+bal.toLocaleString("ja-JP")+'</span></button>';
     if(bankPots().length) inHtml+='<div class="muted" style="font-size:11px;margin-bottom:5px">軍資金に入れる'+
-      infoBtn("受け取ったお金を、<b>軍資金</b>(遊技専用に分けて管理しているお金)の置き場に入れます。<br><br>上で選んだ財布にいったん入り、そこから軍資金へ振り替える扱いです。財布の残高は増えも減りもせず、置き場だけが増えます。軍資金の画面の「今月の振替」にも、生活のお金から入ったお金として数えます。<br><br>収入として数えるかどうかは、上の分類で決まります(一部負担・立替精算は数えません)。同じ置き場をもう一度押すと外せます。")+'</div>'+
+      infoBtn("受け取ったお金を、<b>軍資金</b>(遊技専用に分けて管理しているお金)の置き場に入れます。<br><br>上の「経由する財布」にいったん入り、そこから軍資金へ振り替える扱いです。財布の残高は増えも減りもせず、置き場だけが増えます。軍資金の画面の「今月の振替」にも、生活のお金から入ったお金として数えます。<br><br>収入として数えるかどうかは、上の分類で決まります(一部負担・立替精算は数えません)。同じ置き場をもう一度押すと外せます。")+'</div>'+
       grid+bankPots().map(b=>cell(_ib===String(b.id),"ebk",b.id,b.name,bankBalance(b.id))).join("")+'</div>';
     if(savingsPots().length) inHtml+='<div class="muted" style="font-size:11px;margin-bottom:5px">貯金に入れる'+
-      infoBtn("受け取ったお金を、<b>貯金の箱</b>(目的別に分けた貯金)に入れます。例: 旅行費を家族に一部負担してもらった分を、旅行の箱に戻す。<br><br>上で選んだ財布にいったん入り、そこから箱へ入れる扱いです。財布の残高は増えも減りもせず、箱だけが増えます。<br><br>分類が一部負担・立替精算なら、今月の先取り貯金の実績には数えません(自分の収入から貯めたお金ではないため)。同じ箱をもう一度押すと外せます。")+'</div>'+
+      infoBtn("受け取ったお金を、<b>貯金の箱</b>(目的別に分けた貯金)に入れます。例: 旅行費を家族に一部負担してもらった分を、旅行の箱に戻す。<br><br>上の「経由する財布」にいったん入り、そこから箱へ入れる扱いです。財布の残高は増えも減りもせず、箱だけが増えます。<br><br>分類が一部負担・立替精算なら、今月の先取り貯金の実績には数えません(自分の収入から貯めたお金ではないため)。同じ箱をもう一度押すと外せます。")+'</div>'+
       grid+savingsPots().map(p=>cell(_ip===String(p.id),"espot",p.id,p.name,savingsBalance(p.id))).join("")+'</div>';
   }
   /* v4.85: **貯金の箱から払えるようにする**(ユーザー指摘: 大阪旅行の貯金から払ったのに選べない)。
