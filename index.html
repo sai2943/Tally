@@ -268,7 +268,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.09 (localStorage保存・完全オフライン)
+   Tally 6.10 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -849,8 +849,19 @@ function xferRowsHtml(list, act){
 const xferHint = () => '<div class="row" style="align-items:center;margin:8px 2px 0"><span class="muted" style="font-size:11px">家計簿の支出から選ぶ</span>'+
   infoBtn("家計簿にすでに記録してある支出(この日の前後3日分)を、この稼働(1回分の遊技の記録)の<b>経費</b>として取り込みます。<br><br>取り込んだ支出は、稼働を保存した時に<b>家計簿からは削除</b>されます。同じ支出が家計簿と稼働の両方に残って、二重に数えられるのを防ぐためです。")+'</div>';
 /* 乗り打ちの折半調整: myShareが入力されていればそれを自分の取り分に使う(なければ折半) */
+/* v6.10: **iPhoneの数字キーボードには「−」が無い**(ユーザー指摘: 負けた日に取り分をマイナスで入れられない)。
+   符号はボタンで持ち、欄には数字だけを打つ。myShare は "-123" / "123" / ""(=折半) のどれか。
+   数字を打つ前に符号だけ切り替えた時は "-" か "+" を一時的に持つ(数字が無いうちは折半のまま。保存時に消す)。
+   **符号の既定は折半(=2人合計)の符号**——負けた日はそのまま数字を打てばマイナスで入る。
+   数字の読み方は従来の num() と同じ(先頭の数字の並びだけ。"1234.5"→1234) */
 const halfSplit = s => Math.round(poolTotal(s)/2);
-const myShare = s => (s.myShare!==undefined && s.myShare!=="") ? num(s.myShare) : halfSplit(s);
+const shareRaw = s => String(s.myShare==null?"":s.myShare).trim();
+const shareDigits = s => { const m=shareRaw(s).match(/\d+/); return m?m[0]:""; };
+const shareNeg = s => { const v=shareRaw(s);
+  return v.startsWith("-") ? true : v.startsWith("+") ? false : shareDigits(s)!=="" ? false : halfSplit(s)<0; };
+const shareSet = (s, d, neg) => { const defNeg = halfSplit(s)<0;
+  s.myShare = d!=="" ? (neg?"-":"")+d : (neg!==defNeg ? (neg?"-":"+") : ""); };
+const myShare = s => { const d=shareDigits(s); if(d==="") return halfSplit(s); const n=num(d); return (shareNeg(s)&&n)? -n : n; };
 const partnerShare = s => poolTotal(s) - myShare(s);
 /* 家計簿へ流れる自分の生収支(経費前) */
 const grossOwn = s => s.mode==="dai" ? num(s.fee)
@@ -1027,7 +1038,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.09";
+const APP_VERSION = "6.10";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -9399,12 +9410,18 @@ function sessionSummary(s){
     h += srow("2人合計", poolTotal(s));
     /* 折半調整: 自分の取り分を編集可、相方は残りを自動 */
     const half = halfSplit(s), mine = myShare(s), theirs = partnerShare(s);
-    const adjusted = (s.myShare!==undefined && s.myShare!=="" && num(s.myShare)!==half);
+    /* v6.10: 符号はボタン、欄は数字だけ(iPhoneの数字キーボードに「−」が無い)。
+       薄い数字(placeholder)は折半の額。符号を折半と逆にしてまだ数字が無い時は、食い違って見えるので出さない */
+    const dig = shareDigits(s), neg = shareNeg(s);
+    const adjusted = dig!=="" && mine!==half;
+    const ph = neg===(half<0) ? String(Math.abs(half)) : "";
     h += '<div class="row between" style="align-items:center;font-size:13px;margin:8px 0 4px">'+
-      '<span class="muted">自分の取り分</span>'+
+      '<span class="muted">自分の取り分'+infoBtn("乗打(2人で打って、勝ち負けを合わせてから分けること)での、<b>あなたの分の勝ち負け</b>です。<br><br>空欄のままなら<b>2人合計の半分</b>(欄に薄く出ている額)になります。分け方を変えた時だけ金額を入れてください。相方の取り分は、2人合計からこの額を引いて自動で出します。<br><br>欄には数字だけを入れ、プラスかマイナスかは左のボタンで切り替えます。2人合計がマイナスの日は、最初からマイナスになっています。")+'</span>'+
       '<div class="row" style="align-items:center;gap:6px">'+
+      '<button class="signbtn" style="width:34px;height:34px;border:1.5px solid '+(neg?"var(--red)":"var(--teal)")+';color:'+(neg?"var(--red)":"var(--teal)")+
+      ';background:'+(neg?"rgba(229,115,115,.1)":"rgba(45,212,191,.1)")+'" data-a="sharesign" aria-label="プラスとマイナスを切り替え">'+(neg?"−":"＋")+'</button>'+
       '<span class="mono muted" style="font-size:12px">¥</span>'+
-      '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="'+half+'" value="'+esc(s.myShare!==undefined?s.myShare:"")+'" style="width:100px" data-in="myshare">'+
+      '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="'+ph+'" value="'+esc(dig)+'" style="width:100px" data-in="myshare">'+
       '</div></div>';
     h += '<div class="row between" style="font-size:12px;margin:2px 0 4px"><span class="muted">'+esc((s.partnerName||"").trim()||"相方")+'の取り分(自動)</span>'+
       '<span class="mono '+clsPM(theirs)+'">'+signYen(theirs)+'</span></div>';
@@ -9773,7 +9790,9 @@ function bindSession(){
       else if(kind==="exchange"){ s.exchange=el.value; refreshSlot(); }
       else if(kind==="pexchange"){ s.pExchange=el.value; refreshSlot(); }
 
-      else if(kind==="myshare"){ s.myShare=el.value; refreshSlot(); }
+      else if(kind==="myshare"){   /* v6.10: 数字だけ拾い、符号はボタンの状態(PCで「-」を打った時だけはマイナスにする) */
+        const raw=String(el.value==null?"":el.value), m=raw.match(/\d+/);
+        shareSet(s, m?m[0]:"", /^\s*-/.test(raw) ? true : shareNeg(s)); refreshSlot(); }
       else if(kind==="xstore"||kind==="xitem"||kind==="xamount"){
         const x = s.expenses.find(e=>String(e.id)===String(v));
         if(!x) return;
@@ -9847,7 +9866,9 @@ function refreshSlot(){
 }
 function refreshSummary(){
   const el = document.getElementById("ssummary");
-  if(el) el.innerHTML = sessionSummary(UI.draft);
+  /* v6.10: 中身を作り直すと、中の入力欄・ボタン(乗打の「自分の取り分」と＋/−)の結び付けが外れる。
+     v6.09までは経費を打った後に取り分の欄が反応しなくなっていた。作り直したら結び直す(bindSessionは何度呼んでも同じ結果) */
+  if(el){ el.innerHTML = sessionSummary(UI.draft); bindSession(); }
 }
 function refreshPanel(m, keepInputs){
   const el = document.getElementById("mpanel-"+m.id);
@@ -9888,6 +9909,7 @@ function bindSessionActions(){
       else if(a==="mode"){ s.mode=v; render(); }
       else if(a==="pname"){ s.partnerName=v; render(); }
       else if(a==="sstore"){ s.store=v; render(); }
+      else if(a==="sharesign"){ shareSet(s, shareDigits(s), !shareNeg(s)); render(); }   /* v6.10: 自分の取り分の＋/− */
       else if(a==="lottery"){ s.lotteryOnly=!s.lotteryOnly; render(); }
       else if(a==="applystore"){
         const st=(S.stores||[]).find(x=>String(x.id)===String(v));
@@ -9973,6 +9995,8 @@ function saveSession(){
   const cleaned = Object.assign({}, s, {
     fee: String(num(s.fee))
   });
+  /* v6.10: 符号だけ("-" "+")の取り分は残さない(数字が無ければ折半)。他の読み手が num("-")=0 と読まないように */
+  if(cleaned.myShare!==undefined){ const _d=shareDigits(cleaned); cleaned.myShare = _d==="" ? "" : (shareNeg(cleaned)?"-":"")+_d; }
   const _rs = cleaned._restore||[]; delete cleaned._restore;
   delete cleaned.own; delete cleaned.partner; delete cleaned.results;
   if(cleaned.mode==="dai") delete cleaned.splits; else gspClean(cleaned);   /* v5.74: 代打は所持金へ入るので分けない */
