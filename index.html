@@ -268,7 +268,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.08 (localStorage保存・完全オフライン)
+   Tally 6.09 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -973,6 +973,22 @@ const modeShort = m => m==="nori" ? "乗打" : m==="dai" ? "代打" : "単独";
    台に入った玉(回転率用) = プッシュ数×払出玉 + 開始残玉 − 当たり時残玉
    引き落とし玉(コスト用) = プッシュ数×引き落とし玉 + 開始残玉 − 当たり時残玉 */
 const segPushes = g => Math.max(0, num(g.rpStart) - num(g.rpEnd));
+/* v6.09: **区間を足した時、開始 残プッシュ = 前の区間の終了 残プッシュ**(ユーザー要望)。貯玉のプッシュ数は区間をまたいで続くので、毎回同じ数を打ち直していた。
+   残玉・回転数は引き継がない(当たりの出玉で残玉は変わり、回転数は当たりで0に戻ることが多い)。
+   自動で入れた開始(`rpAuto`)は、**前の区間の終了を後から入れた・直した時も追いかける**。開始を手で直したら追いかけるのをやめる */
+function segNew(segs, extra){
+  const prev=(segs||[])[(segs||[]).length-1];
+  const carry=prev ? String(prev.rpEnd==null?"":prev.rpEnd).trim() : "";
+  return Object.assign({id:uid(), sb:"", ss:"", eb:"", es:"", rpStart:carry, rpEnd:"", rpAuto:true}, extra||{});
+}
+/* 区間の欄を書き換えた後に呼ぶ。開始の値を書き換えた次の区間を返す(画面の欄も直すため)。無ければnull */
+function segFollow(segs, g, k){
+  if(k==="rpStart"){ g.rpAuto=false; return null; }
+  if(k!=="rpEnd") return null;
+  const i=(segs||[]).indexOf(g), nx=(segs||[])[i+1];
+  if(nx && nx.rpAuto){ nx.rpStart=String(g.rpEnd==null?"":g.rpEnd); return nx; }
+  return null;
+}
 const cashBalls = (g, s) => num(g.cash)>0 ? num(g.cash)*fnum((s&&s.genkin)||250)/1000 : 0;   // 現金投資額→玉(貸出レート、削り対応)
 const segUsed = (g, s) => { s=s||UI.draft; return Math.max(0, segPushes(g)*num((s&&s.pushPayout)||230) + cashBalls(g,s) + num(g.sb) - num(g.eb)); };
 const segCost = (g, s) => { s=s||UI.draft; return Math.max(0, segPushes(g)*num((s&&s.pushDraw)||245) + cashBalls(g,s) + num(g.sb) - num(g.eb)); };
@@ -1011,7 +1027,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.08";
+const APP_VERSION = "6.09";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -9700,7 +9716,10 @@ function updateBtPanel(){
 function bindBorderTool(){
   const m = S.borderTool;
   document.querySelectorAll("[data-bi]").forEach(el=>{ el.oninput=e=>{ m[el.dataset.bi]=e.target.value; saveLocal(); if(el.dataset.bi==="name") render(); }; el.onchange=()=>{ if(el.dataset.bi==="name"){ save(); render(); } else { save(); updateBtPanel(); } }; });
-  document.querySelectorAll("[data-bseg]").forEach(el=>{ el.oninput=e=>{ const [gid,k]=el.dataset.bseg.split("|"); const g=(m.segments||[]).find(x=>String(x.id)===String(gid)); if(g){ g[k]=e.target.value; if(!m.startedAt && e.target.value!=="") m.startedAt=Date.now(); saveLocal(); updateBtPanel(); } }; el.onchange=()=>{ save(); }; });
+  document.querySelectorAll("[data-bseg]").forEach(el=>{ el.oninput=e=>{ const [gid,k]=el.dataset.bseg.split("|"); const g=(m.segments||[]).find(x=>String(x.id)===String(gid)); if(g){ g[k]=e.target.value;
+    /* v6.09: 終了 残プッシュを打ったら、自動で入れた次の区間の開始も同じ数に(描き直さずに欄だけ直す) */
+    const nx=segFollow(m.segments, g, k); if(nx){ const ne=document.querySelector('[data-bseg="'+nx.id+'|rpStart"]'); if(ne) ne.value=nx.rpStart; }
+    if(!m.startedAt && e.target.value!=="") m.startedAt=Date.now(); saveLocal(); updateBtPanel(); } }; el.onchange=()=>{ save(); }; });
   document.querySelectorAll("[data-bstart]").forEach(el=>{ el.onchange=e=>{ const v=e.target.value; if(v){ const p=v.split(":"); const d=new Date(); d.setHours(Number(p[0])||0, Number(p[1])||0, 0, 0); m.startedAt=d.getTime(); save(); render(); } }; });
   document.querySelectorAll("[data-in='mborder']").forEach(el=>{ el.oninput=e=>{ m.border=e.target.value; saveLocal(); }; el.onchange=()=>{ save(); render(); }; });
   document.querySelectorAll("[data-in='mty']").forEach(el=>{ el.oninput=e=>{ m.ty=e.target.value; saveLocal(); }; el.onchange=()=>{ save(); render(); }; });
@@ -9721,7 +9740,7 @@ function bindBorderTool(){
           "区間  "+_segN+"件\n\n"+
           "開始時刻・休憩も消えます。\n"+
           "レート・削り率は残ります。")){ S.borderTool={id:"bt",kind:"pachi",name:"",segments:[],border:"",ty:"",pushPayout:m.pushPayout,pushDraw:m.pushDraw,kezuri:m.kezuri,kachi:m.kachi,genkin:m.genkin,rph:m.rph,startedAt:0,breakMin:""}; save(); render(); } }
-      else if(a==="btgadd"){ (m.segments=m.segments||[]).push({id:uid(),sb:"",ss:"",eb:"",es:"",rpStart:"",rpEnd:"",cash:""}); save(); render(); }
+      else if(a==="btgadd"){ (m.segments=m.segments||[]).push(segNew(m.segments,{cash:""})); save(); render(); }   /* v6.09: 開始 残プッシュを前の区間の終了から */
       else if(a==="btgdel"){ m.segments=(m.segments||[]).filter(x=>String(x.id)!==String(v)); save(); render(); }
       else if(a==="startnow"){ m.startedAt=Date.now(); save(); render(); }
       else if(a==="btpick"){ const x=(S.mdb||[]).find(z=>String(z.id)===String(v)); if(x){ m.name=x.name; save(); render(); } }
