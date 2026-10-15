@@ -26,6 +26,7 @@
                  ビューポートが全画面化したら安全域-12pxまで自動で下がる。12pxが調整ノブ */
     --vgap:62px;
     --navh:64px; /* ナビバー実高。renderが毎回実測で上書き(魔法数根絶) */
+    --kb:0px;   /* v6.11: キーボードが出ている間だけ#appの下に足す余白(kbInitが実測で入れる。閉じたら0) */
     --navpad: max(2px, calc(env(safe-area-inset-bottom,0px) - var(--vgap) - 12px));
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -37,7 +38,7 @@
      navbar1個分(84〜110px)の余白を#appが持つのは二重取りだった。
      必要なのは #navbar::before のフェード帯(上へ24px張り出す)にコンテンツが潜らないぶんだけ。
      navbarが display:none の画面(mjsheet等)でも28pxで足りる */
-  #app{flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:560px; margin:0 auto; padding:calc(16px + env(safe-area-inset-top,0px)) 16px 28px;}
+  #app{flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:560px; margin:0 auto; padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(28px + var(--kb));}
   #navbar{flex:0 0 auto; width:100%; padding:6px 16px var(--navpad); position:relative;}
   /* 描画領域との境界フェード帯(v3.28): navbar上端から上へ24px張り出す透明→bgのグラデ。
      コンテンツはタブピルに激突せず溶けて消える。透明側はbg同色のalpha0(Safariのtransparent=黒混ざり回避)。
@@ -268,7 +269,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.10 (localStorage保存・完全オフライン)
+   Tally 6.11 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1038,7 +1039,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.10";
+const APP_VERSION = "6.11";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -10556,6 +10557,54 @@ function updVgap(){
 updVgap();
 window.addEventListener("resize", updVgap);
 window.addEventListener("orientationchange", ()=>setTimeout(updVgap, 300));
+/* v6.11: **キーボードで下の方の欄が隠れ、上へ送れない**(ユーザー指摘・スクショ: 記帳で金額をテンキーで打つと、いくら打ったか見えない)。
+   iPhoneはキーボードを出しても画面(レイアウト)の高さは変わらず、下から覆うだけ。#appのスクロールの底はキーボードの裏にあるので、
+   底に近い欄(記帳の品目・金額、稼働のメモなど)は、どう送ってもキーボードの上に出てこなかった(iOSが画面ごと押し上げる量にも限りがある)。
+   直し方は2つ:
+   ① **キーボードが出ている間だけ、#appの下にキーボードの高さ+64pxの余白を足す**(--kb)。これで底の欄も上まで送れる。
+   ② **入力中の欄がキーボードに隠れていたら、キーボードの上まで#appを送る**(欄に入った時・キーボードの高さが変わった時だけ。
+      手で送っている最中には動かさない=取り合いにしない)。
+   キーボードの高さは visualViewport(いま見えている範囲)から測る。**下に64px空けるのは、iOS26の浮いているバー(⌃ ⌄ ✓)が
+   見えている範囲の下端に重なって見えるため**(スクショで約59pt)。重ならない機種では少し上に止まるだけで害はない。
+   拡大中(scale≠1)は見えている範囲が縮んでもキーボードではないので触らない */
+function kbInit(){
+  const vv = window.visualViewport; if(!vv) return;
+  const isField = el => !!el && ((el.tagName==="INPUT" && !/^(button|submit|reset|checkbox|radio|range|color|file|hidden|image)$/i.test(el.type||"")) || el.tagName==="TEXTAREA" || el.tagName==="SELECT");
+  let safeTop = null;   /* 上端の安全域(時計・電池の帯)。一度だけ測る */
+  const topInset = () => {
+    if(safeTop===null){ try{ const p=document.createElement("div");
+      p.style.cssText="position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none";
+      document.body.appendChild(p); safeTop=Math.round(p.getBoundingClientRect().height)||0; p.remove(); }catch(e){ safeTop=0; } }
+    return safeTop;
+  };
+  const MARGIN = 64;
+  /* キーボードの高さ(出ていなければ0)。欄に入っていない時・拡大中は0 */
+  const kbNow = () => { const kb=Math.round(window.innerHeight - vv.height);
+    return (kb>120 && Math.abs((vv.scale||1)-1)<0.01 && isField(document.activeElement)) ? kb : 0; };
+  /* 余白を今のキーボードに合わせる。resizeが来ない機種でも、欄に入った後の見直しでここを通る。
+     **保険**: 指で触る端末で欄に入っているのにキーボードが測れない時(visualViewportが縮まない機種があった場合)は、
+     画面の半分の余白だけ足す。自動で送ることはしないが、少なくとも手で欄をキーボードの上まで送れる */
+  const touch = !!(window.matchMedia && matchMedia("(pointer:coarse)").matches);
+  const pad = () => { const kb=kbNow();
+    const fb = (!kb && touch && isField(document.activeElement)) ? Math.round(window.innerHeight*0.5) : 0;
+    document.documentElement.style.setProperty("--kb", (kb ? kb+MARGIN : fb)+"px"); return kb; };
+  function reveal(){
+    const el=document.activeElement, app=document.getElementById("app");
+    if(!pad() || !app || !app.contains(el)) return;
+    const r=el.getBoundingClientRect();
+    const top=vv.offsetTop+topInset()+12, bottom=vv.offsetTop+vv.height-MARGIN;
+    const down=Math.min(r.bottom-bottom, r.top-top);   /* 背の高い欄(貼り付け欄など)は上端を優先 */
+    if(down>0) app.scrollTop += Math.ceil(down);
+    else if(r.top<top) app.scrollTop -= Math.ceil(top-r.top);
+  }
+  let t1=0, t2=0, t3=0;
+  const later = ms => { clearTimeout(t1); clearTimeout(t2); t1=setTimeout(reveal, ms); t2=setTimeout(reveal, ms+300); };   /* iOSの押し上げが落ち着いた後にもう一度 */
+  vv.addEventListener("resize", ()=>{ if(pad()) later(50); });
+  document.addEventListener("focusin", e=>{ if(isField(e.target)){ clearTimeout(t3); pad(); later(250); } });
+  /* 欄から外れたら余白を消す。**すぐには消さない**——次の欄へ移る途中(⌄)や、押したボタンの処理より先に画面がずれないように */
+  document.addEventListener("focusout", ()=>{ clearTimeout(t3); t3=setTimeout(pad, 400); });
+}
+kbInit();
 load();
 /* 日付が変わって最初の起動時に、読み込んだ状態(=前日終了時点)を日次退避 */
 (function(){
