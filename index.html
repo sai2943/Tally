@@ -269,7 +269,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.11 (localStorage保存・完全オフライン)
+   Tally 6.12 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1039,7 +1039,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.11";
+const APP_VERSION = "6.12";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -9104,7 +9104,16 @@ function bindEntry(){
           const accs=transferAccounts();
           const fa=accs.find(x=>x.id===String(UI.trFrom)), ta=accs.find(x=>x.id===String(UI.trTo));
           if(!fa||!ta) return;
-          if(amt>fa.bal && !confirm(fa.name+"の残高 ¥"+fa.bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
+          /* v6.12【修正】(ユーザー指摘: 軍資金のツルさん→財布の振替でも警告文が出る)。
+             **軍資金の置き場どうしの移動は、軍資金の中で動くだけ**(合計は変わらない・doTransferは両側adjust・振替の入出にも数えない)。
+             下の振替枠の警告は「外の金で軍資金を太らせる」ことへの警告なので、出所が軍資金なら当たらない。
+             v4.57で軍資金を置き場に分けた時、判定が**行き先だけ**(前方一致)のままだったので、
+             ツルさんから返してもらった分を財布の置き場へ移すだけで「負けを外の金で埋める…20年来の漏れ」と出ていた。
+             残高を超える確認も、置き場どうしでは出さない——**置き場のマイナスは借り**(v4.57の作り)で、
+             ツルさんに借りた現金を財布の置き場へ移せば、ツルさんがマイナスになるのが正しい */
+          const _fromBk = String(fa.id).indexOf(ACC_BANK)===0, _toBk = String(ta.id).indexOf(ACC_BANK)===0;
+          const _inBank = _fromBk && _toBk;
+          if(!_inBank && amt>fa.bal && !confirm(fa.name+"の残高 ¥"+fa.bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
           /* v4.10: **軍資金への振替は出所を問わず全て警告する**(ユーザー指摘)。
              v4.05は貯金からの補充だけを見ていたが、**実際に起きるのは所持金からの補充**——
              負けた分をその場の手元金で埋めるのが現実の経路。出所で漏れかどうかは決まらない。
@@ -9116,7 +9125,7 @@ function bindEntry(){
              最後は必ずtopupになるので、月次合計で見れば同じ数字になる */
           /* v4.57: 軍資金のidが ACC_BANK:<財布> になったので前方一致で判定する。
              **枠は軍資金の総量に対するもの**なので、どの財布へ入れても同じ枠を消費する */
-          if(String(ta.id).indexOf(ACC_BANK)===0){
+          if(_toBk && !_fromBk){   /* v6.12: 外(所持金・貯金)から軍資金へ入る時だけ */
             const cap=bankRefillCap(), used=bankRefillUsed(String(f.date).slice(0,7));
             if(used+amt > cap){
               const over=used+amt-cap;
