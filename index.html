@@ -269,7 +269,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.12 (localStorage保存・完全オフライン)
+   Tally 6.13 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1039,7 +1039,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.12";
+const APP_VERSION = "6.13";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1521,6 +1521,35 @@ function viewSvDrill(){
     '<span class="mono teal" style="font-size:20px;font-weight:700">'+signYen(d.sv)+'</span></div>'+
     '</div>';   /* v5.13: 説明文は撤去(ユーザー指摘: 金額だけで充分)。
        ついでにHTMLで効かない`**`がそのまま出ていた事故も消える */
+  /* v6.13: 所持金が足りず、予算カードの貯金を「いま移せる額」で頭打ちにしている時だけ、
+     **計画のあと → いま移せる額** の差を上から順に引いて見せる(行を足すと必ず一致する) */
+  {
+    const _bmk=budgetMk(mk), _pl=svPlan(_bmk);
+    if(_pl.bound){
+      const q=svShortParts(_bmk, _pl);
+      const line=(lb,v,strong)=>'<div class="row between" style="font-size:12px;padding:3px 0'+(strong?';font-weight:700':'')+'">'+
+        '<span class="'+(strong?'':'muted')+'">'+lb+'</span><span class="mono'+(strong?'':' '+clsPM(v))+'">'+(strong?'¥'+v.toLocaleString("ja-JP"):signYen(v))+'</span></div>';
+      let w='<div class="row between" style="font-size:12px;padding:3px 0"><span class="muted">計画どおりなら あと</span>'+
+        '<span class="mono">¥'+q.left.toLocaleString("ja-JP")+'</span></div>';
+      if(q.bank) w+=line(q.bank>0?"軍資金へ移した分(差引)":"軍資金から戻した分(差引)", -q.bank);
+      if(q.adv) w+=line(q.adv>0?"立替(まだ戻っていない分)":"立替の精算(前の期間の分)", -q.adv);
+      if(q.futInc) w+=line("まだ入っていない収入", -q.futInc);
+      if(q.carry) w+=line("期間の初めにあった所持金", q.carry);
+      if(Math.round(q.other)) w+=line("その他(補正・予定など)", Math.round(q.other));
+      w+='<div style="height:1px;background:var(--line);margin:6px 0 4px"></div>'+
+        (q.raw<0 ? line("計算上は(マイナスなので0)", Math.round(q.raw)) : '')+
+        line("いま所持金から移せる額", q.avail, true);
+      h+='<div class="card" style="margin-bottom:14px">'+
+        '<div class="row" style="align-items:center;margin-bottom:6px"><span class="amber" style="font-size:12px;font-weight:700">所持金が計画に ¥'+_pl.short.toLocaleString("ja-JP")+' 足りません</span>'+
+        infoBtn("貯金の目標は、今期の収入から固定費・変動消費と娯楽の枠・承認(予算の枠とは別に自分で認めた支出)を引いた残りです(計画)。<br><br>"+
+          "計画どおりに移すには、そのお金が所持金に残っている必要があります。予算の外で所持金から出ていったお金があると、計画の全部は移せません。"+
+          "そのため予算カードの貯金は<b>いま所持金から移せる額</b>までにしています。固定費の予定と、変動消費・娯楽の残りは先に取っておきます。<br><br>"+
+          "<b>軍資金へ移した分</b>: 生活のお金を遊技へ回した分(負けの穴埋め・借りの返済・遊技の経費など)。戻ってはきません。<br>"+
+          "<b>立替</b>: 会社などの分を立て替えて、まだ戻っていない分。精算されれば移せる額も増えます。<br>"+
+          "<b>期間の初めにあった所持金</b>: 前の期間から持ち越したお金。計画には入っていないので、そのぶん移せる額が増えます。")+'</div>'+
+        w+'</div>';
+    }
+  }
   h+=band("箱ごと");
   const pots=savingsPots().filter(p2=>rows[String(p2.id)]&&rows[String(p2.id)].length);
   /* 箱から払っただけの月もあるので、合計が0でもカードは出す(残高は動いている) */
@@ -2763,6 +2792,77 @@ function viewLedgerDetail(mk){
   return h;
 }
 
+/* v6.13: 予算カードの変動消費・娯楽の1行ぶんの数字(使った額・上限)。
+   v3.85: 所持金が月枠より厳しい時は**上限そのものを書き換える**(ユーザー設計・別行にするより見やすい)。
+   実効枠 = 使った額 + 所持金×割合。こうすると「残り」がそのまま「いま使える額」になり、
+   月の後半でも同じ式で成立する。月枠を超えることはない。
+   予算カードの行と、貯金の「いま移せる額」(svPlan)の両方がここを通る——**同じ数字を2箇所で計算しない** */
+function budgetRow(mk, cat){
+  const _bv=(S.budgets||{})[cat];
+  const monthCap=budgetAmt(_bv, disposableBase(mk));   /* v3.73: 割合対応 */
+  const spent=(S.entries||[]).filter(e=>inBudget(e.date, mk) && e.type==="expense" && e.category===cat && !isNet(e)
+    && (cat!=="消費" || !isFixedCost(e))).reduce((a,e)=>a+e.amount,0);
+  const nc=nowCaps(mk);
+  const k=(cat==="消費"?nc.varc:cat==="娯楽"?nc.amuse:null);
+  const walletBound=!!(k && k.has && (spent + k.cap) < monthCap);
+  return {monthCap:monthCap, capIsPct:budgetIsPct(_bv), spent:spent, walletBound:walletBound, cap:walletBound ? (spent + k.cap) : monthCap};
+}
+/* v6.13【修正】(ユーザー指摘: 所持金と予算が一致しない)。
+   貯金の目標は「今期の収入 − 固定費 − 変動消費・娯楽の枠 − 承認」の残り(preSplit)で、**所持金を見ていない**。
+   予算の外で所持金から出ていったお金——**軍資金へ移した分**(負けの穴埋め・借りの返済・遊技の経費)、
+   **まだ戻っていない立替**、前の期間からの持ち越しの不足など——があると、
+   「固定費の予定 + 変動消費・娯楽の残り + 貯金のあと」が所持金を超え、**全部は実行できない計画**になる。
+   実例: 所持金¥451,558に対し、固定費の予定¥89,061 + 変動消費の残り¥66,986 + 娯楽の残り¥46,157 + 貯金のあと¥353,459 = ¥555,663。
+   **貯金は「使う枠を引いた残り」**(v3.74/v3.75)なので、足りない分は貯金の側で受ける。
+   変動消費・娯楽の上限を所持金で縛る(v3.85の実効枠)のと同じ考え方で、**貯金のあとを「いま所持金から移せる額」で頭打ち**にする:
+     いま移せる額 = 所持金 − 今期の終わりまでに出ていく予定の支出 − 変動消費の残り − 娯楽の残り
+   予定の支出は**今期の終わりまで全部**取っておく(nowCapsの「次の収入まで」より広い)。まだ入っていない収入は足さない——
+   「いま移せる額」なので、手元に無い金は数えない。予定の支出は固定費・定期便・承認・立替など(遊技・軍資金から払う分・箱から払う分は除く)
+   目標そのもの(今期の計画)は変えない。**今の期間だけ**・**主な収入が入ってから**(給料前は計画を見せる)。
+   過去の期間は計画どおりの目標で振り返る(足りなかった分は「未達」として残る=事実)。
+   投資の目標もあれば、同じ額を貯金・投資のあとの比で分ける */
+function svPlan(mk){
+  const p=preSplit(mk), d=securedSplit(mk);
+  const ls=Math.max(0, p.sv-d.sv), li=Math.max(0, p.iv-d.iv), left=ls+li;
+  const out={sv:p.sv, iv:p.iv, planSv:p.sv, planIv:p.iv, done:d, left:left, avail:null, bound:false, short:0};
+  if(mk!==curBudgetMk() || left<=0 || !mainIncomeLanded(mk)) return out;
+  const rem=["消費","娯楽"].reduce((a,c)=>{ const r=budgetRow(mk,c); return a+(r.cap>0 ? Math.max(0, r.cap-r.spent) : 0); }, 0);
+  const t=todayStr();
+  const futOut=(S.entries||[]).filter(e=>e.type==="expense" && e.date>t && inBudget(e.date,mk) && !isNet(e) && !e.bkSrc && e.svTx==null)
+    .reduce((a,e)=>a+e.amount,0);
+  const raw=walletBalance() - futOut - rem;
+  const avail=Math.max(0, raw);
+  out.avail=avail; out.raw=raw;
+  if(avail>=left) return out;
+  const as=Math.round(avail*ls/left);
+  out.sv = ls>0 ? d.sv+as : p.sv;
+  out.iv = li>0 ? d.iv+(avail-as) : p.iv;
+  out.bound=true; out.short=left-avail;
+  return out;
+}
+/* v6.13: 「あと(計画)」から「いま移せる額」までの差の内訳(貯金の内訳画面・サマリで使う)。
+   期間の初めから今日までの所持金の動きのうち、予算の外のものを名指しする。
+   **残りは「その他」**にまとめて、行を足すと必ず「いま移せる額」になるようにする(合わない内訳は無いより悪い) */
+function svShortParts(mk, pl){
+  const t=todayStr(), r0=budgetRange(mk)[0];
+  const inP=d=>!!d && d>=r0 && d<=t;
+  /* 軍資金との出入り(差引): 入=所持金・箱から軍資金へ / 出=軍資金から所持金・箱へ。今月の振替(入−出)と同じ定義 */
+  const bank=((((S.bank||{}).txns)||[])).filter(x=>inP(x.date)).reduce((a,x)=>a+
+    (x.type==="topup" ? num(x.amount) : (x.type==="return"||x.type==="sweep") ? -num(x.amount) : 0), 0);
+  const E=S.entries||[];
+  /* 立替: 今期に払った分(先の日付の予定も、いま移せる額から取っておくので含める) − 今日までに戻った精算。
+     箱から払った分は所持金が動かないので除く。軍資金から払った分は、済んだものは戻しが上の軍資金の行に入るので含め、
+     先の日付のものは戻しもまだなので除く(いま移せる額でも取っておかない) */
+  const adv=E.filter(e=>inBudget(e.date,mk)&&!isNet(e)&&e.type==="expense"&&e.category===ADV_EXP&&e.svTx==null&&(e.date<=t||!e.bkSrc)).reduce((a,e)=>a+e.amount,0)
+          - E.filter(e=>inP(e.date)&&!isNet(e)&&e.type==="income"&&e.category===ADV_INC).reduce((a,e)=>a+e.amount,0);
+  const futInc=E.filter(e=>inBudget(e.date,mk)&&e.date>t&&e.type==="income"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);
+  const d0=new Date(r0+"T12:00:00Z"); d0.setUTCDate(d0.getUTCDate()-1);
+  const carry=walletBalance(d0.toISOString().slice(0,10));
+  /* 内訳は**頭打ちの前の値(raw)**に合わせる。マイナスは画面で0として扱う */
+  const raw=pl.raw==null ? 0 : pl.raw;
+  const other=raw - (pl.left - bank - adv - futInc + carry);
+  return {left:pl.left, bank:bank, adv:adv, futInc:futInc, carry:carry, other:other, raw:raw, avail:Math.max(0,raw)};
+}
 /* v5.33【最適化②】**予算の節を独立させた**。意味は変えず移すだけ。
    依存は`mk`だけ——中で使う値は自分で用意する */
 function viewLedgerBudget(mk){
@@ -2792,17 +2892,9 @@ function viewLedgerBudget(mk){
   }
   h += '<div class="card" style="margin-bottom:14px">';
   EXPENSE_CATS.filter(c=>c!=="承認"&&c!==ADV_EXP&&!GAME_CATS[c]).forEach((cat,i)=>{   /* v5.71: 麻雀・パチスロも予算の外(遊技の世界) */  /* 承認は予算バー対象外(承認プロセス自体が統制)。立替も対象外(v5.69) */
-    const _bv=(S.budgets||{})[cat];
-    const monthCap = budgetAmt(_bv, disposableBase(mk));   /* v3.73: 割合対応 */
-    const capIsPct = budgetIsPct(_bv);
-    const spent = me.filter(e=>e.type==="expense" && e.category===cat && !isNetEntry(e) && (cat!=="消費" || !isFixedCost(e))).reduce((a,e)=>a+e.amount,0);
-    /* v3.85: 所持金が月枠より厳しい時は**上限そのものを書き換える**(ユーザー設計・別行にするより見やすい)。
-       実効枠 = 使った額 + 所持金×割合。こうすると「残り」がそのまま「いま使える額」になり、
-       月の後半でも同じ式で成立する。月枠を超えることはない */
-    const _nc85=nowCaps(mk);
-    const _k85=(cat==="消費"?_nc85.varc:cat==="娯楽"?_nc85.amuse:null);
-    const walletBound = !!(_k85 && _k85.has && (spent + _k85.cap) < monthCap);
-    const cap = walletBound ? (spent + _k85.cap) : monthCap;
+    /* v6.13: 計算は`budgetRow`へ(貯金の「いま移せる額」も同じ数字を使うので、2箇所に書かない) */
+    const _br=budgetRow(mk, cat);
+    const monthCap=_br.monthCap, capIsPct=_br.capIsPct, spent=_br.spent, walletBound=_br.walletBound, cap=_br.cap;
     const pct = cap>0 ? Math.min(100, spent/cap*100) : 0;
     const over = spent - cap;
     /* v3.35: 超過でも色相は分類固有色を維持(娯楽=琥珀のまま)——警報は帯+超過ラベルが担う */
@@ -2904,9 +2996,11 @@ function viewLedgerBudget(mk){
      方向が逆(消費は残りが多いと良い/貯金は足りないと催促)なので語で分ける:
      未達=あと / 達成=達成 + 超過額。これはv4.82で振替カードに入れた文法をそのまま持ってくる */
   {
-    const _sp=securedSplit(mk), _pp=preSplit(mk);
-    if(_pp.sv>0 || _sp.sv!==0){
-      const _ok=_sp.sv>=_pp.sv, _over=Math.max(0,_sp.sv-_pp.sv);
+    /* v6.13: 目標は「いま所持金から移せる額」で頭打ちにした実効の目標(svPlan)。所持金が足りていれば計画のまま */
+    const _sp=securedSplit(mk), _pl=svPlan(mk), _pp={sv:_pl.sv};
+    if(_pl.planSv>0 || _sp.sv!==0){
+      /* 「達成」は**計画の目標**に届いた時だけ。所持金で頭打ちにした分を移し終えただけなら「あと ¥0」(計画には届いていない) */
+      const _ok=_sp.sv>=_pl.planSv, _over=Math.max(0,_sp.sv-_pl.planSv);
       const _spc=Math.max(0, Math.min(100, _pp.sv>0?_sp.sv/_pp.sv*100:0));
       h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="svdrill">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
@@ -2914,7 +3008,7 @@ function viewLedgerBudget(mk){
         '<span class="mono muted" style="font-size:11px"> ¥'+_sp.sv.toLocaleString("ja-JP")+' / ¥'+_pp.sv.toLocaleString("ja-JP")+'</span></span>'+
         '<span><span class="mono muted" style="font-size:11px">'+(_ok?'':'あと')+'</span> '+
         '<span class="mono '+(_ok?'teal':'amber')+'" style="font-size:17px;font-weight:700">'+
-        (_ok?'達成':'¥'+(_pp.sv-_sp.sv).toLocaleString("ja-JP"))+'</span>'+
+        (_ok?'達成':'¥'+Math.max(0,_pp.sv-_sp.sv).toLocaleString("ja-JP"))+'</span>'+
         (_over>0?'<span class="mono muted" style="font-size:11px"> +¥'+_over.toLocaleString("ja-JP")+'</span>':'')+
         '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
         '<div class="bar"><div style="width:'+_spc+'%;background:var(--teal)"></div></div></div>';
@@ -2970,7 +3064,8 @@ function viewLedger(){
      達成した瞬間にカードごと消える=「終わった」ことが最も強い報酬になる。
      ※プッシュ通知は却下済み(§8)——画面上の出し分けが同じ役割を果たす。
      ※設定入口が消える件はv3.67の教訓に抵触しない: 按分比の正規の入口は予算設定画面(v3.75) */
-  const _ps74=preSplit(bmk);
+  /* v6.13: 催促は「いま所持金から移せる額」で頭打ちにした目標で判定する(svPlan)。移せない額を催促しない(v4.17と同じ考え) */
+  const _pl74=svPlan(bmk), _ps74={sv:_pl74.sv, iv:_pl74.iv};
   {
     const _fs98=furusatoDue(mk);   /* v5.56: ふるさと納税は**暦月のまま**(年内が期限なので12月判定を動かさない) */
     const _isCur = (bmk === curBudgetMk());
@@ -3055,29 +3150,32 @@ function viewLedger(){
        このバンド        = 済んだ月・過去の月   → 「やったか」を確認する
      過去の月は着弾を問わず出す(振り返りとして意味がある)。未来の月は出さない */
   {
-    const _p=preSplit(bmk), _d=securedSplit(bmk);
+    /* v6.13: 今の期間は頭打ちにした目標(svPlan)。過去の期間はsvPlanが計画どおりの目標を返す */
+    const _plB=svPlan(bmk), _p={sv:_plB.sv, iv:_plB.iv}, _d=securedSplit(bmk);
     const _isCurM = (bmk === curBudgetMk());
     const _isFutM = (bmk > curBudgetMk());
     const _remain = Math.max(0,_p.sv-_d.sv) + Math.max(0,_p.iv-_d.iv);
     const _nagging = _isCurM && mainIncomeLanded(bmk) && _remain > 0;   /* 催促カードが出ている状態 */
     const _show = !_isFutM && !_nagging && (!_isCurM || mainIncomeLanded(bmk));
-    const _row=(nm,plan,done,bd)=>{
+    const _row=(nm,plan,done,bd,full)=>{
       if(plan<=0) return "";
       /* v4.84: 純額なので done は負になりうる。バーの幅を下限0で止める */
-      const ok=done>=plan, pc=Math.max(0, Math.min(100, plan>0?done/plan*100:0));
+      /* v6.13: 「達成」は計画の目標(full)に届いた時だけ。頭打ちの目標を移し終えただけなら「あと ¥0」 */
+      const _full=(full==null?plan:full);
+      const ok=done>=_full, pc=Math.max(0, Math.min(100, plan>0?done/plan*100:0));
       /* v4.82: **超過額を出す**(ユーザー要望)。v4.81で承認が振替目標を下げるようになったので、
          既に振り替えたあとに承認を記帳すると超過が出る。**貯金から戻すべき額**がこれ。
          **警告ではないのでtealにする**——達成と同じ色にすることで「達成していて、その分がこれ」と読める。
          琥珀や赤にすると「まずいこと」に見えるが、超過は事実であって問題ではない。
          置き場所は**左の数字群の後ろ**: 実績/目標と並ぶ事実の一部で、右の「達成」は状態を表す語のまま残す */
-      const over = Math.max(0, done - plan);
+      const over = Math.max(0, done - _full);
       return '<div style="margin-bottom:10px">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
         '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
         '<span><span class="mono muted" style="font-size:11px">'+(ok?'':'あと')+'</span> '+
         '<span class="mono '+(ok?"teal":"amber")+'" style="font-size:17px;font-weight:700">'+
-        (ok?'達成':'¥'+(plan-done).toLocaleString("ja-JP"))+'</span>'+
+        (ok?'達成':'¥'+Math.max(0,plan-done).toLocaleString("ja-JP"))+'</span>'+
         /* v4.82b: **超過は「達成」の隣に置く**(ユーザー指摘: 見づらい・ダサい)。
            左に置くと `¥166,694 / ¥123,915 +¥42,779` と数字が3つ並び、
            **予算カードの文法(左に2つ・右に語+数字)から外れて読めなくなっていた**。
@@ -3127,7 +3225,7 @@ function viewLedger(){
        今度は**モデルが先に決まった**ので、名前は実態をなぞるだけでよい */
     const _h1=_row("箱を進めた額", _p.sv, _d.sv,
       /* 内訳は**箱ごと**(v5.01)。何に振り替えたかが分かる */
-      savingsPots().map(p=>({name:p.name, v:num((_d.byPot||{})[String(p.id)]||0)})).filter(x=>x.v!==0)), _h2=_row("投資へ", _p.iv, _d.iv);
+      savingsPots().map(p=>({name:p.name, v:num((_d.byPot||{})[String(p.id)]||0)})).filter(x=>x.v!==0), _plB.planSv), _h2=_row("投資へ", _p.iv, _d.iv, null, _plB.planIv);
     /* v5.11: **貯金の行は予算カードへ移した**ので、ここに出すのは投資だけ。
        同じ数字を2箇所に並べない(v3.91の役割分担と同じ考え方)。
        投資も予算カードへ、とはしない——**投資は月によって0のことがあり、
@@ -3685,6 +3783,13 @@ function summaryText(){
   L.push("## 予算 ("+mk+")");
   L.push("- 可処分(収入−固定費) "+yen(base));
   L.push("- 先に取り分ける: 貯金 "+yen(ps.sv)+" / 投資 "+yen(ps.iv));
+  /* v6.13: 所持金が計画に足りない時は、予算カードの貯金を頭打ちにしている。その数字と差の内訳も渡す */
+  { const _bm=curBudgetMk(), _pl=svPlan(_bm);
+    if(_pl.bound){ const q=svShortParts(_bm, _pl);
+      L.push("- 所持金が計画に "+yen(_pl.short)+" 足りない → 貯金(と投資)のあとを「いま所持金から移せる額」"+yen(q.avail)+" に頭打ち(計画のあと "+yen(q.left)+")");
+      L.push("  - 差の内訳: 軍資金へ(差引) "+sgn(-q.bank)+" / 立替(差引) "+sgn(-q.adv)+" / まだ入っていない収入 "+sgn(-q.futInc)+
+        " / 期間の初めの所持金 "+sgn(q.carry)+" / その他 "+sgn(q.other));
+    } }
   /* nowCapsは {varc, amuse}。capは所持金で制約した実効枠、monthCapは月の枠 */
   const capLine=(k,lb)=> "- "+lb+": "+(caps[k].has ? ("実効 "+yen(caps[k].cap)+" / 月の枠 "+yen(caps[k].monthCap)) : "未設定");
   L.push(capLine("varc","変動消費の上限"));
