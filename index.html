@@ -269,7 +269,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.13 (localStorage保存・完全オフライン)
+   Tally 6.14 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1039,7 +1039,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.13";
+const APP_VERSION = "6.14";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -8634,7 +8634,11 @@ function entryDetailHtml(e){
    金額の拾い方はモデル側が引き受ける。ここは決まった書式を受け取るだけなので保守が要らない。
    #で始まる行はヘッダ、それ以外は「品目 | 金額」。区切りが無ければ**行末の数字を金額**とみなす。
    取り込みは**フォームを埋めるだけで保存はしない**——必ず目視で直せるようにする */
-const TRANS_MODES=["地下鉄","バス","電車","駐輪"];
+const TRANS_MODES=["地下鉄","バス","電車","タクシー","駐輪"];
+/* v6.14: **タクシーを追加**(ユーザー要望)。形は地下鉄・バス・電車と同じ——店名=「タクシー」・品目=「乗った場所→降りた場所」。
+   モードの名前がそのまま店名になるので、候補(transTokens)・保存の合成・レシートの取り込み(applyReceipt)は何も足さずに効く。
+   場所の候補は**店名ごとに育つ**ので、駅名とは混ざらない。違うのは欄の薄い字だけ(駅・停留所ではないので「場所」) */
+const TRANS_PH = {"タクシー":["乗った場所","降りた場所"]};
 function normDate(v){
   const m=/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/.exec(String(v||"").trim());
   return m ? (m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0")) : "";
@@ -8809,7 +8813,7 @@ function viewEntry(){
   let transHtml="", composerHtml="";
   if(f.type==="expense" && UI.editEntryId===null){
     transHtml='<div class="muted" style="font-size:11px;margin:0 2px 6px">交通で記帳'+
-      infoBtn("地下鉄・バス・電車・駐輪を、決まった形で記録する入力補助です。<br><br><b>地下鉄・バス・電車</b>: 店名が乗り物の種類(例: 地下鉄)、品目が「乗車駅→降車駅」になります。<br><b>駐輪</b>: 店名が場所、品目が「駐輪」になります。<br><br>形がそろうので、駅名や場所が候補として育ち、次から押すだけで入れられます。<br><br>分類は上で選べます。旅行中の移動なら承認、出張なら立替、雀荘やパチンコ店への移動なら遊技経費にできます。")+'</div>'+
+      infoBtn("地下鉄・バス・電車・タクシー・駐輪を、決まった形で記録する入力補助です。<br><br><b>地下鉄・バス・電車・タクシー</b>: 店名が乗り物の種類(例: 地下鉄)、品目が「乗った所→降りた所」になります。電車・地下鉄は駅、バスは停留所、タクシーは場所を入れます。<br><b>駐輪</b>: 店名が場所、品目が「駐輪」になります。<br><br>形がそろうので、駅名や場所が候補として育ち、次から押すだけで入れられます。<br><br>分類は上で選べます。旅行中の移動なら承認、出張なら立替、雀荘やパチンコ店への移動なら遊技経費にできます。")+'</div>'+
       '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
       TRANS_MODES.map(mo=>'<button class="chip '+(f.tmode===mo?"sel":"")+'" data-a="tmode" data-v="'+mo+'">'+mo+'</button>').join("")+'</div>';
     if(f.tmode){
@@ -8821,8 +8825,9 @@ function viewEntry(){
       if(f.tmode==="駐輪"){
         composerHtml='<input class="input" id="t-place" placeholder="場所(例: ヨドバシP2)" value="'+esc(f.tplace||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkp");
       } else {
-        composerHtml='<input class="input" id="t-from" placeholder="乗車駅・停" value="'+esc(f.tfrom||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkf")+
-          '<input class="input" id="t-to" placeholder="降車駅・停" value="'+esc(f.tto||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkt");
+        const _ph=TRANS_PH[f.tmode]||["乗車駅・停","降車駅・停"];   /* v6.14 */
+        composerHtml='<input class="input" id="t-from" placeholder="'+_ph[0]+'" value="'+esc(f.tfrom||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkf")+
+          '<input class="input" id="t-to" placeholder="'+_ph[1]+'" value="'+esc(f.tto||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkt");
       }
       composerHtml+='<div style="height:6px"></div>';   /* v5.92: 保存の形の説明は見出しのⓘへ(分類はもう消費に固定しない) */
     }
