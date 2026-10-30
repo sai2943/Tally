@@ -269,7 +269,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.14 (localStorage保存・完全オフライン)
+   Tally 6.15 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -321,6 +321,23 @@ function advOutstanding(){
   const t=todayStr();
   return (S.entries||[]).filter(e=>e.date&&e.date<=t&&isAdv(e))
     .reduce((a,e)=>a+(e.category===ADV_EXP? e.amount : -e.amount),0);
+}
+/* v6.15: **未精算の内訳**(ユーザー要望: 立替の未精算を押したら一覧で見たい)。
+   精算は1件ずつの立替に紐づけない(上の理由)ので、**古い立替から順に戻ったとみなす**(先入れ先出し)。
+   会社の精算は普通は古い出張から順に来るので、これで「まだ戻っていない分」が現実と合う。
+   残った立替の金額を足すと**必ずadvOutstanding()と一致**する(途中まで戻った1件は残りの額だけ数える)。
+   精算が立替より多ければ、まだ戻っていない分は無く、多い分を`extra`に返す */
+function advSplit(){
+  const t=todayStr();
+  const ents=(S.entries||[]).filter(e=>e.date&&e.date<=t&&isAdv(e));
+  const old=(a,b)=> a.date<b.date?-1 : a.date>b.date?1 : (String(a.id)<String(b.id)?-1 : String(a.id)>String(b.id)?1 : 0);
+  const exps=ents.filter(e=>e.category===ADV_EXP).sort(old), incs=ents.filter(e=>e.category===ADV_INC).sort(old);
+  let pool=incs.reduce((a,e)=>a+e.amount,0);
+  const open=[], done=[];
+  exps.forEach(e=>{ const take=Math.min(pool, e.amount); pool-=take; const left=e.amount-take;
+    if(left>0) open.push({e:e, left:left}); else done.push(e); });
+  return {open:open, done:done, incs:incs, extra:pool,
+    expTotal:exps.reduce((a,e)=>a+e.amount,0), incTotal:incs.reduce((a,e)=>a+e.amount,0)};
 }
 const num = v => { const n = parseInt(v,10); return isNaN(n)?0:n; };
 const fnum = v => { const n = parseFloat(v); return isNaN(n)?0:n; };
@@ -1039,7 +1056,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.14";
+const APP_VERSION = "6.15";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1238,6 +1255,7 @@ function _renderScreen(app){
   if(UI.screen==="wallet"){ app.innerHTML = viewWallet(); bindWallet(); return; }
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
   if(UI.screen==="svdrill"){ app.innerHTML = viewSvDrill(); bindSvDrill(); return; }
+  if(UI.screen==="advdrill"){ app.innerHTML = viewAdvDrill(); bindAdvDrill(); return; }   /* v6.15 */
   if(UI.screen==="payroll"){ app.innerHTML = viewPayroll(); bindPayroll(); return; }
   if(UI.screen==="tredit"){ app.innerHTML = viewTrEdit(); bindTrEdit(); return; }
   if(UI.screen==="mjlog"){ app.innerHTML = viewMjLog(); bindMjLog(); return; }
@@ -1510,6 +1528,69 @@ function svMoves(mk){
     else             push(e.svPot,"spend",label,e.amount,e.date);
   });
   return rows;
+}
+/* v6.15: **立替の内訳**。家計簿の「立替 未精算」のカードから開く。
+   上: まだ戻っていない分(古い順=次に精算されるのが上)。下: 戻った分(精算)と、精算済みの立替(畳んで出す)。
+   行を押すとその記録の編集へ(戻るとここへ帰る) */
+function viewAdvDrill(){
+  const q=advSplit(), out=q.open.reduce((a,x)=>a+x.left,0);
+  const md=d=>String(d||"").slice(5).replace("-","/");
+  const lab=e=>[e.store,(e.item!=null?e.item:e.memo)].map(x=>String(x||"").trim()).filter(Boolean).join(" ")||(e.category||"");
+  const row=(e,right,sub)=>'<div class="row between" style="align-items:baseline;font-size:12px;padding:6px 0;border-top:1px solid var(--line);cursor:pointer" data-ad="edit" data-v="'+esc(String(e.id))+'">'+
+    '<span class="ellip" style="min-width:0"><span class="mono muted" style="margin-right:8px">'+md(e.date)+'</span>'+esc(lab(e))+'</span>'+
+    '<span style="flex-shrink:0;margin-left:8px;text-align:right">'+right+(sub?'<div class="mono muted" style="font-size:10px">'+sub+'</div>':'')+'</span></div>';
+  let h='<div class="hdr"><button class="navbtn" data-ad="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">立替の内訳</div><div style="width:44px"></div></div>';
+  h+='<div class="card" style="margin-bottom:14px"><div class="row between" style="align-items:baseline">'+
+    '<span style="font-size:13px;font-weight:700">'+(q.extra>0?'精算が多い':'まだ戻っていない')+
+    infoBtn("<b>立替</b>は、会社や家族の分を一時的に自分で払ったお金です。<br><br>"+
+      "精算(戻ってきたお金)は、1件ずつの立替とは紐づけていません。何回分かまとめて振り込まれることがあるためです。"+
+      "ここでは<b>古い立替から順に戻った</b>ものとして、まだ戻っていない分を並べています。並んだ金額を足すと、未精算の額になります。<br><br>"+
+      "途中まで戻った立替は、残りの額と「¥◯◯のうち」を出します。行を押すと、その記録を直せます。")+'</span>'+
+    '<span class="mono amber" style="font-size:20px;font-weight:700">'+yen(q.extra>0?q.extra:out)+'</span></div>'+
+    '<div class="mono muted" style="font-size:11px;margin-top:4px">立替 '+yen(q.expTotal)+'('+(q.open.length+q.done.length)+'件) − 精算 '+yen(q.incTotal)+'('+q.incs.length+'件)</div>'+
+    (q.extra>0?'<div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">立替の記帳漏れか、精算の重複かもしれません。</div>':'')+
+    '</div>';
+  if(q.open.length){
+    h+=band("まだ戻っていない分", '<span class="mono muted" style="font-size:11px">'+q.open.length+'件</span>');
+    h+='<div class="card" style="margin-bottom:14px;padding:4px 14px 6px">'+
+      q.open.map(x=>row(x.e, '<span class="mono amber" style="font-size:13px;font-weight:600">'+yen(x.left)+'</span>',
+        x.left<x.e.amount ? yen(x.e.amount)+'のうち' : '')).join("").replace('border-top:1px solid var(--line);','')+
+      '</div>';
+  }
+  if(q.incs.length){
+    const inc=q.incs.slice().reverse();   /* 精算は新しい順(最近いつ戻ったかを先に見せる) */
+    h+=band("戻った分(精算)", '<span class="mono muted" style="font-size:11px">'+q.incs.length+'件</span>');
+    h+='<div class="card" style="margin-bottom:14px;padding:4px 14px 6px">'+
+      inc.map(e=>row(e, '<span class="mono teal" style="font-size:13px;font-weight:600">+'+yen(e.amount)+'</span>')).join("").replace('border-top:1px solid var(--line);','')+
+      '</div>';
+  }
+  if(q.done.length){
+    /* 精算済みの立替は溜まる一方なので畳んで出す(明細の過去の日と同じ▸/▾) */
+    const open=!!UI.advDoneOpen, dn=q.done.slice().reverse();
+    h+='<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.75;margin-bottom:8px" data-ad="done">'+
+      '<span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+' 精算済みの立替 '+q.done.length+'件</span>'+
+      '<span class="mono muted" style="font-size:12px">'+yen(q.done.reduce((a,e)=>a+e.amount,0))+'</span></div>';
+    if(open) h+='<div class="card" style="margin-bottom:14px;padding:4px 14px 6px">'+
+      dn.map(e=>row(e, '<span class="mono muted" style="font-size:13px">'+yen(e.amount)+'</span>')).join("").replace('border-top:1px solid var(--line);','')+'</div>';
+  }
+  if(!q.open.length && !q.incs.length && !q.done.length)
+    h+='<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">立替の記録はまだありません。</div>';
+  return h;
+}
+function bindAdvDrill(){
+  document.querySelectorAll("[data-ad]").forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset.ad, v=el.dataset.v;
+      if(a==="back"){ UI.screen="main"; render(); return; }
+      if(a==="done"){ UI.advDoneOpen=!UI.advDoneOpen; render(); return; }
+      if(a==="edit"){
+        const e=(S.entries||[]).find(x=>String(x.id)===String(v)); if(!e) return;
+        UI.editEntryId=e.id; UI.entryForm=entryFormOf(e); UI.entryReturn="advdrill";
+        UI.screen="entry"; render(); return;
+      }
+    };
+  });
 }
 function viewSvDrill(){
   const mk=UI.month||todayStr().slice(0,7);
@@ -2489,7 +2570,7 @@ function bindCatDrill(){
       else if(a==="drilledit"){
         const e=S.entries.find(x=>String(x.id)===String(v)); if(!e) return;
         UI.editEntryId=e.id;
-        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:(e.type==="income"?(e.inPot||""):(e.svPot||"")),svDraw:(e.svTx!=null),bkSrc:(e.type==="income"?(e.inBk||""):(e.bkSrc||((isGameCat(e)&&e.gtTx==null)?(e.bwal||""):"")))};   /* v5.95 */
+        UI.entryForm=entryFormOf(e);   /* v6.15: 中身はentryFormOfの1か所に(v5.95の形のまま) */
         UI.entryReturn="catdrill";
         UI.screen="entry"; render();
       }
@@ -3271,11 +3352,13 @@ function viewLedger(){
      月の切り替えとは無関係に**通算**で出す(貸しは月をまたいで残るため) */
   { const _adv=advOutstanding();
     if(_adv!==0){
-      h += '<div class="card" style="margin-bottom:12px;padding:11px 14px">'+
+      /* v6.15: 押すと内訳(advdrill)へ。カードの中のⓘは捕捉段階で止まるので、説明だけ読める */
+      h += '<div class="card" style="margin-bottom:12px;padding:11px 14px;cursor:pointer" data-a="advdrill">'+
         '<div class="row between" style="align-items:baseline">'+
         '<span style="font-size:13px;font-weight:700">立替 '+(_adv>0?'未精算':'精算が多い')+
           (_adv>0 ? infoBtn("<b>立替</b>は、会社や家族の分を一時的に自分で払ったお金です(出張の新幹線代、旅行で家族の分までまとめて払った食事代など)。自分の支出ではないので、予算や月の収支には数えません。<br><br>ここには、立て替えたのにまだ戻ってきていない合計を出しています。返してもらったら、収入の分類「<b>立替精算</b>」で記録すると、その分が減って0に戻ります。<br><br>返してもらったお金を「収入」で記録すると、可処分(自由に使えるお金)が増えたことになり、貯金へ回す額がずれます。") : '')+'</span>'+
-        '<span class="mono amber" style="font-size:17px;font-weight:700">'+yen(_adv)+'</span></div>'+
+        '<span><span class="mono amber" style="font-size:17px;font-weight:700">'+yen(_adv)+'</span>'+
+        '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
         /* v5.75: **矛盾の警告は状態なので本文に残す**(読めば行動が変わる)。使い方はⓘへ */
         (_adv>0 ? ''
           : '<div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">立替の記帳漏れか、精算の重複かもしれません。</div>')+
@@ -8190,6 +8273,7 @@ function bindMain(){
       else if(a==="savings"){ UI.screen="savings"; render(); }
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
       else if(a==="svdrill"){ UI.screen="svdrill"; render(); }
+      else if(a==="advdrill"){ UI.advDoneOpen=false; UI.screen="advdrill"; render(); }   /* v6.15 */
       else if(a==="payroll"){ UI.screen="payroll"; render(); }
       else if(a==="mjlog"){ UI.screen="mjlog"; render(); }
       else if(a==="catdrill"){ UI.drillCat=v; UI.drillOpenStore=null; UI.drillMode="chain"; UI.drillAssign=null; UI.drillVarOnly=(v==="消費"); UI.screen="catdrill"; render(); }
@@ -8380,7 +8464,7 @@ function bindMain(){
           if(s){ UI.mjDraft=JSON.parse(JSON.stringify(s)); UI.mjIsNew=false; UI.tab="games"; UI.screen="mahjong-edit"; render(); return; }
         }
         UI.editEntryId=e.id;
-        UI.entryForm={date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:(e.type==="income"?(e.inPot||""):(e.svPot||"")),svDraw:(e.svTx!=null),bkSrc:(e.type==="income"?(e.inBk||""):(e.bkSrc||((isGameCat(e)&&e.gtTx==null)?(e.bwal||""):"")))};   /* v5.95 */
+        UI.entryForm=entryFormOf(e);   /* v6.15: 中身はentryFormOfの1か所に(v5.95の形のまま) */
         UI.screen="entry"; render();
       }
       else if(a==="sedit"){
@@ -8787,6 +8871,10 @@ function applyReceipt(txt){
   f.item=r.items[0].item; f.amount=r.items[0].amount;
   f.extra=r.items.slice(1).map(x=>({item:x.item, amount:x.amount}));
   return r.items.length;
+}
+/* v6.15: 記録を編集する時のフォームの中身。明細・分類の内訳・立替の内訳の3か所から開くので、**同じものを3回書かない** */
+function entryFormOf(e){
+  return {date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:(e.type==="income"?(e.inPot||""):(e.svPot||"")),svDraw:(e.svTx!=null),bkSrc:(e.type==="income"?(e.inBk||""):(e.bkSrc||((isGameCat(e)&&e.gtTx==null)?(e.bwal||""):"")))};   /* v5.95 */
 }
 function viewEntry(){
   const f = UI.entryForm;
