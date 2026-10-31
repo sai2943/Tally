@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.19 (localStorage保存・完全オフライン)
+   Tally 6.20 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1062,7 +1062,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.19";
+const APP_VERSION = "6.20";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1652,7 +1652,7 @@ function viewBankMatch(){
   const uLab=u=>{ const m=u.ms[0]; return md(m.date)+' '+bmLabel(m)+(u.ms.length>1?' ほか'+(u.ms.length-1)+'件':'')+' '+signYen(u.amt); };
   if(R.bankOnly.length){
     h+=band("銀行にあってTallyに無い", '<span class="mono muted" style="font-size:11px">'+R.bankOnly.length+'件</span>',
-      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます(店名・品目・分類を足して保存します)。レシートをClaudeで読ませてあったなら、記録の画面の「取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br>下に出る小さな文字は手がかりです。<b>○○で記録あり</b> = 同じ金額の記録が別の財布にある(財布の選び間違い?)、<b>日付違い?</b> = 同じ金額の記録が離れた日付にある、<b>金額違い?</b> = 近い日付に近い金額の記録がある。押すとその記録を直せます。");
+      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。<b>ATM</b>と、店名にTallyの財布の名前が入っている行(Suicaのチャージなど)は<b>振替</b>で開きます(ATMは、相手の財布や軍資金を選びます)。それ以外は支出(入金なら収入)で開くので、店名・品目・分類を足して保存します。レシートをClaudeで読ませてあったなら、記録の画面の「レシートを取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br>下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(銀行の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
     h+='<div class="card" style="margin-bottom:14px;padding:4px 14px 6px">'+R.bankOnly.map((r,k)=>
       '<div style="padding:8px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
       '<div class="row between" style="align-items:baseline;cursor:pointer" data-bm="add" data-v="'+r.i+'">'+
@@ -1731,10 +1731,18 @@ function bindBankMatch(){
       }
       if(a==="add"){
         const r=((UI.bm||{}).rows||[]).find(x=>String(x.i)===String(v)); if(!r) return;
+        const W=String(UI.bm.walId), hint=r.date.replace(/-/g,"/")+"  "+(r.merch||r.desc||"(摘要なし)")+"  "+signYen(r.amt);
         UI.editEntryId=null; UI.entryReturn="bankmatch";
-        UI.entryForm={date:r.date, type:(r.amt>0?"income":"expense"), category:(r.amt>0?"臨時":"消費"), amount:String(Math.abs(r.amt)),
-          store:"", item:"", memo:"", tmode:"", tfrom:"", tto:"", tplace:"", wal:String(UI.bm.walId),
-          bankHint:r.date.replace(/-/g,"/")+"  "+(r.merch||r.desc||"(摘要なし)")+"  "+signYen(r.amt)};
+        /* v6.20: ATMとチャージは**振替**で開く(実データの記帳漏れの多くがATM・自分への振込・Suicaのチャージだった)。
+           収入や支出で付けると、残高は合っても月の収支と予算が狂う */
+        const tr=bmTransferGuess(r, W);
+        if(tr){
+          UI.entryForm={date:r.date, type:"transfer", category:"", amount:String(Math.abs(r.amt)), store:"", item:"", memo:"", bankHint:hint};
+          UI.trFrom = r.amt<0 ? W : (tr.other||""); UI.trTo = r.amt<0 ? (tr.other||"") : W; UI.trAmt="";
+        } else {
+          UI.entryForm={date:r.date, type:(r.amt>0?"income":"expense"), category:(r.amt>0?"臨時":"消費"), amount:String(Math.abs(r.amt)),
+            store:"", item:"", memo:"", tmode:"", tfrom:"", tto:"", tplace:"", wal:W, bankHint:hint};
+        }
         UI.screen="entry"; render(); return;
       }
       if(a==="edit"){
@@ -5882,6 +5890,14 @@ function bmSplit(text){
 }
 /* ソニー銀行のデビットの摘要は「Visaデビット 01 承認番号 店名」(実物のCSVで確認)。
    承認番号は取消・返金でも同じ番号が使われる(000000や空欄の返金もある)。画面には店名だけ出す */
+/* v6.20: 振替らしい行か。ATMは相手(現金か軍資金か)を選んでもらう。店名にTallyの財布の名前が1つだけ入っていれば
+   (「モバイルSuica」とTallyの財布「Suica」など)、その財布との振替にする。どれでもなければ収入・支出で開く */
+function bmTransferGuess(r, W){
+  const t=bmNorm(r.merch||r.desc).toLowerCase();
+  if(/atm/.test(t)) return {other:""};
+  const hit=walletPots().filter(p=>String(p.id)!==String(W) && bmNorm(p.name) && t.indexOf(bmNorm(p.name).toLowerCase())>=0);
+  return hit.length===1 ? {other:String(hit[0].id)} : null;
+}
 function bmDebit(desc){
   const m=String(desc||"").match(/^Visaデビット\s+\d{1,2}\s+(?:(\d{6})\s+)?(.*)$/);
   if(!m) return {merch:String(desc||""), appr:""};
@@ -6029,15 +6045,25 @@ function bankMatch(bm){
     .filter(m=>!(m.ent && m.ent.chk && (m.date<lo || m.date>to)));
   const fU=unitsOf(freeW);
   const near=(a,b)=>Math.abs(bmDays(a,b));
+  /* v6.20【手がかりを絞った】(実データのスクショ: Suicaのチャージ¥2,000に翌日の現金の飲食¥2,000、¥300のチャージに1か月前のマクドナルド、
+     などの**関係ない組**が並んでいた)。¥300・¥2,000・¥10,000のようなよくある額は、日付の幅を広げるほど偶然に当たる。
+     手がかりは**打ち間違い・選び間違いの形**にだけ出す:
+     ・財布違い: 別の財布に同じ額があり、銀行の日付がその記録の**同じ日〜2日後**(買った日に付けて、カードの引き落としが同じか少し後)
+     ・日付違い: 同じ額で、**月か日のどちらか一方だけ**が違う(10/12を9/12と打った、など。2か月以内)
+     ・金額違い: 2日以内の**1件の記録**で、**数字が1桁だけ違う・隣どうしが入れ替わっている**(1,234と1,243)。
+       レシートの合計(複数の品目)は、品目の打ち間違いが合計の1桁の違いにならないので比べない */
+  const typo=(a,b)=>{ const x=String(Math.abs(a)), y=String(Math.abs(b)); if(x.length!==y.length || x===y) return false;
+    const d=[]; for(let i=0;i<x.length;i++) if(x[i]!==y[i]) d.push(i);
+    return d.length===1 || (d.length===2 && d[1]===d[0]+1 && x[d[0]]===y[d[1]] && x[d[1]]===y[d[0]]); };
+  const dtypo=(a,b)=>a!==b && (a.slice(0,7)===b.slice(0,7) || a.slice(8)===b.slice(8));
   bankOnly.forEach(r=>{
     const best=list=>list.sort((a,b)=>near(a.date,r.date)-near(b.date,r.date))[0];
-    let u=best(oU.filter(x=>x.amt===r.amt && lagOK(r.date,x.date)));
+    let u=best(oU.filter(x=>x.amt===r.amt && bmDays(x.date,r.date)>=0 && bmDays(x.date,r.date)<=2));
     if(u){ r.hint={kind:"wal", u:u, text:walName(wOf(u.ms[0]))+"で記録あり"}; return; }
-    u=best(fU.filter(x=>x.amt===r.amt && !lagOK(r.date,x.date) && near(x.date,r.date)<=45));
+    u=best(fU.filter(x=>x.amt===r.amt && !lagOK(r.date,x.date) && near(x.date,r.date)<=62 && dtypo(x.date,r.date)));
     if(u){ r.hint={kind:"date", u:u, text:"日付違い?"}; return; }
-    const tol=Math.max(100, Math.round(Math.abs(r.amt)*0.1));
-    u=fU.filter(x=>x.date>=from && Math.sign(x.amt)===Math.sign(r.amt) && x.amt!==r.amt && Math.abs(x.amt-r.amt)<=tol && near(x.date,r.date)<=2)
-      .sort((a,b)=>Math.abs(a.amt-r.amt)-Math.abs(b.amt-r.amt) || near(a.date,r.date)-near(b.date,r.date))[0];
+    u=fU.filter(x=>x.ms.length===1 && x.date>=from && Math.sign(x.amt)===Math.sign(r.amt) && typo(x.amt,r.amt) && near(x.date,r.date)<=2)
+      .sort((a,b)=>near(a.date,r.date)-near(b.date,r.date))[0];
     if(u){ r.hint={kind:"amt", u:u, text:"金額違い?"}; u.ms.forEach(m=>{ m.amtHint=r; }); }
   });
   tallyOnly.forEach(m=>{
