@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.20 (localStorage保存・完全オフライン)
+   Tally 6.21 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -678,6 +678,7 @@ function applyData(d){
   S.budgets = (d.budgets && typeof d.budgets==="object") ? d.budgets : {};
   S.openAddOnLaunch = !!d.openAddOnLaunch;   /* v3.13: ホワイトリスト漏れでトグルが毎起動リセットされていた */
   S.genres = (d.genres && typeof d.genres==="object") ? d.genres : {};   /* v3.16: 店→ジャンル辞書 */
+  S.bankMemo = (d.bankMemo && typeof d.bankMemo==="object") ? d.bankMemo : {};   /* v6.21: 銀行の摘要→いつもの付け方(突き合わせで覚える) */
   S.genreCaps = (d.genreCaps && typeof d.genreCaps==="object") ? d.genreCaps : {};   /* v3.64: ジャンル内枠(食費など) */
   /* v3.97【バグ修正】ふるさと納税の限度額がホワイトリストから漏れており、applyDataを通るたびに失われていた
      (=クラウド復元・インポート・スナップ復元・他端末からのpull の全経路で消える)。
@@ -1062,7 +1063,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.20";
+const APP_VERSION = "6.21";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1652,13 +1653,14 @@ function viewBankMatch(){
   const uLab=u=>{ const m=u.ms[0]; return md(m.date)+' '+bmLabel(m)+(u.ms.length>1?' ほか'+(u.ms.length-1)+'件':'')+' '+signYen(u.amt); };
   if(R.bankOnly.length){
     h+=band("銀行にあってTallyに無い", '<span class="mono muted" style="font-size:11px">'+R.bankOnly.length+'件</span>',
-      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。<b>ATM</b>と、店名にTallyの財布の名前が入っている行(Suicaのチャージなど)は<b>振替</b>で開きます(ATMは、相手の財布や軍資金を選びます)。それ以外は支出(入金なら収入)で開くので、店名・品目・分類を足して保存します。レシートをClaudeで読ませてあったなら、記録の画面の「レシートを取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br>下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(銀行の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
+      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。<b>ATM</b>と、店名にTallyの財布の名前が入っている行(Suicaのチャージなど)は<b>振替</b>で開きます(ATMは、相手の財布や軍資金を選びます)。それ以外は支出(入金なら収入)で開くので、店名・品目・分類を足して保存します。<br><br><b>いつもの形</b>: 同じ摘要の行を前にどう付けたか(分類・店名、振替なら相手)をTallyが覚えていて、その形で開きます。覚えるのは銀行と一致した行からで、付け方が割れている時(8割に届かない時)は、その項目は決めません。レシートをClaudeで読ませてあったなら、記録の画面の「レシートを取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br>下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(銀行の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
     h+='<div class="card" style="margin-bottom:14px;padding:4px 14px 6px">'+R.bankOnly.map((r,k)=>
       '<div style="padding:8px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
       '<div class="row between" style="align-items:baseline;cursor:pointer" data-bm="add" data-v="'+r.i+'">'+
       '<span class="ellip" style="min-width:0;font-size:12px"><span class="mono muted" style="margin-right:8px">'+md(r.date)+'</span>'+esc(r.merch||r.desc||"(摘要なし)")+'</span>'+amtCol(r.amt)+'</div>'+
       (r.hint ? '<div class="amber" style="font-size:11px;margin-top:3px;cursor:pointer" data-bm="edit" data-v="'+esc(String((r.hint.u.ms[0].ent||{}).id||""))+'">'+
-        esc(r.hint.text)+': '+esc(uLab(r.hint.u))+' ›</div>' : '')+
+        esc(r.hint.text)+': '+esc(uLab(r.hint.u))+' ›</div>'
+        : (()=>{ const sh=bmShape(r, W); return sh ? '<div class="muted" style="font-size:11px;margin-top:3px">'+esc(bmShapeText(sh, r, W))+'</div>' : ''; })())+
       '</div>').join("")+'</div>';
   }
   /* ── Tallyにあって銀行に無い ── */
@@ -1699,14 +1701,14 @@ function bmLoad(text, src){
   const p=bankCsvRows(text);
   if(p.err){ UI.bm={walId:W, err:p.err, src:src}; render(); return; }
   UI.bm=Object.assign({walId:W, src:src}, p); UI.bmOpen={};
-  const n=bmApplyChk(bankMatch(UI.bm));
-  if(n) save();
+  const R=bankMatch(UI.bm), n=bmApplyChk(R), learned=bmLearn(R);
+  if(n || learned) save();
   render();
   toast(p.rows.length+"行を読み込みました"+(n?"(✓ "+n+"件)":""));
 }
 function bindBankMatch(){
   /* 記帳を足して戻ってきた時など、新しく一致した記録にも✓を付ける */
-  if(UI.bm && UI.bm.rows){ if(bmApplyChk(UI._bmR || bankMatch(UI.bm))) save(); }
+  if(UI.bm && UI.bm.rows){ const R=UI._bmR || bankMatch(UI.bm), n=bmApplyChk(R), learned=bmLearn(R); if(n || learned) save(); }
   UI._bmR=null;   /* 1回きり(描いた直後の bind だけが使う) */
   const fEl=document.getElementById("bm-file");
   if(fEl) fEl.onchange=e=>{
@@ -1735,13 +1737,18 @@ function bindBankMatch(){
         UI.editEntryId=null; UI.entryReturn="bankmatch";
         /* v6.20: ATMとチャージは**振替**で開く(実データの記帳漏れの多くがATM・自分への振込・Suicaのチャージだった)。
            収入や支出で付けると、残高は合っても月の収支と予算が狂う */
-        const tr=bmTransferGuess(r, W);
+        /* v6.21: いつもの形(この摘要を前にどう付けたか)があればそれで開く。無ければATM・財布の名前から推す */
+        const sh=bmShape(r, W);
+        const tr=(sh && sh.type==="transfer") ? sh : (sh ? null : bmTransferGuess(r, W));
         if(tr){
           UI.entryForm={date:r.date, type:"transfer", category:"", amount:String(Math.abs(r.amt)), store:"", item:"", memo:"", bankHint:hint};
           UI.trFrom = r.amt<0 ? W : (tr.other||""); UI.trTo = r.amt<0 ? (tr.other||"") : W; UI.trAmt="";
         } else {
-          UI.entryForm={date:r.date, type:(r.amt>0?"income":"expense"), category:(r.amt>0?"臨時":"消費"), amount:String(Math.abs(r.amt)),
-            store:"", item:"", memo:"", tmode:"", tfrom:"", tto:"", tplace:"", wal:W, bankHint:hint};
+          UI.entryForm={date:r.date, type:(r.amt>0?"income":"expense"),
+            category:((sh&&sh.cat) || (r.amt>0?"臨時":"消費")), amount:String(Math.abs(r.amt)),
+            store:((sh&&sh.store)||""), item:"", memo:"", tmode:"", tfrom:"", tto:"", tplace:"", wal:W, bankHint:hint};
+          /* 上で「振替」に切り替えた時のために、銀行の側だけ先に入れておく(前の振替の選択が残っていると取り違える) */
+          UI.trFrom = r.amt<0 ? W : ""; UI.trTo = r.amt<0 ? "" : W; UI.trAmt="";
         }
         UI.screen="entry"; render(); return;
       }
@@ -6060,7 +6067,8 @@ function bankMatch(bm){
     const best=list=>list.sort((a,b)=>near(a.date,r.date)-near(b.date,r.date))[0];
     let u=best(oU.filter(x=>x.amt===r.amt && bmDays(x.date,r.date)>=0 && bmDays(x.date,r.date)<=2));
     if(u){ r.hint={kind:"wal", u:u, text:walName(wOf(u.ms[0]))+"で記録あり"}; return; }
-    u=best(fU.filter(x=>x.amt===r.amt && !lagOK(r.date,x.date) && near(x.date,r.date)<=62 && dtypo(x.date,r.date)));
+    /* 日付違いは**記帳だけ**を相手にする。振替には✓が無く、前の明細で一致した振替(毎月のATM¥20,000など)が何度でも候補に戻ってくるため */
+    u=best(fU.filter(x=>x.ms.every(m=>m.src==="e") && x.amt===r.amt && !lagOK(r.date,x.date) && near(x.date,r.date)<=62 && dtypo(x.date,r.date)));
     if(u){ r.hint={kind:"date", u:u, text:"日付違い?"}; return; }
     u=fU.filter(x=>x.ms.length===1 && x.date>=from && Math.sign(x.amt)===Math.sign(r.amt) && typo(x.amt,r.amt) && near(x.date,r.date)<=2)
       .sort((a,b)=>near(a.date,r.date)-near(b.date,r.date))[0];
@@ -6089,6 +6097,76 @@ function bmApplyChk(res){
   let n=0;
   res.pairs.forEach(p=>p.ms.forEach(m=>{ if(m.ent && !m.ent.chk){ m.ent.chk=true; n++; } }));
   return n;
+}
+/* ============================================================
+   v6.21 **いつもの付け方を覚える**(ユーザー要望: 銀行の明細の行を一度付けたら、同じ摘要は次から同じ形で開くように)。
+   覚える元は**一致した行**——ユーザーが実際にどう付けたか(支出・収入なら分類と店名、振替なら相手)。
+   過去の明細を読み込んだ時点で、もう付けてある行から一気に覚える(初回から効く)。
+   ・鍵は摘要の店名(`bmKey`: 末尾の /NFC を外し、英字は小文字)
+   ・**数えて、8割以上を占める時だけ**その値を使う(v3.30の金額チップと同じ規則)。Amazonのように分類が割れる店は分類を決めない
+   ・同じ明細を何度読み込んでも数が増えないよう、**この明細に一致した行がある鍵だけ、この明細の数で置き換える**(古い明細で覚えた鍵は残る)
+   ・`S.bankMemo`に保存(同期・バックアップに乗る。applyDataの許可リストに追加済み)
+   ============================================================ */
+const bmKey=s=>bmNorm(s).replace(/\/NFC$/i,"").trim().toLowerCase();
+/* 振替の相手(振替の画面の口座の id): 財布どうしは相手の財布、貯金は箱、軍資金は置き場 */
+function bmOther(m){
+  const t=m.o||{};
+  if(m.src==="wl"){ const o=(((S.wallet||{}).txns)||[]).find(x=>x!==t && x.date===t.date && num(x.amount)===-num(t.amount) && tWal(x)!==tWal(t)); return o ? tWal(o) : ""; }
+  if(m.src==="sv") return txPot(t);
+  if(m.src==="bk") return ACC_BANK+":"+tBWal(t);
+  return "";
+}
+function bmLearn(res){
+  const fresh={};
+  res.pairs.forEach(p=>{
+    const k=bmKey(p.r.merch||p.r.desc); if(!k) return;
+    const f=fresh[k]||(fresh[k]={n:0, type:{}, cat:{}, store:{}, other:{}});
+    const inc=(o,v)=>{ if(v!=null && v!=="") o[v]=(o[v]||0)+1; };
+    f.n++;
+    const m0=p.ms[0];
+    if(m0.src==="e" || (m0.src==="bk" && m0.ent)){   /* 記帳(遊技の経費の補充は、その経費の記帳として) */
+      const es=p.ms.map(m=>m.ent).filter(Boolean);
+      inc(f.type, (es[0]||{}).type);
+      es.forEach(e=>inc(f.cat, e.category));
+      inc(f.store, String((es[0]||{}).store||"").trim());
+    } else if(m0.src==="wl" || m0.src==="sv" || m0.src==="bk"){
+      const o=bmOther(m0); if(!o) { f.n--; return; }
+      inc(f.type, "transfer"); inc(f.other, o);
+    } else f.n--;
+  });
+  const memo=S.bankMemo=(S.bankMemo||{});
+  let changed=false;
+  Object.keys(fresh).forEach(k=>{ if(fresh[k].n>0 && JSON.stringify(memo[k])!==JSON.stringify(fresh[k])){ memo[k]=fresh[k]; changed=true; } });
+  return changed;
+}
+/* 振替の画面の口座(idと名前だけ。transferAccountsと同じ id の作り方・残高は計算しない) */
+function bmAccs(){
+  return walletPots().map(p=>({id:String(p.id), name:p.name}))
+    .concat(bankPots().map(p=>({id:ACC_BANK+":"+p.id, name:p.name})))
+    .concat(savingsPots().map(p=>({id:String(p.id), name:p.name})));
+}
+/* いつもの形(無ければ null)。8割以上を占める値だけを使う */
+function bmShape(r, W){
+  const m=(S.bankMemo||{})[bmKey(r.merch||r.desc)]; if(!m || !m.n) return null;
+  const mode=o=>{ const ks=Object.keys(o||{}); if(!ks.length) return ""; const tot=ks.reduce((a,k)=>a+o[k],0);
+    const best=ks.sort((a,b)=>o[b]-o[a])[0]; return o[best]>=tot*0.8 ? best : ""; };
+  const type=mode(m.type); if(!type) return null;
+  if(type==="transfer"){
+    const o=mode(m.other), ok=o && o!==String(W) && bmAccs().some(a=>a.id===o);
+    return {type:"transfer", other:(ok?o:"")};
+  }
+  if((type==="expense" && r.amt>0) || (type==="income" && r.amt<0)) return null;   /* 返金など、向きが違う行には使わない */
+  const cat=mode(m.cat), cats=(type==="income"?INCOME_CATS:EXPENSE_CATS);
+  return {type:type, cat:(cats.indexOf(cat)>=0?cat:""), store:mode(m.store)};
+}
+/* 画面に出す一言 */
+function bmShapeText(sh, r, W){
+  if(sh.type==="transfer"){
+    const an=id=>{ const a=bmAccs().find(x=>x.id===id); return a?a.name:"?"; };
+    if(!sh.other) return "いつもの形: 振替";
+    return "いつもの形: 振替 "+(r.amt<0 ? walName(W)+" → "+an(sh.other) : an(sh.other)+" → "+walName(W));
+  }
+  return "いつもの形: "+(sh.type==="income"?"収入":"支出")+(sh.cat?"・"+sh.cat:"")+(sh.store?"・"+sh.store:"");
 }
 function storeGroups(list){
   const groups=[], idxOf={};
