@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.17 (localStorage保存・完全オフライン)
+   Tally 6.19 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -577,7 +577,7 @@ let UI = {
   mdbForm:null,                        // 機種マスタドラフト
   msg:"",                              // backup画面メッセージ
   detAsc:false,                        // 明細の並び(v5.57・既定=新しい順。突合の時だけ古い順)
-  recon:false, reconWal:null           // 照合モード(v5.58)。✓自体はエントリのe.chkに保存(v5.60)
+  recon:false, reconWal:null, bm:null, bmWal:null, bmOpen:{}           // 照合モード(v5.58)。✓自体はエントリのe.chkに保存(v5.60)
 };
 
 function migrateEntry(e){
@@ -1062,7 +1062,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.17";
+const APP_VERSION = "6.19";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1262,6 +1262,7 @@ function _renderScreen(app){
   if(UI.screen==="catdrill"){ app.innerHTML = viewCatDrill(); bindCatDrill(); return; }
   if(UI.screen==="svdrill"){ app.innerHTML = viewSvDrill(); bindSvDrill(); return; }
   if(UI.screen==="advdrill"){ app.innerHTML = viewAdvDrill(); bindAdvDrill(); return; }   /* v6.15 */
+  if(UI.screen==="bankmatch"){ app.innerHTML = viewBankMatch(); bindBankMatch(); return; }   /* v6.18 */
   if(UI.screen==="payroll"){ app.innerHTML = viewPayroll(); bindPayroll(); return; }
   if(UI.screen==="tredit"){ app.innerHTML = viewTrEdit(); bindTrEdit(); return; }
   if(UI.screen==="mjlog"){ app.innerHTML = viewMjLog(); bindMjLog(); return; }
@@ -1583,6 +1584,166 @@ function viewAdvDrill(){
   if(!q.open.length && !q.incs.length && !q.done.length)
     h+='<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">立替の記録はまだありません。</div>';
   return h;
+}
+/* v6.18: 銀行の明細と突き合わせる画面。明細はUI.bm(保存しない)、結果は描くたびに計算し直す
+   (記帳を足して戻ってくると、その行が消える) */
+function bmDefaultWal(){
+  const p=walletPots();
+  const hit=p.find(x=>/ソニー/.test(x.name)) || p.find(x=>/銀行/.test(x.name)) || p[0];
+  return String(UI.reconWal || hit.id);
+}
+function viewBankMatch(){
+  const bm=UI.bm||null, W=String((bm&&bm.walId)||UI.bmWal||bmDefaultWal()), pots=walletPots();
+  const md=d=>String(d||"").slice(5).replace("-","/");
+  let h='<div class="hdr"><button class="navbtn" data-bm="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">銀行の明細と突き合わせ</div><div style="width:44px"></div></div>';
+  /* 読み込み(ファイルは<label>で包んだ見えない<input type=file>。押すとファイルの選択が開く) */
+  const fileBtn=(lab,st)=>'<label class="btn" style="text-align:center;cursor:pointer;display:block;position:relative;'+st+'">'+lab+
+    '<input type="file" id="bm-file" accept=".csv,.txt,text/csv,text/plain" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none"></label>';
+  const walRow=(pots.length>1)
+    ? '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">'+pots.map(p=>
+        '<button class="btn'+(String(p.id)===W?' sel':'')+'" style="font-size:11px;padding:5px 10px" data-bm="wal" data-v="'+esc(p.id)+'">'+esc(p.name)+'</button>').join("")+'</div>'
+    : '';
+  const loadInfo="銀行の明細を読み込んで、Tallyの記録と自動で突き合わせます。<br><br>"+
+    "<b>読み込めるもの</b>: 銀行のサイトから保存した明細のファイル(CSV)か、同じ形でコピーした文字。上の方に「取引日」「摘要」「入金」「出金」「残高」のような見出しの行があれば読めます。ソニー銀行は、PC版のサイトの「通帳」から保存できます。<br><br>"+
+    "<b>突き合わせ方</b>: 金額が同じで、日付が近いもの(銀行の日付がTallyより3日早い〜10日遅い)を同じ取引とみなします。1枚のレシートを品目ごとに分けて記録していても、同じ日・同じ店の合計で突き合わせます。貯金や軍資金への振替も相手になります。<br><br>"+
+    "一致した記録には、照合の✓が付きます。読み込んだ明細はTallyには保存しません。";
+  if(!bm || !bm.rows){
+    h+='<div class="card" style="margin-bottom:14px">'+
+      '<div class="fxl">どの財布の明細か</div>'+(walRow||'<div style="font-size:13px;margin-bottom:10px">'+esc(walName(W))+'</div>')+
+      '<div class="fxl">明細を読み込む'+infoBtn(loadInfo)+'</div>'+
+      '<div class="row" style="gap:6px">'+
+      '<div style="flex:1">'+fileBtn("ファイル(CSV)","padding:12px 0;font-size:13px;font-weight:700")+'</div>'+
+      '<button class="btn" style="flex:1;padding:12px 0;font-size:13px;font-weight:700" data-bm="paste">貼り付け</button></div>'+
+      (bm&&bm.err ? '<div class="red" style="font-size:12px;margin-top:10px">'+esc(bm.err)+'</div>' : '')+
+      '</div>';
+    return h;
+  }
+  const R=bankMatch(bm);
+  UI._bmR=R;   /* 続けて走る bind が同じ結果で✓を付ける(突き合わせを2度しない) */
+  /* ── 残高と差 ── */
+  const line=(lab,y,strong)=>'<div class="row between" style="font-size:'+(strong?13:12)+'px;padding:'+(strong?'6px 0 2px':'2px 0 2px 12px')+'">'+
+    '<span'+(strong?' style="font-weight:700"':' class="muted"')+'>'+lab+'</span><span class="mono'+(strong?'':' muted')+'"'+(strong?' style="font-weight:700"':'')+'>'+signYen(y)+'</span></div>';
+  h+='<div class="card" style="margin-bottom:14px">'+walRow+
+    '<div class="mono muted" style="font-size:11px">'+md(R.from)+'〜'+md(R.to)+' · '+esc(walName(W))+' · '+R.rows.length+'行'+(bm.src?' · '+esc(bm.src):'')+'</div>';
+  if(R.diff!=null){
+    const ok=R.diff===0;
+    h+='<div class="row between" style="font-size:12px;margin-top:10px"><span class="muted">銀行の残高('+md(R.to)+')</span><span class="mono">'+yen(R.bankClose)+'</span></div>'+
+      '<div class="row between" style="font-size:12px;margin-top:2px"><span class="muted">Tallyの残高('+md(R.to)+')</span><span class="mono">'+yen(R.tallyClose)+'</span></div>'+
+      '<div class="row between" style="align-items:baseline;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">'+
+      '<span style="font-size:13px;font-weight:700">'+(ok?'一致':'差')+
+        infoBtn("<b>差</b> = 銀行の残高 − Tallyの残高(読み込んだ明細の最後の日の時点)。<br><br>差は次の3つを足したものです。<br>"+
+          "・<b>銀行にだけある</b>: 銀行の明細にあって、Tallyに見つからない取引(記帳漏れなど)<br>"+
+          "・<b>Tallyにだけある</b>: Tallyにあって、銀行の明細に見つからない記録(二重の記録・金額違い・まだ銀行に出ていないもの など)。銀行から見た向きにするため、符号を逆にして足します<br>"+
+          "・<b>期間より前からのずれ</b>: 読み込んだ明細の最初の日より前から、もうあったずれ。もっと前の日からの明細を読み込むと、中身が分かります")+'</span>'+
+      '<span class="mono '+(ok?'teal':'amber')+'" style="font-size:20px;font-weight:700">'+(ok?'✓':signYen(R.diff))+'</span></div>';
+    if(!ok){
+      h+=(R.sumB?line("銀行にだけある "+R.bankOnly.length+"件", R.sumB):'')+
+        (R.sumT?line("Tallyにだけある "+R.tallyOnly.length+"件", -R.sumT):'')+
+        (R.before?line("期間より前からのずれ", R.before):'');
+    }
+  } else {
+    h+='<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.6">'+(bm.balNote?'残高の列が並びどおりに続いていないので、残高は比べていません。':'残高の列が無いので、残高は比べていません。')+'</div>';
+  }
+  h+='<div style="margin-top:10px;text-align:right">'+fileBtn('別の明細を読み込む','display:inline-block;background:none;border:0;padding:0;color:var(--muted);font-size:11px;text-decoration:underline')+'</div>';
+  h+='</div>';
+  /* ── 銀行にあってTallyに無い(記帳漏れ) ── */
+  const amtCol=y=>'<span class="mono '+clsPM(y)+'" style="font-size:13px;font-weight:600;flex-shrink:0;margin-left:8px">'+signYen(y)+'</span>';
+  const uLab=u=>{ const m=u.ms[0]; return md(m.date)+' '+bmLabel(m)+(u.ms.length>1?' ほか'+(u.ms.length-1)+'件':'')+' '+signYen(u.amt); };
+  if(R.bankOnly.length){
+    h+=band("銀行にあってTallyに無い", '<span class="mono muted" style="font-size:11px">'+R.bankOnly.length+'件</span>',
+      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます(店名・品目・分類を足して保存します)。レシートをClaudeで読ませてあったなら、記録の画面の「取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br>下に出る小さな文字は手がかりです。<b>○○で記録あり</b> = 同じ金額の記録が別の財布にある(財布の選び間違い?)、<b>日付違い?</b> = 同じ金額の記録が離れた日付にある、<b>金額違い?</b> = 近い日付に近い金額の記録がある。押すとその記録を直せます。");
+    h+='<div class="card" style="margin-bottom:14px;padding:4px 14px 6px">'+R.bankOnly.map((r,k)=>
+      '<div style="padding:8px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
+      '<div class="row between" style="align-items:baseline;cursor:pointer" data-bm="add" data-v="'+r.i+'">'+
+      '<span class="ellip" style="min-width:0;font-size:12px"><span class="mono muted" style="margin-right:8px">'+md(r.date)+'</span>'+esc(r.merch||r.desc||"(摘要なし)")+'</span>'+amtCol(r.amt)+'</div>'+
+      (r.hint ? '<div class="amber" style="font-size:11px;margin-top:3px;cursor:pointer" data-bm="edit" data-v="'+esc(String((r.hint.u.ms[0].ent||{}).id||""))+'">'+
+        esc(r.hint.text)+': '+esc(uLab(r.hint.u))+' ›</div>' : '')+
+      '</div>').join("")+'</div>';
+  }
+  /* ── Tallyにあって銀行に無い ── */
+  if(R.tallyOnly.length){
+    h+=band("Tallyにあって銀行に無い", '<span class="mono muted" style="font-size:11px">'+R.tallyOnly.length+'件</span>',
+      "Tallyの記録のうち、銀行の明細に相手が見つからなかったものです。<br><br>よくある理由: 同じレシートを二度取り込んだ(二重)、金額の打ち間違い、財布の選び間違い(現金で払ったのに銀行で記録した など)、まだ銀行に出ていない(明細の最後の数日)。<br><br>行を押すと、その記録を直せます。振替(貯金・軍資金への移動など)は、明細の画面の振替の行から直します。");
+    h+='<div class="card" style="margin-bottom:14px;padding:4px 14px 6px">'+R.tallyOnly.map((m,k)=>
+      '<div style="padding:8px 0;'+(k?'border-top:1px solid var(--line)':'')+(m.ent?';cursor:pointer':'')+'"'+(m.ent?' data-bm="edit" data-v="'+esc(String(m.ent.id))+'"':'')+'>'+
+      '<div class="row between" style="align-items:baseline">'+
+      '<span class="ellip" style="min-width:0;font-size:12px"><span class="mono muted" style="margin-right:8px">'+md(m.date)+'</span>'+esc(bmLabel(m))+'</span>'+amtCol(m.amt)+'</div>'+
+      (m.hint ? '<div class="'+(/二重|金額/.test(m.hint)?'amber':'muted')+'" style="font-size:11px;margin-top:3px">'+esc(m.hint)+'</div>' : '')+
+      '</div>').join("")+'</div>';
+  }
+  if(!R.bankOnly.length && !R.tallyOnly.length)
+    h+='<div style="text-align:center;padding:18px 0 24px;font-size:13px" class="teal">'+(R.diff?'行はすべて一致しました。差は期間より前からのずれです。':'すべて一致しました。')+'</div>';
+  /* ── 畳んで出すもの ── */
+  const fold=(key,lab,right,body)=>{
+    const open=!!(UI.bmOpen||{})[key];
+    return '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.8;margin-bottom:8px" data-bm="fold" data-v="'+key+'">'+
+      '<span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+' '+lab+'</span><span class="mono muted" style="font-size:12px">'+right+'</span></div>'+
+      (open ? '<div class="card" style="margin-bottom:12px;padding:4px 14px 6px">'+body+'</div>' : '');
+  };
+  const sm=(d,lab,y,sub,k)=>'<div style="padding:6px 0;'+(k?'border-top:1px solid var(--line)':'')+'"><div class="row between" style="align-items:baseline;font-size:12px">'+
+    '<span class="ellip" style="min-width:0"><span class="mono muted" style="margin-right:8px">'+md(d)+'</span>'+esc(lab)+'</span><span class="mono muted" style="flex-shrink:0;margin-left:8px">'+signYen(y)+'</span></div>'+
+    (sub?'<div class="mono muted" style="font-size:10px;margin-top:2px">'+esc(sub)+'</div>':'')+'</div>';
+  const nC=R.cancelB.length+R.cancelT.length;
+  if(nC) h+=fold("cancel", "打ち消し合う行 "+nC+"組", "",
+    R.cancelB.map((p,k)=>sm(p[0].date, (p[0].merch||p[0].desc)+(p[1].merch!==p[0].merch?" / "+(p[1].merch||p[1].desc):"")+" "+md(p[0].date)+"・"+md(p[1].date), p[0].amt,
+      p[0].appr && p[0].appr===p[1].appr ? "銀行: 同じ承認番号の出と入(取消・返金)" : "銀行: 同じ店の同じ額の出と入(返金など)", k)).join("")+
+    R.cancelT.map((p,k)=>sm(p[0].date, bmLabel(p[0]), p[0].amt, "Tallyの中だけの出と入(銀行に出ていない)", k+R.cancelB.length)).join(""));
+  if(R.pairs.length) h+=fold("ok", "一致 "+R.pairs.length+"件", "",
+    R.pairs.map((p,k)=>sm(p.r.date, (p.r.merch||p.r.desc||"")+" ⇔ "+bmLabel(p.ms[0])+(p.ms.length>1?" ほか"+(p.ms.length-1)+"件":""), p.r.amt,
+      p.lag ? "Tallyの日付 "+md(p.ms[0].date)+"("+(p.lag>0?p.lag+"日後に":(-p.lag)+"日前に")+"引き落とし)" : "", k)).join(""));
+  return h;
+}
+function bmLoad(text, src){
+  const W=String((UI.bm&&UI.bm.walId)||UI.bmWal||bmDefaultWal());
+  const p=bankCsvRows(text);
+  if(p.err){ UI.bm={walId:W, err:p.err, src:src}; render(); return; }
+  UI.bm=Object.assign({walId:W, src:src}, p); UI.bmOpen={};
+  const n=bmApplyChk(bankMatch(UI.bm));
+  if(n) save();
+  render();
+  toast(p.rows.length+"行を読み込みました"+(n?"(✓ "+n+"件)":""));
+}
+function bindBankMatch(){
+  /* 記帳を足して戻ってきた時など、新しく一致した記録にも✓を付ける */
+  if(UI.bm && UI.bm.rows){ if(bmApplyChk(UI._bmR || bankMatch(UI.bm))) save(); }
+  UI._bmR=null;   /* 1回きり(描いた直後の bind だけが使う) */
+  const fEl=document.getElementById("bm-file");
+  if(fEl) fEl.onchange=e=>{
+    const f=e.target.files && e.target.files[0]; if(!f) return;
+    f.arrayBuffer().then(buf=>{
+      const txt=bmDecode(buf);
+      if(txt==null){ UI.bm={walId:String((UI.bm&&UI.bm.walId)||UI.bmWal||bmDefaultWal()), err:"文字コードが読めませんでした"}; render(); return; }
+      bmLoad(txt, f.name);
+    });
+  };
+  document.querySelectorAll("[data-bm]").forEach(el=>{
+    el.onclick=ev=>{
+      const a=el.dataset.bm, v=el.dataset.v;
+      if(ev && ev.stopPropagation) ev.stopPropagation();
+      if(a==="back"){ UI.screen="main"; render(); return; }
+      if(a==="wal"){ if(UI.bm) UI.bm.walId=String(v); else UI.bmWal=String(v); render(); return; }
+      if(a==="fold"){ UI.bmOpen=Object.assign({}, UI.bmOpen||{}, {[v]:!(UI.bmOpen||{})[v]}); render(); return; }
+      if(a==="paste"){
+        if(navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(t=>bmLoad(t,"貼り付け"), ()=>toast("貼り付けできませんでした"));
+        else toast("この端末では貼り付けを読めません");
+        return;
+      }
+      if(a==="add"){
+        const r=((UI.bm||{}).rows||[]).find(x=>String(x.i)===String(v)); if(!r) return;
+        UI.editEntryId=null; UI.entryReturn="bankmatch";
+        UI.entryForm={date:r.date, type:(r.amt>0?"income":"expense"), category:(r.amt>0?"臨時":"消費"), amount:String(Math.abs(r.amt)),
+          store:"", item:"", memo:"", tmode:"", tfrom:"", tto:"", tplace:"", wal:String(UI.bm.walId),
+          bankHint:r.date.replace(/-/g,"/")+"  "+(r.merch||r.desc||"(摘要なし)")+"  "+signYen(r.amt)};
+        UI.screen="entry"; render(); return;
+      }
+      if(a==="edit"){
+        const e=(S.entries||[]).find(x=>String(x.id)===String(v)); if(!e) return;
+        UI.editEntryId=e.id; UI.entryForm=entryFormOf(e); UI.entryReturn="bankmatch";
+        UI.screen="entry"; render(); return;
+      }
+    };
+  });
 }
 function bindAdvDrill(){
   document.querySelectorAll("[data-ad]").forEach(el=>{
@@ -2735,7 +2896,7 @@ function viewLedgerDetail(mk){
     h += '<div class="card" style="margin-bottom:10px;border-color:var(--teal)">'+
       '<div class="row between" style="align-items:baseline">'+
       '<span class="teal" style="font-size:12px;font-weight:700">照合中'+
-        infoBtn("<b>照合</b>は、Tallyの記録と銀行(カード)の明細を突き合わせて、記録漏れや金額違いを見つける機能です。<br><br>使い方: 銀行の明細を上から順に見て、Tallyに対応する記録があればタップして✓を付けます。<br>最後まで終えた時に<b>✓の付いていない記録</b>が、銀行には無い記録(二重に記録した・金額が違う など)です。逆に、銀行にあるのにTallyに見つからない行は記録漏れです。<br><br>予定(未来の日付)の記録はまだ銀行に載っていないので、照合中は表示しません。財布(口座や現金など、お金の置き場所)が複数ある時は、上のボタンで照合する財布を絞れます。付けた✓は保存されるので、次は続きから照合できます。")+'</span>'+
+        infoBtn("<b>照合</b>は、Tallyの記録と銀行(カード)の明細を突き合わせて、記録漏れや金額違いを見つける機能です。<br><br>使い方: 銀行の明細を上から順に見て、Tallyに対応する記録があればタップして✓を付けます。<br>最後まで終えた時に<b>✓の付いていない記録</b>が、銀行には無い記録(二重に記録した・金額が違う など)です。逆に、銀行にあるのにTallyに見つからない行は記録漏れです。<br><br>予定(未来の日付)の記録はまだ銀行に載っていないので、照合中は表示しません。財布(口座や現金など、お金の置き場所)が複数ある時は、上のボタンで照合する財布を絞れます。付けた✓は保存されるので、次は続きから照合できます。<br><br>銀行の明細のファイル(CSV)があるなら、下の「銀行の明細を読み込んで突き合わせる」で、機械に突き合わせさせることもできます。一致した記録には自動で✓が付き、銀行にあってTallyに無い行(記帳漏れ)だけが残ります。")+'</span>'+
       '<span><span class="mono muted" style="font-size:11px">残り '+rest.n+'件</span> '+
       '<span class="mono teal" style="font-size:17px;font-weight:700">'+signYen(rest.net)+'</span></span></div>'+
       /* 財布が1つしか無いなら絞り込みは出さない(押す先が1つのボタンは邪魔なだけ) */
@@ -2745,6 +2906,8 @@ function viewLedgerDetail(mk){
             '<button class="btn'+((String(UI.reconWal||"")===String(pp.id||""))?' sel':'')+'" style="font-size:11px;padding:5px 10px" data-a="rwal" data-v="'+esc(pp.id==null?"all":pp.id)+'">'+esc(pp.name)+'</button>').join("")+
           '</div>'
         : '')+
+      /* v6.18: 銀行の明細(CSV)を読み込んで機械に突き合わせさせる入口。手で✓を付けるのは、明細が無い財布(現金など)の時だけになる */
+      '<button class="btn full" style="margin-top:10px;font-size:12px;padding:9px 0;color:var(--teal);font-weight:700" data-a="bmopen">銀行の明細を読み込んで突き合わせる ›</button>'+
       /* v5.75: 使い方の説明は見出しのⓘへ(ユーザー要望: 余計な説明文が嫌) */
       /* v5.60: ✓が保存されるようになったので**戻す道**が要る。
          押し間違いを1件ずつ外すのは現実的でない。**照合済みが実在する時だけ出す** */
@@ -5665,6 +5828,242 @@ function reconRest(list){
   const rest=(list||[]).filter(e=>!e.chk);
   return {n:rest.length, net:rest.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0)};
 }
+/* ============================================================
+   v6.18 銀行の明細と突き合わせ(ユーザー: ソニー銀行が合わないのが圧倒的に多い。記帳漏れの原因追求の時間が重い)。
+   照合(v5.58)は銀行アプリを見ながら1件ずつ✓を付ける手作業で、**探す作業そのものが人の目**だった。
+   明細(CSV)を読み込み、金額と日付で機械に突き合わせさせて、**銀行にあってTallyに無い行**だけを残す。
+   ・Tally側は`walletMoves`(残高と同じ1つの絞り込み)から取る——記帳だけでなく、貯金・軍資金・投資・財布どうしの振替も銀行に出るので
+   ・1枚のレシートは品目ごとに別の記録になっている(v4.35)ので、**同じ日・同じ店の合計**でも突き合わせる
+   ・銀行の日付は記帳の日より遅れることがある(引き落としの処理・週末)。−3〜+10日を同じ取引の範囲とする
+   ・一致した記録には照合の✓(`e.chk`)を付ける。明細は保存しない(UIだけ・読み直せばよい)
+   ============================================================ */
+const BM_LAG_BACK=10, BM_LAG_FWD=3;   /* 銀行の日付 − Tallyの日付 が −3〜+10日 */
+const bmDays=(a,b)=>Math.round((new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/86400000);   /* b − a(日) */
+const bmNorm=s=>String(s==null?"":s).normalize("NFKC").replace(/\s+/g," ").trim();
+/* ファイルの文字コード: まずUTF-8、だめならShift_JIS(銀行のCSVに多い) */
+function bmDecode(buf){
+  const u8=new Uint8Array(buf);
+  try{ return new TextDecoder("utf-8",{fatal:true}).decode(u8); }
+  catch(e){ try{ return new TextDecoder("shift_jis").decode(u8); }catch(e2){ return null; } }
+}
+function bmParseDate(s){
+  s=bmNorm(s);
+  let m=s.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})/);
+  if(m) return m[1]+"-"+m[2].padStart(2,"0")+"-"+m[3].padStart(2,"0");
+  m=s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if(m) return m[1]+"-"+m[2]+"-"+m[3];
+  m=s.match(/^(\d{1,2})[\/\-.月](\d{1,2})日?$/);   /* 年の無い日付は、今日より先なら去年 */
+  if(m){ const t=todayStr(), d=t.slice(0,4)+"-"+m[1].padStart(2,"0")+"-"+m[2].padStart(2,"0");
+    return d>potDay(t,1) ? (num(t.slice(0,4))-1)+d.slice(4) : d; }
+  return "";
+}
+function bmParseAmt(s){
+  s=bmNorm(s).replace(/[¥,円\s+]/g,"");
+  if(!s || s==="-") return 0;
+  const neg=/^[-−△▲]/.test(s);
+  const n=num(s.replace(/^[-−△▲]/,""));
+  return neg ? -n : n;
+}
+/* 行と列に分ける。タブがあればタブ区切り(表からコピーした時)、無ければCSV(""で囲んだ欄の , は区切りにしない) */
+function bmSplit(text){
+  const lines=String(text).split(/\r\n|\n|\r/).filter(l=>l.trim()!=="");
+  if(lines.slice(0,5).some(l=>l.indexOf("\t")>=0)) return lines.map(l=>l.split("\t"));
+  return lines.map(l=>{
+    const row=[]; let cur="", q=false;
+    for(let i=0;i<l.length;i++){
+      const ch=l[i];
+      if(q){ if(ch==='"'){ if(l[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=ch; }
+      else if(ch==='"') q=true;
+      else if(ch===','){ row.push(cur); cur=""; }
+      else cur+=ch;
+    }
+    row.push(cur); return row;
+  });
+}
+/* ソニー銀行のデビットの摘要は「Visaデビット 01 承認番号 店名」(実物のCSVで確認)。
+   承認番号は取消・返金でも同じ番号が使われる(000000や空欄の返金もある)。画面には店名だけ出す */
+function bmDebit(desc){
+  const m=String(desc||"").match(/^Visaデビット\s+\d{1,2}\s+(?:(\d{6})\s+)?(.*)$/);
+  if(!m) return {merch:String(desc||""), appr:""};
+  return {merch:(m[2]||"").trim()||String(desc), appr:(m[1] && m[1]!=="000000") ? m[1] : ""};
+}
+/* 列は**見出しの名前で探す**(ソニー銀行の形を決め打ちしない)。上から順に当て、先に当たった種類が勝つ
+   (「お取引日」は日付、「お取引内容」は摘要、「取引金額」は金額) */
+const BM_COLS=[["date",/日付|取引日|年月日|入出金日|利用日|^日$/], ["in",/入金|預入|預け入|受入|入額/], ["out",/出金|引出|引き出|払出|支払|出額/],
+  ["bal",/残高/], ["amt",/金額/], ["desc",/摘要|内容|明細|取引|ご利用/], ["memo",/メモ|備考|参考/]];
+function bankCsvRows(text){
+  const recs=bmSplit(String(text||"").replace(/^﻿/,""));
+  let hi=-1, col=null;
+  for(let i=0;i<Math.min(recs.length,15);i++){
+    const c={};
+    recs[i].forEach((cell,j)=>{ const h=bmNorm(cell); if(!h || h.length>16) return;
+      for(const [k,re] of BM_COLS){ if(c[k]==null && re.test(h)){ c[k]=j; break; } } });
+    if(c.date!=null && (c.in!=null || c.out!=null || c.amt!=null)){ hi=i; col=c; break; }
+  }
+  if(hi<0) return {err:"見出しの行(取引日・入金・出金 など)が見つかりません"};
+  let rows=[];
+  recs.slice(hi+1).forEach(r=>{
+    const date=bmParseDate(r[col.date]); if(!date) return;
+    const amt=(col.in!=null || col.out!=null) ? bmParseAmt(r[col.in])-bmParseAmt(r[col.out]) : bmParseAmt(r[col.amt]);
+    if(!amt) return;
+    const bs=col.bal!=null ? bmNorm(r[col.bal]) : "";
+    const desc=bmNorm(col.desc!=null?r[col.desc]:""), dm=bmDebit(desc);
+    rows.push({date:date, amt:amt, bal:(bs!==""?bmParseAmt(bs):null), desc:desc, merch:dm.merch, appr:dm.appr,
+      memo:bmNorm(col.memo!=null?r[col.memo]:"")});
+  });
+  if(!rows.length) return {err:"明細の行が読めませんでした"};
+  /* 新しい順の明細なら古い順に直す(同じ日の中の順も逆にする=銀行の記帳順のまま) */
+  if(rows[0].date>rows[rows.length-1].date) rows.reverse();
+  rows=rows.map((r,i)=>Object.assign(r,{i:i})).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.i-b.i);
+  rows.forEach((r,i)=>{ r.i=i; });
+  /* 残高の列が並びどおりに続いていれば(前の行の残高+この行の額=この行の残高)、期間の前と後の残高が分かる */
+  const chain=rows.every(r=>r.bal!=null) && rows.every((r,i)=>i===0 || rows[i-1].bal+r.amt===r.bal);
+  return {rows:rows, from:rows[0].date, to:rows[rows.length-1].date,
+    open:(chain?rows[0].bal-rows[0].amt:null), close:(chain?rows[rows.length-1].bal:null),
+    balNote:(rows.some(r=>r.bal!=null) && !chain)};
+}
+/* Tallyの記録の呼び名(一覧に出す) */
+function bmLabel(m){
+  const e=m.ent;
+  const eLab=e ? ([e.store,(e.item!=null?e.item:e.memo)].map(x=>String(x||"").trim()).filter(Boolean).join(" ")||(e.category||"")) : "";
+  if(m.src==="e" || (m.src==="bk" && e)) return eLab;   /* 遊技の経費の補充(カードで払った分)は、その経費の名前で */
+  const t=m.o||{};
+  /* 箱からの補填・収入を箱へ: 振替の向きと、元の記帳 */
+  if(m.src==="sv"){ const p=savingsPots().find(x=>String(x.id)===txPot(t)); return (m.amt<0?"貯金へ ":"貯金から ")+(p?p.name:"貯金")+(eLab?"("+eLab+")":""); }
+  if(m.src==="bk") return (m.amt<0?"軍資金へ ":"軍資金から ")+bankName(tBWal(t));
+  if(m.src==="iv") return "投資 "+(m.x||"");
+  if(m.src==="ib") return "投資の待機資金";
+  if(m.src==="wl"){
+    const o=(((S.wallet||{}).txns)||[]).find(x=>x!==t && x.date===t.date && num(x.amount)===-num(t.amount) && tWal(x)!==tWal(t));
+    return o ? (m.amt<0 ? walName(tWal(t))+" → "+walName(tWal(o)) : walName(tWal(o))+" → "+walName(tWal(t))) : "残高の補正";
+  }
+  return "";
+}
+/* 突き合わせ本体(画面を持たない)。bm = bankCsvRows の結果 + walId */
+function bankMatch(bm){
+  const rows=bm.rows, W=String(bm.walId), from=bm.from, to=bm.to, today=todayStr();
+  const lo=potDay(from,-BM_LAG_BACK);
+  /* 記帳から生えた振替(遊技の経費の補充・箱からの補填・収入を箱へ)は、✓と呼び名をその記帳に付ける */
+  const byTx={};
+  (S.entries||[]).forEach(e=>{ ["gtTx","svTx","inSvTx"].forEach(k=>{ if(e[k]!=null) byTx[String(e[k])]=e; }); });
+  /* 軍資金から払った支出(bkSrc)と、その戻しは**財布を経由するだけで銀行に出ない**(v5.70)。突き合わせの相手にしない */
+  const bkLinked=new Set((S.entries||[]).filter(e=>e.bkSrc && e.bkTx!=null).map(e=>String(e.bkTx)));
+  const skip=m=>(m.src==="e" && m.o.bkSrc) || (m.src==="bk" && bkLinked.has(String(m.o.id)));
+  const prep=m=>{ m.ent=(m.src==="e" ? m.o : (byTx[String(m.o.id)]||null)); return m; };
+  const mv=walletMoves(to, W).filter(m=>m.date>=lo && !skip(m)).map(prep);
+  mv.forEach((m,k)=>{ m.k=k; });
+  /* 1枚のレシート = 同じ日・同じ種類・同じ店の記帳 */
+  const gmap={};
+  mv.forEach(m=>{ if(m.src!=="e") return; const st=String(m.o.store||"").trim(); if(!st) return;
+    const g=m.date+"|"+m.kind+"|"+st; (gmap[g]=gmap[g]||[]).push(m); });
+  const G=Object.keys(gmap).map(k=>gmap[k]).filter(a=>a.length>1);
+  const inG=new Set(); G.forEach(a=>a.forEach(m=>inG.add(m.k)));
+  const lagOK=(rd,td)=>{ const d=bmDays(td,rd); return d>=-BM_LAG_FWD && d<=BM_LAG_BACK; };
+  const cost=(rd,td)=>{ const d=bmDays(td,rd); return d>=0 ? d : 1-2*d; };   /* 銀行が先の日付は少し不利に */
+  const byAmt={}; rows.forEach(r=>{ (byAmt[r.amt]=byAmt[r.amt]||[]).push(r); });
+  const usedR=new Set(), usedM=new Set(), pairs=[], cancelB=[];
+  /* ⓪**同じ承認番号の出と入は取消・返金**(実物の明細: 予約の確保と取り消し・変更で、同じ番号の出と入が並ぶ)。
+     突き合わせの前に組にして外す——先に記帳と組むと、片割れが記帳漏れに見える */
+  rows.forEach(r=>{ if(r.amt<=0 || !r.appr) return;
+    const m=rows.filter(x=>x!==r && !usedR.has(x.i) && x.appr===r.appr && x.amt===-r.amt)
+      .sort((a,b)=>Math.abs(bmDays(a.date,r.date))-Math.abs(bmDays(b.date,r.date)) || (a.i<r.i?-1:1))[0];
+    if(m){ usedR.add(r.i); usedR.add(m.i); cancelB.push(m.i<r.i?[m,r]:[r,m]); } });
+  const take=list=>{
+    list.sort((x,y)=>x.c-y.c || x.rank-y.rank || x.r.i-y.r.i);
+    list.forEach(x=>{ if(usedR.has(x.r.i) || x.ms.some(m=>usedM.has(m.k))) return;
+      usedR.add(x.r.i); x.ms.forEach(m=>usedM.add(m.k)); pairs.push({r:x.r, ms:x.ms, lag:bmDays(x.ms[0].date,x.r.date)}); });
+  };
+  /* ①レシート単位(合計)を先に。品目1つの額は他の取引とぶつかりやすく、合計の方が見分けやすい */
+  let cand=[];
+  G.forEach(a=>{ const s=a.reduce((t,m)=>t+m.amt,0), d=a[0].date;
+    (byAmt[s]||[]).forEach(r=>{ if(lagOK(r.date,d)) cand.push({r:r, ms:a, c:cost(r.date,d), rank:0}); }); });
+  take(cand);
+  /* ②1件ずつ。同点なら、レシートの一部より単独の記帳を先に */
+  cand=[];
+  mv.forEach(m=>{ (byAmt[m.amt]||[]).forEach(r=>{ if(lagOK(r.date,m.date)) cand.push({r:r, ms:[m], c:cost(r.date,m.date), rank:(inG.has(m.k)?1:0)}); }); });
+  take(cand);
+  /* ③同じ店で同じ日に2回払った時: 残った品目の組み合わせで合う額を探す */
+  G.forEach(a=>{
+    if(a.filter(m=>!usedM.has(m.k)).length<2) return;
+    rows.filter(r=>!usedR.has(r.i) && lagOK(r.date,a[0].date)).sort((x,y)=>Math.abs(y.amt)-Math.abs(x.amt)).forEach(r=>{
+      const fr=a.filter(m=>!usedM.has(m.k)); if(fr.length<2 || fr.length>12) return;
+      for(let mask=3; mask<(1<<fr.length); mask++){
+        if((mask&(mask-1))===0) continue;
+        let s=0; for(let b=0;b<fr.length;b++) if(mask&(1<<b)) s+=fr[b].amt;
+        if(s===r.amt){ const ms=fr.filter((_,b)=>mask&(1<<b)); usedR.add(r.i); ms.forEach(m=>usedM.add(m.k));
+          pairs.push({r:r, ms:ms, lag:bmDays(ms[0].date,r.date)}); break; }
+      }
+    });
+  });
+  /* 残り。**同じ店の同じ額の出と入が14日以内**なら返金(承認番号000000や空欄の返金)として別に出す——記帳しなくても残高に効かない。
+     店が違えば組にしない(実物の明細で、Amazonの返金と自分への振込、買い物とATMの入金が同じ額で並んでいた) */
+  const leftR=rows.filter(r=>!usedR.has(r.i)), bankOnly=[], cu=new Set();
+  leftR.forEach(r=>{ if(cu.has(r.i)) return;
+    const m=leftR.filter(x=>x!==r && !cu.has(x.i) && x.amt===-r.amt && x.merch && x.merch===r.merch && Math.abs(bmDays(r.date,x.date))<=14)
+      .sort((a,b)=>Math.abs(bmDays(r.date,a.date))-Math.abs(bmDays(r.date,b.date)))[0];
+    if(m){ cu.add(r.i); cu.add(m.i); cancelB.push(r.i<m.i?[r,m]:[m,r]); } });
+  leftR.forEach(r=>{ if(!cu.has(r.i)) bankOnly.push(r); });
+  cancelB.sort((a,b)=>a[0].i-b[0].i);
+  /* Tally側の残りは期間内だけ(期間の前の記録は、前の明細の相手)。同じ記帳から生えた出と入が両方残ったものは
+     Tallyの中だけの移動(箱からの補填を実際には移していない、など)として別に出す */
+  const leftM=mv.filter(m=>!usedM.has(m.k) && m.date>=from && m.date<=to), cancelT=[], tallyOnly=[], cm=new Set();
+  leftM.forEach(m=>{ if(cm.has(m.k) || !m.ent) return;
+    const o=leftM.find(x=>x!==m && !cm.has(x.k) && x.ent===m.ent && x.amt===-m.amt);
+    if(o){ cm.add(m.k); cm.add(o.k); cancelT.push([m,o]); } });
+  leftM.forEach(m=>{ if(!cm.has(m.k)) tallyOnly.push(m); });
+  tallyOnly.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);   /* 日付の順(同じ日の中は記録の順のまま) */
+  /* ヒント。どれも「そうかもしれない」までで、直すのは人 */
+  const wOf=m=>m.src==="e" ? eWal(m.o) : tWal(m.o);
+  const others=walletMoves(to, null).filter(m=>wOf(m)!==W && m.date>=lo && !skip(m)).map(prep);
+  const unitsOf=list=>{   /* 1件ずつ + 同じ日・同じ店の合計 */
+    const u=list.map(m=>({ms:[m], amt:m.amt, date:m.date})), g={};
+    list.forEach(m=>{ if(m.src!=="e") return; const st=String(m.o.store||"").trim(); if(!st) return;
+      const k=wOf(m)+"|"+m.date+"|"+m.kind+"|"+st; (g[k]=g[k]||[]).push(m); });
+    Object.keys(g).forEach(k=>{ if(g[k].length>1) u.push({ms:g[k], amt:g[k].reduce((a,m)=>a+m.amt,0), date:g[k][0].date}); });
+    return u;
+  };
+  const oU=unitsOf(others);
+  /* この財布でまだ相手の無い記録(前の明細で✓が付いた古い記録は外す=もう銀行と一致している) */
+  const freeW=walletMoves(today<potDay(to,45)?today:potDay(to,45), W).filter(m=>!skip(m)).map(prep)
+    .filter(m=>{ const hit=mv.find(x=>x.src===m.src && x.o===m.o); return !(hit && usedM.has(hit.k)); })
+    .filter(m=>!(m.ent && m.ent.chk && (m.date<lo || m.date>to)));
+  const fU=unitsOf(freeW);
+  const near=(a,b)=>Math.abs(bmDays(a,b));
+  bankOnly.forEach(r=>{
+    const best=list=>list.sort((a,b)=>near(a.date,r.date)-near(b.date,r.date))[0];
+    let u=best(oU.filter(x=>x.amt===r.amt && lagOK(r.date,x.date)));
+    if(u){ r.hint={kind:"wal", u:u, text:walName(wOf(u.ms[0]))+"で記録あり"}; return; }
+    u=best(fU.filter(x=>x.amt===r.amt && !lagOK(r.date,x.date) && near(x.date,r.date)<=45));
+    if(u){ r.hint={kind:"date", u:u, text:"日付違い?"}; return; }
+    const tol=Math.max(100, Math.round(Math.abs(r.amt)*0.1));
+    u=fU.filter(x=>x.date>=from && Math.sign(x.amt)===Math.sign(r.amt) && x.amt!==r.amt && Math.abs(x.amt-r.amt)<=tol && near(x.date,r.date)<=2)
+      .sort((a,b)=>Math.abs(a.amt-r.amt)-Math.abs(b.amt-r.amt) || near(a.date,r.date)-near(b.date,r.date))[0];
+    if(u){ r.hint={kind:"amt", u:u, text:"金額違い?"}; u.ms.forEach(m=>{ m.amtHint=r; }); }
+  });
+  tallyOnly.forEach(m=>{
+    const tw=mv.find(x=>x!==m && x.src==="e" && m.src==="e" && x.date===m.date && x.amt===m.amt &&
+      String(x.o.store||"")===String(m.o.store||"") && String(x.o.item||"")===String(m.o.item||""));
+    const ah=freeW.find(x=>x.src===m.src && x.o===m.o && x.amtHint);
+    if(tw) m.hint="同じ記録がもう1件(二重?)";
+    else if(ah) m.hint="銀行は "+signYen(ah.amtHint.amt)+"(金額違い?)";
+    else if(m.date>potDay(to,-3)) m.hint="まだ銀行に出ていないかも";
+  });
+  /* 残高: 差 = 銀行 − Tally(明細の最後の日)。内訳(銀行にだけある・Tallyにだけある・期間より前からのずれ)の和は**必ず差に一致**する。
+     期間の前に記帳して期間の中で引き落とされたもの(日付ずれで一致)は「前からのずれ」に入れて相殺する */
+  const tallyOpen=walletBalance(potDay(from,-1), W), tallyClose=walletBalance(to, W);
+  const sumB=bankOnly.reduce((a,r)=>a+r.amt,0), sumT=tallyOnly.reduce((a,m)=>a+m.amt,0);
+  const cross=pairs.filter(p=>p.ms[0].date<from).reduce((a,p)=>a+p.r.amt,0);
+  const res={rows:rows, from:from, to:to, W:W, pairs:pairs.sort((a,b)=>a.r.i-b.r.i), bankOnly:bankOnly, tallyOnly:tallyOnly,
+    cancelB:cancelB, cancelT:cancelT, sumB:sumB, sumT:sumT, tallyOpen:tallyOpen, tallyClose:tallyClose};
+  if(bm.close!=null){ res.bankClose=bm.close; res.diff=bm.close-tallyClose; res.before=(bm.open-tallyOpen)+cross; }
+  return res;
+}
+/* 一致した記帳に照合の✓を付ける(付いていなかった件数を返す) */
+function bmApplyChk(res){
+  let n=0;
+  res.pairs.forEach(p=>p.ms.forEach(m=>{ if(m.ent && !m.ent.chk){ m.ent.chk=true; n++; } }));
+  return n;
+}
 function storeGroups(list){
   const groups=[], idxOf={};
   (list||[]).forEach(e=>{
@@ -6409,26 +6808,44 @@ function walletSeed(walId){
   return walletPots().filter(p=>walId==null||String(p.id)===String(walId))
     .reduce((a,p)=>a+num(p.seed),0);
 }
-function walletFlows(asOf, walId){
+/* v6.18: **財布を動かす記録を1件ずつ渡す、ただ1つの場所**。残高(walletFlows)と銀行の明細の突き合わせ(walletMoves)は
+   どちらもここを通る——別々に絞り込みを書くと、いつか「残高には入るのに突き合わせには出ない」記録ができる。
+   fn(種類, 額, 日付, 出所, 記録, 補足)。額は種類ごとの大きさ(walletFlowsの各項目と同じ値)、財布への向きは WALLET_SIGN */
+const WALLET_SIGN={income:1, expense:-1, svIn:-1, svOut:1, bkIn:-1, bkOut:1, ivOut:-1, ivIn:1, adj:1};
+function walletEach(asOf, walId, fn){
   const lim = asOf || todayStr();
   const hitE = e => walId==null || eWal(e)===String(walId);
   const hitT = t => walId==null || tWal(t)===String(walId);
-  const ent=(S.entries||[]).filter(e=>e.date && e.date<=lim && !isNet(e) && hitE(e));
-  const income=ent.filter(e=>e.type==="income").reduce((a,e)=>a+e.amount,0);
-  const expense=ent.filter(e=>e.type==="expense").reduce((a,e)=>a+e.amount,0);
-  const sv=((S.savings||{}).txns)||[];
-  const svIn =sv.filter(t=>t.type==="deposit" &&(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
-  const svOut=sv.filter(t=>t.type==="withdraw"&&(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
-  const bk=((S.bank||{}).txns)||[];
-  const bkIn =bk.filter(t=>t.type==="topup" &&(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
-  const bkOut=bk.filter(t=>t.type==="return"&&(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
-  let ivOut=0, ivIn=0;
-  (((S.invest||{}).holdings)||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"")<=lim && hitT(b)) ivOut+=num(b.amount); }));
-  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"")<=lim && hitT(t)){ const v=num(t.amount); if(v>0) ivOut+=v; else ivIn+=-v; } });
-  /* 財布同士の移動と実残高のズレ補正。両側で符号が逆なので**合計では必ず相殺される** */
-  const wt=((S.wallet||{}).txns)||[];
-  const adj=wt.filter(t=>(t.date||"")<=lim&&hitT(t)).reduce((a,t)=>a+num(t.amount),0);
-  return {income:income, expense:expense, svIn:svIn, svOut:svOut, bkIn:bkIn, bkOut:bkOut, ivOut:ivOut, ivIn:ivIn, adj:adj};
+  (S.entries||[]).forEach(e=>{
+    if(!(e.date && e.date<=lim && !isNet(e) && hitE(e))) return;
+    if(e.type==="income") fn("income", e.amount, e.date, "e", e);
+    else if(e.type==="expense") fn("expense", e.amount, e.date, "e", e);
+  });
+  (((S.savings||{}).txns)||[]).forEach(t=>{
+    if(!((t.date||"")<=lim && hitT(t))) return;
+    if(t.type==="deposit") fn("svIn", num(t.amount), t.date||"", "sv", t);
+    else if(t.type==="withdraw") fn("svOut", num(t.amount), t.date||"", "sv", t);
+  });
+  (((S.bank||{}).txns)||[]).forEach(t=>{
+    if(!((t.date||"")<=lim && hitT(t))) return;
+    if(t.type==="topup") fn("bkIn", num(t.amount), t.date||"", "bk", t);
+    else if(t.type==="return") fn("bkOut", num(t.amount), t.date||"", "bk", t);
+  });
+  (((S.invest||{}).holdings)||[]).forEach(x=>(x.buys||[]).forEach(b=>{ if((b.date||"")<=lim && hitT(b)) fn("ivOut", num(b.amount), b.date||"", "iv", b, x.name); }));
+  (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if((t.date||"")<=lim && hitT(t)){ const v=num(t.amount); if(v>0) fn("ivOut", v, t.date||"", "ib", t); else fn("ivIn", -v, t.date||"", "ib", t); } });
+  /* 財布同士の移動と実残高のズレ補正。両側で符号が逆なので**合計では必ず相殺される**(額は符号付きのまま) */
+  (((S.wallet||{}).txns)||[]).forEach(t=>{ if((t.date||"")<=lim && hitT(t)) fn("adj", num(t.amount), t.date||"", "wl", t); });
+}
+function walletFlows(asOf, walId){
+  const f={income:0, expense:0, svIn:0, svOut:0, bkIn:0, bkOut:0, ivOut:0, ivIn:0, adj:0};
+  walletEach(asOf, walId, (k,v)=>{ f[k]+=v; });
+  return f;
+}
+/* v6.18: 財布の動きを1件ずつ(amt=財布の残高への増減)。銀行の明細と突き合わせる時に使う */
+function walletMoves(asOf, walId){
+  const out=[];
+  walletEach(asOf, walId, (k,v,date,src,o,x)=>{ out.push({kind:k, amt:WALLET_SIGN[k]*v, date:date, src:src, o:o, x:x}); });
+  return out;
 }
 function walletBalance(asOf, walId){
   const f=walletFlows(asOf, walId);
@@ -8436,6 +8853,7 @@ function bindMain(){
         save(); renderKeepScroll();
       }
       else if(a==="rwal"){ UI.reconWal=(v==="all")?null:String(v); renderKeepScroll(); }
+      else if(a==="bmopen"){ UI.bmWal=UI.reconWal||null; if(UI.bm && UI.reconWal) UI.bm.walId=String(UI.reconWal); UI.screen="bankmatch"; render(); }   /* v6.18 */
       else if(a==="rclr"){
         const mk0=monthKey();
         const n0=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk0)&&e.chk).length;
@@ -9166,6 +9584,9 @@ function viewEntry(){
    .navbtn と同じ見た目にして、色だけ赤にする */
   /* v4.38: **日付を最上段へ**(ユーザー指摘)。いつの記録かが先に決まる方が読み順として自然。
        金額は品目行にあるので、ここに残すのは品目行を使わない振替/交通コンポーザのときだけ */
+    /* v6.18: 銀行の明細から開いた時は、その行を上に出す(記録には書かない。フォームを開き直すと消える) */
+    (f.bankHint ? '<div class="card" style="margin-bottom:12px;padding:9px 12px;border-color:var(--amber)">'+
+      '<div class="muted" style="font-size:11px;margin-bottom:2px">銀行の明細</div><div class="mono" style="font-size:12px">'+esc(f.bankHint)+'</div></div>' : '')+
     '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="width:100%;margin-bottom:12px">'+
     '<div class="row" style="gap:8px;margin-bottom:12px">'+
     TYPES.map(([v,l])=>
