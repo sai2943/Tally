@@ -176,6 +176,7 @@
   .mjl-tbl td.x{width:26px; color:var(--red);}
   .mjl-tbl tr.nm td{font-family:inherit; font-size:11px; color:var(--muted); background:var(--surface2); padding:5px 2px;}
   .mjl-tbl tr.ed td{background:rgba(242,179,61,.12);}
+  .mjl-tbl tr.more td{font-family:inherit; font-size:11px; color:var(--muted); text-align:left; padding:7px 8px; cursor:pointer;}   /* v6.17: 畳んだ前の半荘 */
   .ibtn{display:inline-flex; align-items:center; justify-content:center; padding:6px; margin:-6px -6px -6px 0;
     background:none; border:0; cursor:pointer; flex-shrink:0; vertical-align:middle;}
   .ibtn span{display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%;
@@ -269,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.16 (localStorage保存・完全オフライン)
+   Tally 6.17 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1061,7 +1062,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.16";
+const APP_VERSION = "6.17";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1870,24 +1871,31 @@ function viewMjConf(){
   const c=mjLogConf();
   let h='<div class="hdr"><button class="navbtn" data-mc="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">単価と設定</div><div style="width:44px"></div></div>';
+  /* v6.17: 打ちかけの単価は下書き(UI.mjcDraft)から出す。v6.16まではON/OFFを押すと描き直しで欄が保存済みの値に戻り、
+     見た目は古い値なのに「保存する」で打った値が入る食い違いがあった */
+  const _d=UI.mjcDraft||{};
   h+='<div class="card" style="margin-bottom:14px">'+
     MJ_CONF_FIELDS.map(([k,lab,unit],i)=>
       '<div style="'+(i?'margin-top:12px':'')+'">'+
       '<div class="fxl">'+lab+'<span class="muted" style="font-size:11px;margin-left:6px">'+unit+'</span></div>'+
-      '<input class="input mono r" type="number" inputmode="numeric" id="mc-'+k+'" value="'+esc(String(c[k]))+'"></div>').join("")+
+      '<input class="input mono r" type="number" inputmode="numeric" id="mc-'+k+'" value="'+esc(String(_d[k]!==undefined?_d[k]:c[k]))+'"></div>').join("")+
     '</div>';
+  /* v6.17: **チップを使う**を足す(ユーザー要望: チップと飛びは使わない時は隠したい)。並びは記録の画面と同じ チップ → 飛び → 馬身。
+     OFF = その卓には無い: 記録の画面に出さず、**精算でも数えない**(mjLogTotalsの1箇所で0にする)。
+     v6.16までの飛びのOFFは隠すだけで数えていたので、飛びが残っていると精算の内訳の和が合わなかった */
+  const tog=(lab,on,attr)=>'<div class="row between" style="align-items:center;padding:6px 0">'+
+    '<span style="font-size:13px">'+lab+'</span>'+
+    '<button class="btn'+(on?' sel':'')+'" style="padding:6px 18px;font-size:12px" '+attr+'>'+(on?'ON':'OFF')+'</button></div>';
   h+='<div class="card" style="margin-bottom:14px">'+
     '<div class="fxl">人数</div>'+
     '<div class="row" style="gap:6px;margin-bottom:12px">'+
     [3,4].map(n=>'<button class="btn'+(c.seats===n?' sel':'')+'" style="flex:1;padding:12px 0;font-size:15px;font-weight:700" '+
       'data-mc="seats" data-v="'+n+'">'+n+'麻</button>').join("")+
     '</div>'+
-    '<div class="row between" style="align-items:center;padding:6px 0">'+
-    '<span style="font-size:13px">馬身を使う</span>'+
-    '<button class="btn'+(c.useUma?' sel':'')+'" style="padding:6px 18px;font-size:12px" data-mc="uma">'+(c.useUma?'ON':'OFF')+'</button></div>'+
-    '<div class="row between" style="align-items:center;padding:6px 0">'+
-    '<span style="font-size:13px">飛びを使う</span>'+
-    '<button class="btn'+(c.useTobi?' sel':'')+'" style="padding:6px 18px;font-size:12px" data-mc="tobi">'+(c.useTobi?'ON':'OFF')+'</button></div>'+
+    tog("チップを使う", c.useChip, 'data-mc="chip"')+
+    tog("飛びを使う", c.useTobi, 'data-mc="tobi"')+
+    tog("馬身を使う", c.useUma, 'data-mc="uma"')+
+    '<div class="muted" style="font-size:11px;line-height:1.6;margin-top:6px">チップ・飛びをOFFにすると、記録の画面に出さず、精算でも数えません。</div>'+
     '</div>';
   h+='<button style="display:none" data-mc="save">保存する</button>';
   return h;
@@ -1907,7 +1915,14 @@ function bindMjConf(){
       /* 人数とON/OFFは押した瞬間に効く(選んだ状態が見えるので確認が要らない) */
       if(a==="seats"){ S.mjLog.seats=num(v); save(); render(); return; }
       if(a==="uma"){ S.mjLog.useUma=!mjLogConf().useUma; save(); render(); return; }
-      if(a==="tobi"){ S.mjLog.useTobi=!mjLogConf().useTobi; save(); render(); return; }
+      /* v6.17: 打ちかけの卓に数が残っているのにOFFにした時は、数えなくなることを知らせる(消してはいない。ONで戻る) */
+      if(a==="chip"||a==="tobi"){
+        const key=(a==="chip"?"useChip":"useTobi"), on=!mjLogConf()[key];
+        S.mjLog[key]=on; save(); render();
+        const n0=num(S.mjLog[a]);
+        if(!on && n0) toast("この卓の"+(a==="chip"?"チップ ":"飛び ")+(n0>0?"+":"−")+Math.abs(n0)+(a==="chip"?"枚":"")+"は数えません(ONで戻ります)");
+        return;
+      }
       if(a==="save"){
         MJ_CONF_FIELDS.forEach(([k])=>{ if(draft[k]!==undefined) S.mjLog[k]=fnum(draft[k]); });
         UI.mjcDraft=null; UI.screen="mjlog"; save(); render(); toast("単価を保存しました");
@@ -1930,34 +1945,24 @@ function viewMjLog(){
   const c=mjLogConf(), rows=mjLogRows(), t=mjLogTotals(), L=S.mjLog||{};
   const f=UI.mjlForm||(UI.mjlForm={rank:0, uma:0});
   const RANKS=[1,2,3,4].slice(0,c.seats);
+  /* v6.17: 右上は「設定」(v6.16まで「単価」)。チップ・飛びを使う/使わないもここにあるのに、名前からは見つけられなかった */
   let h='<div class="hdr"><button class="navbtn" data-ml="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">半荘の記録</div>'+
-    '<button class="navbtn" data-ml="conf" style="font-size:12px">単価</button></div>';
-  /* いま分かっている数——打っている最中に見たいのはここ */
-  h+='<div class="card" style="margin-bottom:12px">'+
-    '<div class="row between" style="align-items:baseline">'+
-    '<span class="muted" style="font-size:12px">'+t.n+'半荘</span>'+
-    '<span class="mono" style="font-size:13px">'+
-      RANKS.map(k=>'<span class="muted" style="margin-left:8px">'+k+'着 <span style="color:var(--fg);font-weight:700">'+(t.rank[k]||0)+'</span></span>').join("")+
-    '</span></div>'+
-    '<div class="row between" style="font-size:12px;margin-top:8px">'+
-    '<span class="muted">チップ <span class="mono" style="color:var(--fg);font-weight:700">'+(t.chip>=0?'+':'−')+Math.abs(t.chip)+'</span>枚</span>'+
-    (Object.keys(L.sa||{}).length?'<span class="muted">差し馬 <span class="mono" style="color:var(--fg);font-weight:700">'+(t.sashi>=0?'+':'−')+Math.abs(t.sashi)+'</span></span>':'')+   /* v5.78 */
-    (c.useUma?'<span class="muted">馬身 <span class="mono" style="color:var(--fg);font-weight:700">'+(t.uma>=0?'+':'−')+Math.abs(t.uma)+'</span></span>':'')+
-    (c.useTobi?'<span class="muted">飛び <span class="mono" style="color:var(--fg);font-weight:700">'+(t.tobi>=0?'+':'−')+Math.abs(t.tobi)+'</span></span>':'')+
-    '</div>'+
-    /* v5.77: **リセット**(ユーザー要望: 途中で間違えて記録をやめた時に消せないと厳しい)。
-       何か記録がある時だけ出す。押すと確かめてから、半荘・チップ・飛び・精算・差し馬を消す(メンバーと単価は残す) */
-    ((t.n||t.chip||t.tobi||String(L.settle||"").trim()!=="")
-      ? '<div style="text-align:right;margin-top:8px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-ml="reset">リセット</button></div>'
-      : '')+
-    '</div>';
+    '<button class="navbtn" data-ml="conf" style="font-size:12px">設定</button></div>';
+  /* v6.17【並びを使う頻度の順に】(ユーザー: チップが1番、次が着順、その次が飛び。精算は1回しか入れない。ゲーム中に着順の履歴をよく見る)。
+     上から チップ → 着順 → 飛び → この卓の記録(直近8半荘) → 座席 → 相手ごとの成績 → 店での精算 → リセット。
+     ・v6.16までの一番上の集計カード(半荘数・着順の回数・チップ・差し馬・馬身・飛び)はやめた——着順の回数以外は
+       各カードの右上に同じ数が出ていた。着順の回数は「この卓の記録」の見出しへ移した
+     ・記録の表は精算の下(1画面目の外)にあり、見るたびにスクロールしていた
+     ・座席は打ち始めに決めれば、あとは交代の時だけ。打ち始めは表が無いので、この位置でも1画面目に入る
+     組み立ては下の各ブロックが自分の文字列を作り、最後に上の順で並べる */
+  let seatH='', vsH='', histH='', settleH='';
   /* v5.79: **座席**。自分も含めて A・B・C(4麻ならD)の各席に誰が座っているか。
      記録を始める前は開いておき、半荘を記録し始めたら1行に畳む(打っている最中は着順を押すのが主役) */
   { const st=mjlSeat(), P=mjlPeople(), open=(UI.mjlMemOpen!=null ? UI.mjlMemOpen : !rows.length);
     const ed=UI.mjlSeatEd;   /* 交代の入力中の席(添字) */
     const nmHtml=pid=> pid==="me" ? '<b>自分</b>' : esc(P[pid])+(mjlIsX(P[pid])?' <span class="muted" style="font-size:11px">(仮称)</span>':'');
-    h+='<div class="card" style="margin-bottom:12px">'+
+    seatH+='<div class="card" style="margin-bottom:12px">'+
       '<div class="row between" style="align-items:center">'+
       '<span class="fxl" style="margin:0;cursor:pointer" data-ml="memtog">座席'+infoBtn("卓の座順を A・B・C(4麻ならD)として、それぞれの席に誰が座っているかを入れます。自分もどこかの席に座ります。<br><br><b>知らない人</b>は X・Y・Z などの仮の名前(仮称)で座らせておけます。名前が分かったら、名前を押して直してください。直すと、それまでの記録もその名前になります(同じ人のまま)。<br><br><b>交代</b>: その席の人が入れ替わった時に使います。次の半荘から新しい人になり、それまでの記録は前の人のまま残ります。一度抜けた人が戻ってきた時は、候補からその人を選ぶと成績がつながります。<br><br><b>自分の席</b>: 自分が座っているのが A・B・C のどこかを選びます。選んだ席に座っていた人とは、席が入れ替わります。<br><br><b>卓移動</b>: 自分が別の卓へ移った時に使います。押すと新しい卓での自分の席を聞くので、A・B・C から選ぶと移動が終わります。自分以外の席は新しい仮称で埋め直し、前の卓の記録はそのまま残ります。<br><br>全員の着順を入れておくと、後から相手ごとの成績や、差し馬・馬身(特定の相手との着順の賭け)を計算できます。")+'</span>'+
       '<span class="row" style="gap:8px;align-items:center">'+
@@ -2007,25 +2012,16 @@ function viewMjLog(){
       '</div>';
   }
 
-  /* チップ(非同期)——チップ入れから抜いた/足したを押すだけ */
-  h+='<div class="card" style="margin-bottom:12px">'+
-    '<div class="row between" style="align-items:center;margin-bottom:8px">'+
-    '<span class="fxl" style="margin:0">チップ</span>'+
-    '<span class="mono" style="font-size:22px;font-weight:700">'+(t.chip>=0?'+':'−')+Math.abs(t.chip)+'</span></div>'+
-    '<div class="row" style="gap:6px">'+
-    [[-5,'−5'],[-1,'−1'],[1,'+1'],[5,'+5']].map(([d,lb])=>
-      '<button class="btn" style="flex:1;padding:12px 0;font-size:15px;font-weight:700'+
-      (d<0?';color:var(--red)':'')+'" data-ml="chip" data-v="'+d+'">'+lb+'</button>').join("")+
-    '</div></div>';
-  /* 飛び(非同期)——清算と一緒に払うので回数だけ数える */
-  if(c.useTobi){
+  /* チップ(非同期)——チップ入れから抜いた/足したを押すだけ。v6.17: 使わない卓では出さない(設定のチップを使う) */
+  if(c.useChip){
     h+='<div class="card" style="margin-bottom:12px">'+
       '<div class="row between" style="align-items:center;margin-bottom:8px">'+
-      '<span class="fxl" style="margin:0">飛び</span>'+
-      '<span class="mono" style="font-size:18px;font-weight:700">'+(t.tobi>=0?'+':'−')+Math.abs(t.tobi)+'</span></div>'+
+      '<span class="fxl" style="margin:0">チップ</span>'+
+      '<span class="mono" style="font-size:22px;font-weight:700">'+(t.chip>=0?'+':'−')+Math.abs(t.chip)+'</span></div>'+
       '<div class="row" style="gap:6px">'+
-      '<button class="btn" style="flex:1;padding:10px 0;font-size:13px;color:var(--red)" data-ml="tobi" data-v="-1">飛んだ</button>'+
-      '<button class="btn" style="flex:1;padding:10px 0;font-size:13px;color:var(--teal)" data-ml="tobi" data-v="1">飛ばした</button>'+
+      [[-5,'−5'],[-1,'−1'],[1,'+1'],[5,'+5']].map(([d,lb])=>
+        '<button class="btn" style="flex:1;padding:12px 0;font-size:15px;font-weight:700'+
+        (d<0?';color:var(--red)':'')+'" data-ml="chip" data-v="'+d+'">'+lb+'</button>').join("")+
       '</div></div>';
   }
   /* 半荘(着順+馬身をワンタッチ) */
@@ -2057,6 +2053,17 @@ function viewMjLog(){
             'style="flex:1;padding:12px 0;font-size:14px;font-weight:700'+(u<0?';color:var(--red)':'')+'" '+
             'data-ml="uma" data-v="'+u+'">'+(u>0?'+':'−')+Math.abs(u)+'</button>').join("")+'</div>' : ''))+
     '</div>';
+  /* 飛び(非同期)——清算と一緒に払うので回数だけ数える。v6.17: 着順の下へ(使う頻度はチップ・着順の次) */
+  if(c.useTobi){
+    h+='<div class="card" style="margin-bottom:12px">'+
+      '<div class="row between" style="align-items:center;margin-bottom:8px">'+
+      '<span class="fxl" style="margin:0">飛び</span>'+
+      '<span class="mono" style="font-size:18px;font-weight:700">'+(t.tobi>=0?'+':'−')+Math.abs(t.tobi)+'</span></div>'+
+      '<div class="row" style="gap:6px">'+
+      '<button class="btn" style="flex:1;padding:10px 0;font-size:13px;color:var(--red)" data-ml="tobi" data-v="-1">飛んだ</button>'+
+      '<button class="btn" style="flex:1;padding:10px 0;font-size:13px;color:var(--teal)" data-ml="tobi" data-v="1">飛ばした</button>'+
+      '</div></div>';
+  }
   /* v5.77/v5.78: **相手ごとの成績と、差し馬・馬身**。全員の着順を入れた半荘がある時だけ出す。
      差し馬と馬身は**別の賭け**なので、相手ごとに別々のボタンで選ぶ(両方・どちらか・何人でも・後から) */
   /* v5.88: **仮称(X・Y…)の人は出さない**(ユーザー: 仮称の人と差し馬は絶対にやらない)。
@@ -2074,10 +2081,10 @@ function viewMjLog(){
       const vSum=(selSa||selUm)
         ? [selSa?'差し馬 '+sg(t.sashi):'', selUm?'馬身 '+sg(t.uma):''].filter(Boolean).join(' · ')
         : pids.length+'人';
-      h+='<div class="card" style="margin-bottom:12px">'+
+      vsH+='<div class="card" style="margin-bottom:12px">'+
         '<div class="row between" style="align-items:center;cursor:pointer" data-ml="vstog">'+
         '<span class="fxl" style="margin:0">相手ごとの成績'+
-        infoBtn("全員の着順を入れた半荘から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>その相手と賭けをしていたら、下のボタンで選びます。両方でも、どちらかだけでも、何人でも選べます。終わってから選び直しても大丈夫です。<br><br><b>差し馬</b>: 1半荘ごとに、相手より上なら +1、下なら −1。着順の差は関係ありません。例: 上2回・下1回なら +1。差し馬の単価(1回あたり)で金額になります。<br><br><b>馬身</b>: 着順の差を数えます。例: 自分が1着・相手が3着なら +2、自分が3着・相手が2着なら −1。馬身の単価で金額になります。<br><br>単価は右上の「単価」で決めます。<br><br>仮の名前(X・Y など)の人は、賭けの相手にならないので出しません。名前を直すと出てきます。<br><br>見出しを押すと畳めます。畳んでいる間は、選んだ差し馬・馬身の合計(選んでいなければ人数)を右に出します。")+'</span>'+
+        infoBtn("全員の着順を入れた半荘から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>その相手と賭けをしていたら、下のボタンで選びます。両方でも、どちらかだけでも、何人でも選べます。終わってから選び直しても大丈夫です。<br><br><b>差し馬</b>: 1半荘ごとに、相手より上なら +1、下なら −1。着順の差は関係ありません。例: 上2回・下1回なら +1。差し馬の単価(1回あたり)で金額になります。<br><br><b>馬身</b>: 着順の差を数えます。例: 自分が1着・相手が3着なら +2、自分が3着・相手が2着なら −1。馬身の単価で金額になります。<br><br>単価は右上の「設定」で決めます。<br><br>仮の名前(X・Y など)の人は、賭けの相手にならないので出しません。名前を直すと出てきます。<br><br>見出しを押すと畳めます。畳んでいる間は、選んだ差し馬・馬身の合計(選んでいなければ人数)を右に出します。")+'</span>'+
         '<span class="muted mono" style="font-size:12px">'+esc(vSum)+' '+(vOpen?'▾':'▸')+'</span></div>'+
         (!vOpen ? '' : pids.map(pid=>{ const x=vs[pid];
           return '<div style="padding:8px 0;border-top:1px solid var(--line)">'+
@@ -2091,8 +2098,9 @@ function viewMjLog(){
         }).join(""))+'</div>';
     } }
   h+='<button style="display:none" data-ml="add">'+(_ed?'更新する':'記録する')+'</button>';
-  /* 精算——**スコアは消去法**。実際にやり取りした額を入れると残りがスコア分 */
-  h+='<div class="card" style="margin-bottom:12px">'+
+  /* 精算——**スコアは消去法**。実際にやり取りした額を入れると残りがスコア分。
+     v6.17: 一番下へ(ユーザー: 精算額は1回しか入れない) */
+  settleH+='<div class="card" style="margin-bottom:12px">'+
     '<div class="fxl">店での精算'+infoBtn("お店と最後にやり取りしたお金を入れます(もらったら＋、払ったら−)。<br><br>差し馬・馬身・ゲーム代バックのように、<b>お店の精算とは別にやり取りするお金は入れません</b>。それらは下の「卓の外」で足し、<b>最終収支 = 店での精算 + 卓の外</b> になります。<br><br>店での精算から、ゲーム代・トップ賞・ドリンク代・チップなど内訳が分かる分を差し引いて、残りを<b>スコアの分</b>として逆算します。スコアを自分で計算して入れる必要はありません。")+'</div>'+
     '<div class="row" style="gap:6px">'+
     '<button class="btn'+(String(L.settle||"").charAt(0)==="-"?' sel':'')+'" style="width:46px;padding:10px 0;font-size:15px;font-weight:700'+
@@ -2122,38 +2130,51 @@ function viewMjLog(){
      ・着順の色は成績画面と同じ体系(1着=緑・最下位=赤・2着=琥珀・4麻の3着=紫)。自分のマスは太字
      ・古い順(1回戦が上)。スコア表と同じ向きで、最新の行が下の記録ボタンに近い
      ・行を押すと直せる。✕で消す(従来どおり) */
+  /* v6.17: **直近8半荘だけ出し、前の分は表の頭の1行に畳む**(押すと全部)。表を1画面目に置いたので、
+     20半荘を超える卓でも最新の行が画面の外へ押し出されないように(古い順のままなので、最新は表の一番下)。
+     畳んだ所から始まる顔ぶれには、ラベル無しの名前の行を足す(列が誰か分からなくならないように) */
   if(rows.length){
-    h+=band("この卓の記録");
     const stOf=r=> r.st ? r.st : (r.ranks ? ['me'].concat(Object.keys(r.ranks).filter(k=>k!=="me")) : null);
     const ncol=Math.max(c.seats, ...rows.map(r=>{ const st=stOf(r); return st?st.length:0; }));
     const RK=ncol>=4 ? ["var(--teal)","var(--amber)","#B39DDB","var(--red)"] : ["var(--teal)","var(--amber)","var(--red)"];
+    const hid=rows.length>MJL_HIST_N ? rows.length-MJL_HIST_N : 0;
+    const all=!hid || !!UI.mjlHistAll, from=all ? 0 : hid;
+    const hidLab=(hid>1 ? '1〜'+hid : '1')+'半荘目';
     let prev=null, body='';
+    if(hid) body+='<tr class="more"><td colspan="'+(ncol+2)+'" data-ml="histtog">'+
+      (all ? '▾ '+hidLab+'を畳む' : '▸ '+hidLab+'も見る')+'</td></tr>';
     rows.forEach((r,i)=>{
+      const vis=i>=from;
       const st=stOf(r), edc=(f.editIdx!=null && num(f.editIdx)===i) ? ' class="ed"' : '';
       if(!st){
         /* メンバー無しで入れた古い行: 席が分からないので、自分の着順だけを1行で */
-        body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
+        if(vis) body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
           '<td colspan="'+ncol+'" data-ml="edit" data-v="'+i+'" style="font-family:inherit;text-align:left;padding-left:8px">'+
           '<b>自分 '+(r.rank||'-')+'着</b>'+(c.useUma&&num(r.uma)?' <span class="muted">馬身'+(num(r.uma)>0?'+':'−')+Math.abs(num(r.uma))+'</span>':'')+'</td>'+
           '<td class="x" data-ml="del" data-v="'+i+'">✕</td></tr>';
         prev=null; return;
       }
-      if(!prev || prev.join(",")!==st.join(",") || r.ev==="卓移動"){
+      const brk=(!prev || prev.join(",")!==st.join(",") || r.ev==="卓移動");
+      if(brk || (vis && i===from)){
         /* v5.84: 最初の顔ぶれにもラベルを出す(ユーザー要望: 卓移動と同じく、卓の始まりが見えるように)。
-           v5.85: 「スタート」は4文字で列(34px)に収まらず「スタ…」と切れたので「開始」に(ユーザー提案) */
-        let lab='開始';
-        if(prev){
-          if(r.ev) lab=r.ev;   /* v5.82: 実際に行った操作 */
-          else {               /* 印の無い古い行だけ、並びの変化から推測する */
-            const same=prev.length===st.length && prev.slice().sort().join(",")===st.slice().sort().join(",");
-            const others=st.filter(x=>x!=="me"), allNew=others.length && others.every(x=>prev.indexOf(x)<0);
-            lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
+           v5.85: 「スタート」は4文字で列(34px)に収まらず「スタ…」と切れたので「開始」に(ユーザー提案)。
+           v6.17: brk でない = 畳んだ所の続き。ラベル無しで顔ぶれだけ */
+        let lab='';
+        if(brk){
+          lab='開始';
+          if(prev){
+            if(r.ev) lab=r.ev;   /* v5.82: 実際に行った操作 */
+            else {               /* 印の無い古い行だけ、並びの変化から推測する */
+              const same=prev.length===st.length && prev.slice().sort().join(",")===st.slice().sort().join(",");
+              const others=st.filter(x=>x!=="me"), allNew=others.length && others.every(x=>prev.indexOf(x)<0);
+              lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
+            }
           }
         }
         /* 卓移動と開始は**卓の始まり**なので、どちらも青い太線とラベルで揃える。名前ごとの色付けはしない */
         const mv=(lab==='卓移動' || lab==='開始');
         const labCol = mv ? 'var(--blue)' : (lab==='交代' ? 'var(--amber)' : 'var(--muted)');
-        body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:10px;font-weight:700'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
+        if(vis) body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:10px;font-weight:700'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
           Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
             if(pid==null) return '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>';
             const chg=!mv && prev && prev[k]!==pid;
@@ -2161,7 +2182,7 @@ function viewMjLog(){
           '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td></tr>';
         prev=st;
       }
-      body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
+      if(vis) body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
         Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
           if(pid==null) return '<td data-ml="edit" data-v="'+i+'"></td>';
           const rk=num(r.ranks&&r.ranks[pid]);
@@ -2169,12 +2190,25 @@ function viewMjLog(){
           return '<td data-ml="edit" data-v="'+i+'" style="color:'+col+(pid==="me"?';font-weight:700':'')+'">'+(rk||'')+'</td>'; }).join("")+
         '<td class="x" data-ml="del" data-v="'+i+'">✕</td></tr>';
     });
-    h+='<div class="card" style="padding:6px 10px 2px">'+
+    /* 見出し: 半荘数と着順の回数(v6.16までは一番上の集計カードにあった) */
+    histH='<div class="card" style="margin-bottom:12px;padding:10px 10px 2px">'+
+      '<div class="row between" style="align-items:baseline;padding:0 4px 4px">'+
+      '<span class="fxl" style="margin:0">この卓の記録 <span class="mono" style="color:var(--text);font-weight:700">'+t.n+'</span>半荘</span>'+
+      '<span class="mono" style="font-size:12px">'+
+        RANKS.map(k=>'<span class="muted" style="margin-left:8px">'+k+'着 <span style="color:var(--text);font-weight:700">'+(t.rank[k]||0)+'</span></span>').join("")+
+      '</span></div>'+
       '<table class="mjl-tbl"><thead><tr><th style="width:34px">回</th>'+
       MJL_SEATS.slice(0,ncol).map(L=>'<th>'+L+'</th>').join("")+'<th style="width:26px"></th></tr></thead>'+
       '<tbody>'+body+'</tbody></table></div>';
   }
-  return h;
+  /* v5.77: **リセット**(ユーザー要望: 途中で間違えて記録をやめた時に消せないと厳しい)。
+     何か記録がある時だけ出す。押すと確かめてから、半荘・チップ・飛び・精算・差し馬を消す(メンバーと単価は残す)。
+     v6.17: 一番上の集計カードをやめたので一番下へ(危険な操作は定位置に置かない・v4.40)。
+     チップ・飛びはOFFで隠れていても数が残っていれば出す(消せないものを残さない) */
+  const resetH=(t.n||num(L.chip)||num(L.tobi)||String(L.settle||"").trim()!=="")
+    ? '<div style="text-align:right;margin:-4px 2px 12px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-ml="reset">この卓の記録をリセット</button></div>'
+    : '';
+  return h+histH+seatH+vsH+settleH+resetH;
 }
 
 function bindMjLog(){
@@ -2214,11 +2248,12 @@ function bindMjLog(){
         const t0=mjLogTotals();
         if(!confirm("この卓の記録を消して、最初からにしますか?\n\n消えるもの: "+t0.n+"半荘の着順・チップ・飛び・精算・差し馬と馬身の選択\n残るもの: メンバーと単価")) return;
         delete S.mjLog.rows; delete S.mjLog.chip; delete S.mjLog.tobi; delete S.mjLog.settle; delete S.mjLog.sa; delete S.mjLog.um; delete S.mjLog.pendEv;
-        mjlPrune(); UI.mjlForm={rank:0, uma:0};
+        mjlPrune(); UI.mjlForm={rank:0, uma:0}; UI.mjlHistAll=false;
         save(); render(); toast("リセットしました"); return;
       }
       /* v5.79: 座席 */
       if(a==="vstog"){ UI.mjlVsOpen=!UI.mjlVsOpen; render(); return; }   /* v5.87: 相手ごとの成績を畳む/開く */
+      if(a==="histtog"){ UI.mjlHistAll=!UI.mjlHistAll; render(); return; }   /* v6.17: 前の半荘を畳む/開く */
       if(a==="memtog"){ const cur=(UI.mjlMemOpen!=null?UI.mjlMemOpen:!mjLogRows().length); UI.mjlMemOpen=!cur; UI.mjlSeatEd=null; UI.mjlMoving=false; render(); return; }
       if(a==="seatcancel"){ UI.mjlSeatEd=null; render(); return; }
       if(a==="seatsub"){ UI.mjlSeatEd=num(v); UI.mjlNewName=""; UI.mjlMoving=false; render(); return; }
@@ -5450,7 +5485,8 @@ function mjLogConf(){
           drinkFee:(c.drinkFee!=null && String(c.drinkFee).trim()!=="") ? fnum(c.drinkFee) : (fnum((S.rates||{}).mjDrink)||0),
           seats:num(c.seats)||3,
           useUma:(c.useUma===undefined ? true : !!c.useUma),
-          useTobi:(c.useTobi===undefined ? true : !!c.useTobi)};
+          useTobi:(c.useTobi===undefined ? true : !!c.useTobi),
+          useChip:(c.useChip===undefined ? true : !!c.useChip)};   /* v6.17 */
 }
 /* v5.90: 精算の内訳(ゲーム代・スコア分・卓の外・最終収支)。**精算欄を打っている最中も書き換えられるよう関数に切り出した**
    (欄そのものは描き直さない=キーボードが閉じない) */
@@ -5497,6 +5533,8 @@ function mjlPeople(){ return (S.mjLog&&S.mjLog.people)||{}; }
    ・卓移動 = 自分以外の席を全部、新しい仮称で埋め直す。前の卓の記録は前の人のまま残る
    ・v5.77の roster(自分以外・席なし)は、自分をAに置いて席へ移す */
 const MJL_SEATS=["A","B","C","D"];
+/* v6.17: 半荘の記録の表に出す直近の半荘数(それより前は表の頭の1行に畳む) */
+const MJL_HIST_N=8;
 function mjlIsX(name){ return /^[XYZ]\d*$/.test(String(name||"")); }
 function mjlNextX(){
   const used=new Set(Object.values(mjlPeople()));
@@ -5571,7 +5609,9 @@ function mjLogTotals(){
     Object.keys(um).forEach(pid=>{ if(um[pid] && vs[pid] && named(pid)){ uma+=vs[pid].uma;
       outs.push({kind:"馬身", who:mjlName(pid), n:vs[pid].uma, yen:vs[pid].uma*c.umaUnit}); } });
     if(manual) outs.push({kind:"馬身", who:"", n:manual, yen:manual*c.umaUnit}); }
-  const chip=num(L.chip), tobi=num(L.tobi), n=rows.length;
+  /* v6.17: 使わない(OFF)なら0。**ここ1箇所で決める**——画面・精算の内訳・締めた時の記録が全部ここを通る。
+     数そのものは消さないので、ONに戻せば元の数が戻る */
+  const chip=c.useChip?num(L.chip):0, tobi=c.useTobi?num(L.tobi):0, n=rows.length;
   /* v5.39: **半荘数と着順から自動で出る分**。入力は要らない */
   const fee   = -Math.round(n*c.gameFee);          /* ゲーム代(払う) */
   /* v5.40【修正】**トップ賞は勝った側が追加で払う**(ユーザー指摘)。
@@ -8242,7 +8282,7 @@ function saveMj(){
     delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle; delete keep.sa; delete keep.um; delete keep.pendEv;   /* v5.77/78: 差し馬・馬身の選択はその卓限り */
     S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
     mjlPrune();   /* v5.77: メンバーは残す(同じ面子なら入れ直さない)。もう使わない人だけ消す */
-    UI.mjlForm={rank:0, uma:0};
+    UI.mjlForm={rank:0, uma:0}; UI.mjlHistAll=false;
     UI.mjlPending=false;
   }
   const linkId = "mj-"+m.id;
