@@ -269,7 +269,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.15 (localStorage保存・完全オフライン)
+   Tally 6.16 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -899,7 +899,11 @@ const mjGameFee = m => m.category==="free"
 /* v5.47: **ゲーム代バックはゲーム代の払い戻し**(ユーザー指摘: 麻雀のみの収支に入ってしまっている)。
    **馬身は麻雀の結果**なので麻雀のみ収支に入るが、**バックはゲーム代と対**になるもの。
    半荘数×単価で出るので、既存の`baseFee`と同じ形で持たせる */
-const mjFeeBack = m => m.category==="free" ? num(m.feeBack)*mjHanchan(m) : 0;
+/* v6.16: **固定額のバックにも対応**(ユーザー要望: たまに半荘単位ではなく固定額。1000バック・3000円など)。
+   `feeBackUnit:"fixed"`なら`feeBack`をそのまま1回分として数える(ドリンク/入場と同じく半荘数に関係なく)。
+   無い記録は今までどおり半荘ごと——**過去の記録の数字は動かない** */
+const mjBackFixed = m => !!(m && m.feeBackUnit==="fixed");
+const mjFeeBack = m => m.category==="free" ? (mjBackFixed(m) ? num(m.feeBack) : num(m.feeBack)*mjHanchan(m)) : 0;
 const mjScoreYen = m => Math.round(fnum(m.score)*fnum(m.scoreRate));
 const mjChipYen = m => Math.round(fnum(m.chips)*fnum(m.chipRate));
 /* v5.65: **金額で入れる卓**(ユーザー設計)。雀荘は「チップを買って最後に換金」。
@@ -949,7 +953,7 @@ function mjRuleHints(){
       const sh=String(s.shop||"").trim();
       m[sh+"\u0001"+n]={shop:sh, name:n, date:String(s.date||""), category:s.category||"free", rule:String(s.rule||"4"),
         scoreRate:s.scoreRate, chipRate:s.chipRate,
-        baseFee:s.baseFee, topBonus:s.topBonus, feeBack:s.feeBack, drinkFee:s.drinkFee};
+        baseFee:s.baseFee, topBonus:s.topBonus, feeBack:s.feeBack, feeBackUnit:(s.feeBackUnit==="fixed"?"fixed":""), drinkFee:s.drinkFee};   /* v6.16: バックの単位も */
     });
   return Object.keys(m).map(k=>m[k]).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
 }
@@ -986,6 +990,7 @@ function mjApplyRule(m, r){
   if(r.shop && !String(m.shop||"").trim()) m.shop=r.shop;
   m.scoreRate=r.scoreRate; m.chipRate=r.chipRate;
   m.baseFee=r.baseFee; m.topBonus=r.topBonus; m.feeBack=r.feeBack; m.drinkFee=r.drinkFee;
+  if(r.feeBackUnit==="fixed") m.feeBackUnit="fixed"; else delete m.feeBackUnit;   /* v6.16 */
   return m;
 }
 const mjAvgRank = m => {
@@ -1056,7 +1061,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.15";
+const APP_VERSION = "6.16";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -7878,7 +7883,12 @@ function viewMj(){
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">トップ賞(1着毎)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.topBonus)+'" data-in="mjf" data-v="topBonus"></div>'+
       /* v5.47: **ゲーム代バックはここ**(ゲーム代と対になるもの)。半荘ごとにもらう額 */
-      '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代バック(1半荘)</div>'+
+      /* v6.16: 単位を「1半荘 / 固定」で切り替える(固定=その日に1回もらう額)。めったに触らないので小さいチップで、ラベルの行に置く */
+      /* チップはラベルの行の右に**重ねて**置く(行の高さを変えない=隣のドリンク/入場の欄と高さが揃う) */
+      '<div style="position:relative"><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代バック</div>'+
+        '<span class="row" style="position:absolute;right:0;top:-3px;gap:3px">'+
+        [["per","1半荘"],["fixed","固定"]].map(([v,l])=>'<button class="chip'+((mjBackFixed(m)?"fixed":"per")===v?" sel":"")+'" style="padding:2px 7px;font-size:10px;line-height:1.3" data-a="mjbackunit" data-v="'+v+'">'+l+'</button>').join("")+
+        '</span>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.feeBack)+'" data-in="mjf" data-v="feeBack"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ドリンク/入場(1回)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.drinkFee)+'" data-in="mjf" data-v="drinkFee"></div>'+
@@ -8022,7 +8032,8 @@ function mjSummary(m){
         if(num(m.baseFee)&&H) h += sub("基本 "+num(m.baseFee)+"×"+H+"半荘", -num(m.baseFee)*H);
         if(num(m.topBonus)&&top) h += sub("トップ賞 "+num(m.topBonus)+"×"+top+"回", -num(m.topBonus)*top);
         if(num(m.drinkFee)) h += sub("ドリンク/入場", -num(m.drinkFee));
-        if(num(m.feeBack)&&H) h += sub("バック "+num(m.feeBack)+"×"+H+"半荘", num(m.feeBack)*H);
+        if(mjBackFixed(m)){ if(num(m.feeBack)) h += sub("バック(固定)", num(m.feeBack)); }   /* v6.16 */
+        else if(num(m.feeBack)&&H) h += sub("バック "+num(m.feeBack)+"×"+H+"半荘", num(m.feeBack)*H);
       }
     }
     }   /* v5.74: _hasCash */
@@ -8134,6 +8145,8 @@ function bindMj(){
       }
       else if(a==="mjcat"){ m.category=v; render(); }
       else if(a==="mjrule"){ m.rule=v; render(); }
+      /* v6.16: バックの単位。額はそのまま残す(押し間違えて戻しても消えない)。結果は描き直しで追従 */
+      else if(a==="mjbackunit"){ if(v==="fixed") m.feeBackUnit="fixed"; else delete m.feeBackUnit; render(); }
       else if(a==="mjsign"){
         const cur=String(m[v]||"");
         m[v] = cur.startsWith("-") ? cur.slice(1) : "-"+cur;
