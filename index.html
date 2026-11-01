@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.25 (localStorage保存・完全オフライン)
+   Tally 6.26 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1064,7 +1064,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.25";
+const APP_VERSION = "6.26";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -10087,6 +10087,7 @@ function viewEntry(){
     pasteHtml = rMemo + (rBusy ? rBusyHtml : UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px">'+
         '<div class="muted" style="font-size:11px;margin-bottom:8px">レシートを貼る'+infoBtn("レシートの写真をClaudeに読み取らせ、返ってきた文字列をそのまま貼り付けると、まとめて記録に変換します。<br><br>書き方の例は入力欄に薄く表示されています(「#date」「#store」の行のあとに「品目 | 金額」を1行ずつ)。")+'</div>'+
+        (rcptKey() ? '<div class="teal" style="font-size:11px;margin:-2px 0 8px;line-height:1.6">PDF・画像は、この欄を長押しして「ペースト」すると、Claudeが読みます</div>' : '')+   /* v6.26 */
         '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | 宮城野通→連坊 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
@@ -10161,7 +10162,21 @@ function bindEntry(){
   document.getElementById("e-date").onchange = e=>{ f.date=e.target.value; const was=f.svPot; svAutoPick(f); if(f.svPot!==was) render(); };
   { const ea=document.getElementById("e-amount"); if(ea) ea.oninput = e=>f.amount=e.target.value; }
   /* v4.35: 追加した品目行。**再描画で消えないようUI側に保持**する(入力のたびにrenderはしない) */
-  { const pt=document.getElementById("e-paste"); if(pt) pt.oninput = e=>{ UI.pasteText=e.target.value; }; }
+  { const pt=document.getElementById("e-paste"); if(pt){ pt.oninput = e=>{ UI.pasteText=e.target.value; };
+    /* v6.26: **クリップボードのPDFは、この欄への「ペースト」で受け取る**(ユーザー要望: レシートを取り込むでクリップボードのPDFも)。
+       Safariのクリップボードの読み取り(clipboard.read)が渡すのは 文字・HTML・URL・PNG の4種類だけでPDFは来ない(WebKitの仕様)。
+       欄に貼った時の paste イベントにはファイルとして来ることがあるので、それを読む。ファイルが無ければ何もしない(文字の貼り付けは今までどおり) */
+    pt.onpaste = e=>{
+      const cd=e && e.clipboardData; if(!cd) return;
+      let fs=[...(cd.files || [])];
+      if(!fs.length && cd.items) fs=[...cd.items].filter(it=>it && it.kind==="file").map(it=>it.getAsFile()).filter(Boolean);
+      fs=fs.filter(fl=>rcptIsPdf(fl) || /^image\//.test(String((fl && fl.type) || "")));
+      if(!fs.length) return;
+      if(e.preventDefault) e.preventDefault();
+      if(!rcptKey()){ toast("PDFや画像を読むには、管理 → レシートの読み取り でAPIキーを設定してください"); return; }
+      UI.pasteOpen=false; UI.pasteText="";
+      rcptFromFiles(fs);
+    }; } }
   /* v6.23: 写真を選んだら読み取りへ(同じ写真をもう一度選べるよう、値は先に空にする) */
   { const ph=document.getElementById("e-photo"); if(ph) ph.onchange = e=>{ const fs=[...((e.target && e.target.files) || [])]; e.target.value=""; if(fs.length) rcptFromFiles(fs); }; }
   (f.extra||[]).forEach((x,i)=>{
@@ -10209,7 +10224,7 @@ function bindEntry(){
               if(!rcptKey()){ toast("画像を読むには、管理 → レシートの読み取り でAPIキーを設定してください"); return; }
               rcptFromFiles([img]); return;
             }
-            if(!t){ toast("クリップボードが空です(PDFは「写真・PDFから読む」から)"); fallback(""); return; }
+            if(!t){ toast(rcptKey() ? "文字や画像が見つかりません。PDFなら、開いた欄を長押しして「ペースト」" : "クリップボードが空です"); fallback(""); return; }
             if(!r.items.length){ toast("書式が読み取れません"); fallback(t); return; }
             const n=applyReceipt(t);
             if(!n){ fallback(t); return; }
