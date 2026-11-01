@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.23 (localStorage保存・完全オフライン)
+   Tally 6.24 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1064,7 +1064,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.23";
+const APP_VERSION = "6.24";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -9619,7 +9619,10 @@ function rcptText(js){ return ((js && js.content) || []).filter(b=>b && b.type==
 /* 失敗の言い方。**次に何をすればいいか**まで書く(エラーの名前だけでは直せない) */
 function rcptErr(status, js){
   const m=String((js && js.error && js.error.message) || "");
-  if(status===401) return "APIキーが違います。\n管理 → レシートの読み取り で貼り直してください。";
+  /* v6.24: キーには作る時に選ぶ**有効期限**がある(3時間〜30日・任意の長さ・Never。あとから変えられない)。切れると401 */
+  if(status===401) return "APIキーが違うか、有効期限が切れています。\nConsoleで新しいキーを作り、管理 → レシートの読み取り で貼り直してください。";
+  /* v6.24: Workspaceを選ばずに作ったキーは、毎回 anthropic-workspace-id を付けないと400になる → 作り直してもらう */
+  if(status===400 && /workspace/i.test(m)) return "このAPIキーは置き場(Workspace)が決まっていません。\nConsoleでキーを作り直す時に、Workspace で Tally(作っていなければ Default)を選んでください。";
   if(status===400 && /credit balance/i.test(m)) return "APIのクレジットが足りません。\nclaude.ai の設定でConsoleの組織をつないだか、今月の分を使い切っていないか確かめてください。";
   if(status===404 || (status===400 && /model/i.test(m))) return "モデルが見つかりません。\n管理 → レシートの読み取り で別のモデルを選んでください。";
   if(status===403) return "このAPIキーでは使えません。\n"+m;
@@ -9770,7 +9773,7 @@ function viewRcptSet(){
   const k=rcptKey(), m=rcptModel(), T=UI.rcptTest;
   const info="写真を選ぶと、Tallyが画像をClaude(AnthropicのAPI)に送って読み取り、記録の画面を埋めます。保存の前に中身を見て直せます。読めなかった所は、画面の「Claudeのメモ」に出ます。<br><br>"+
     "<b>はじめに一度だけ</b><br>① claude.ai の設定 → 請求(Billing)の「API credits」で、Claude Console の組織をつなぐ(Maxプランは毎月$100分。翌月には繰り越さない)<br>"+
-    "② Console(platform.claude.com)の API Keys でキーを作り、コピーする<br>③ ここに貼って保存する<br><br>"+
+    "② Console(platform.claude.com)の API keys で「Create key」。Workspace は Tally(作っていなければ Default)、Linked account は自分、有効期限(Expiration)は Never を選んで作り、出たキーをすぐコピーする(この時しか表示されない)<br>③ ここに貼って保存する<br><br>"+
     "<b>キーの置き場所</b>: この端末の中だけ。同期・バックアップには入りません(別の端末では、そこでもう一度貼ります)。<br><br>"+
     "<b>送るもの</b>: 画像と、財布・店名・駅名の一覧(表記を揃えるため)。金額や記録そのものは送りません(銀行の明細の行から開いた時だけ、その行の日付・店名・金額を添えます)。<br><br>"+
     "<b>費用</b>: 1枚 数円ほど。Consoleに支払い方法を登録していなければ、クレジットを使い切った時点で読み取りが止まるだけです。";
