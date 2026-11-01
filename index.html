@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.24 (localStorage保存・完全オフライン)
+   Tally 6.25 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1064,7 +1064,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.24";
+const APP_VERSION = "6.25";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -9521,7 +9521,7 @@ function rcptSystem(){
   if(W.indexOf("Suica")>=0) pay.push("交通系IC・Suica → Suica");
   if(W.indexOf("現金")>=0) pay.push("現金・お預り・お釣り → 現金");
   return [
-"あなたは家計簿アプリ「Tally」の取り込み係です。送られた画像(レシート・領収書・ネット注文の画面・Suicaの利用履歴・給与明細)を、Tallyが読む取り込み用のテキストに変換してください。",
+"あなたは家計簿アプリ「Tally」の取り込み係です。送られた画像やPDF(レシート・領収書・ネット注文の画面や領収書・Suicaの利用履歴・給与明細)を、Tallyが読む取り込み用のテキストに変換してください。",
 "",
 "## 返し方",
 "- 取り込み用のテキストを**コードブロック**で返す。前置きや解説は書かない",
@@ -9561,6 +9561,12 @@ fence,
 "- 店・財布・分類はブロックで共通なので、路線(地下鉄・バスなど)や分類が変わる所でブロックを分ける",
 "- チャージは書かない(財布どうしの移動で、支出ではない)。利用だけを書く",
 "",
+"### ネット注文の領収書(Amazonなど)",
+"- #store は注文したサイト(Amazon など)。マーケットプレイスの出品者名にしない",
+"- #date は注文日、#total は「ご請求額」(実際に払った額)",
+"- 割引(定期おトク便など)と、ポイント・ギフト券で払った分は、値引きと同じく品目から引く(按分)",
+"- 配送料・手数料が0円なら書かない",
+"",
 "### 交通の書き方",
 "| 種別 | #store | 品目 |",
 "|---|---|---|",
@@ -9573,6 +9579,7 @@ fence,
 "## ヘッダの値",
 "- `#wallet`: "+W.join(" / ")+" のどれか。支払い方法の印字に従う",
 pay.length ? "  - "+pay.join(" / ") : null,
+(/ソニー/.test(bank) ? "  - カード名から財布が分かればその財布(Sony Bank WALLET → "+bank+")" : null),
 "  - クレジット・デビット・カードの印字だけなら "+bank+"(そう推定したことをメモに書く)",
 "  - 支払い方法の印字が無ければ書かない",
 "- `#category`(支出): 消費 / 娯楽 / 承認",
@@ -9753,16 +9760,42 @@ async function rcptSend(t, imgs){
   if(out.saved){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
   render(); toast("取り込みをやめました");
 }
+/* v6.25: **PDFも読む**(ユーザー要望: Amazonの領収書はPDF)。PDFは縮めずに document として送る
+   (Claudeがページごとに画像と文字で読む。1ページの領収書なら数円)。上限はリクエスト全体で128MBなので、1つ30MBまでにする */
+function rcptIsPdf(fl){ return /pdf/i.test(String((fl && fl.type) || "")) || /\.pdf$/i.test(String((fl && fl.name) || "")); }
+async function rcptPdf(fl){
+  if((fl.size || 0) > 30*1024*1024) throw new Error("PDFが大きすぎます(30MBまで)");
+  const u8=new Uint8Array(await fl.arrayBuffer()); let bin="";
+  for(let i=0;i<u8.length;i+=0x8000) bin+=String.fromCharCode.apply(null, u8.subarray(i, i+0x8000));
+  return {type:"document", source:{type:"base64", media_type:"application/pdf", data:btoa(bin)}};
+}
+/* v6.25: **クリップボードを1回で読む**(文字と画像の両方を見る)。iPhoneは読むたびに「ペースト」の確認が出るので、
+   読み直さない。read が無い古い端末は readText だけ(画像は読めない) */
+async function rcptClip(){
+  const c=navigator.clipboard;
+  if(c && c.read){
+    const items=await c.read(); let text="", img=null;
+    for(const it of (items || [])){
+      const ty=[...((it && it.types) || [])];
+      if(!text && ty.indexOf("text/plain")>=0){ try{ text=await (await it.getType("text/plain")).text(); }catch(e){} }
+      const im=ty.find(x=>/^image\//.test(x));
+      if(!img && im){ try{ img=await it.getType(im); }catch(e){} }
+    }
+    return {text:text, img:img};
+  }
+  if(c && c.readText) return {text:await c.readText(), img:null};
+  throw new Error("クリップボードを読めません");
+}
 async function rcptFromFiles(files){
   const f=UI.entryForm; if(!f || !files || !files.length) return;
   if(!rcptKey()){ alert("APIキーが未設定です。\n管理 → レシートの読み取り で設定してください。"); return; }
   if(navigator.onLine===false){ alert("オフラインです。電波のある所で、もう一度。"); return; }
   const t=rcptBegin(f), m=rcptModel();
-  if(files.length>5) toast("写真は5枚までです。最初の5枚を読みます");
+  if(files.length>5) toast("写真・PDFは5つまでです。最初の5つを読みます");
   /* v6.23(レビュー): **1枚ずつ**縮める(iPhoneで5枚を同時に開くとメモリが足りずページごと落ちることがある) */
   const imgs=[];
-  try{ for(const fl of files.slice(0,5)){ imgs.push(await rcptImage(fl, m)); if(UI.rcptBusy!==t) return; } }
-  catch(e){ if(UI.rcptBusy===t){ UI.rcptBusy=null; render(); alert("画像を開けませんでした(この端末では開けない形式かもしれません)。"); } return; }
+  try{ for(const fl of files.slice(0,5)){ imgs.push(await (rcptIsPdf(fl) ? rcptPdf(fl) : rcptImage(fl, m))); if(UI.rcptBusy!==t) return; } }
+  catch(e){ if(UI.rcptBusy===t){ UI.rcptBusy=null; render(); alert(/PDFが大きすぎます/.test(String(e && e.message)) ? e.message+"。" : "画像やPDFを開けませんでした(この端末では開けない形式かもしれません)。"); } return; }
   if(UI.rcptBusy!==t) return;
   /* 縮めている間に画面を離れていたら送らない(費用がかかるだけ) */
   if(UI.screen!=="entry" || UI.entryForm!==f){ UI.rcptBusy=null; return; }
@@ -9771,7 +9804,8 @@ async function rcptFromFiles(files){
 /* 設定の画面(管理 → レシートの読み取り) */
 function viewRcptSet(){
   const k=rcptKey(), m=rcptModel(), T=UI.rcptTest;
-  const info="写真を選ぶと、Tallyが画像をClaude(AnthropicのAPI)に送って読み取り、記録の画面を埋めます。保存の前に中身を見て直せます。読めなかった所は、画面の「Claudeのメモ」に出ます。<br><br>"+
+  const info="写真やPDFを選ぶと、Tallyが画像をClaude(AnthropicのAPI)に送って読み取り、記録の画面を埋めます。保存の前に中身を見て直せます。読めなかった所は、画面の「Claudeのメモ」に出ます。<br><br>"+
+    "<b>スクリーンショット</b>: 撮った後の「完了」→「コピーして削除」→ 記録の画面の「レシートを取り込む」でも読めます(写真に残りません)。iPhoneはWebアプリを共有シートに出せないので、この形で代えています。<br><br>"+
     "<b>はじめに一度だけ</b><br>① claude.ai の設定 → 請求(Billing)の「API credits」で、Claude Console の組織をつなぐ(Maxプランは毎月$100分。翌月には繰り越さない)<br>"+
     "② Console(platform.claude.com)の API keys で「Create key」。Workspace は Tally(作っていなければ Default)、Linked account は自分、有効期限(Expiration)は Never を選んで作り、出たキーをすぐコピーする(この時しか表示されない)<br>③ ここに貼って保存する<br><br>"+
     "<b>キーの置き場所</b>: この端末の中だけ。同期・バックアップには入りません(別の端末では、そこでもう一度貼ります)。<br><br>"+
@@ -9800,7 +9834,7 @@ async function rcptTest(){
   catch(e){ err=e; }
   if(timer) clearTimeout(timer);
   UI.rcptTest = err ? {ok:false, msg:"つながりませんでした(オフラインか、電波が弱い)。"}
-    : res.ok ? {ok:true, msg:"つながりました("+rcptModel().name+")。記録の画面に「写真から読む」が出ます。"}
+    : res.ok ? {ok:true, msg:"つながりました("+rcptModel().name+")。記録の画面に「写真・PDFから読む」が出ます。"}
     : {ok:false, msg:rcptErr(res.status, js)};
   if(UI.screen==="rcptset") render();
 }
@@ -9815,7 +9849,7 @@ function bindRcptSet(){
         rcptLS(RCPT_KEY_LS, k); UI.rcptTest=null; render(); toast("保存しました(この端末だけ)"); return;
       }
       if(a==="del"){
-        if(!confirm("この端末からAPIキーを消しますか?\n\n「写真から読む」が使えなくなります(Consoleのキー自体は残ります)。")) return;
+        if(!confirm("この端末からAPIキーを消しますか?\n\n「写真・PDFから読む」が使えなくなります(Consoleのキー自体は残ります)。")) return;
         rcptLS(RCPT_KEY_LS, null); UI.rcptTest=null; render(); toast("消しました"); return;
       }
       if(a==="model"){ rcptLS(RCPT_MODEL_LS, String(v)); UI.rcptTest=null; render(); return; }
@@ -10047,8 +10081,8 @@ function viewEntry(){
       '<button class="btn" style="flex:none;font-size:11px;padding:6px 14px" data-a="rcptstop">やめる</button></div>'+
       '<div class="muted" style="font-size:11px;margin-top:4px">10〜30秒ほど。終わるとこの画面が埋まります</div></div>';
     const rTwo = '<div class="row" style="gap:8px;margin-bottom:12px">'+
-      '<label class="btn" style="flex:1;padding:9px 0;font-size:12px;text-align:center;cursor:pointer;display:block;position:relative;color:var(--teal);font-weight:700">写真から読む'+
-      '<input type="file" id="e-photo" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none"></label>'+
+      '<label class="btn" style="flex:1;padding:9px 0;font-size:12px;text-align:center;cursor:pointer;display:block;position:relative;color:var(--teal);font-weight:700">写真・PDFから読む'+
+      '<input type="file" id="e-photo" accept="image/*,application/pdf,.pdf" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none"></label>'+
       '<button class="btn" style="flex:1;padding:9px 0;font-size:12px;color:var(--teal)" data-a="popen">レシートを取り込む</button></div>';
     pasteHtml = rMemo + (rBusy ? rBusyHtml : UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px">'+
@@ -10162,13 +10196,20 @@ function bindEntry(){
          iOSは読み取りに「ペースト」の確認を挟むので、実質2タップで取り込みまで終わる。
          読めない/中身が書式でない場合は従来どおり貼り付け欄を開く——**黙って失敗させない**。
          ショートカット経由でURLを叩く案は、PWAではなくSafariが開くことがあるため採らない */
+      /* v6.25: **スクショの画像もここで読む**(ユーザー要望: スクショをそのままTallyへ流したい)。
+         iOSはWebアプリを共有シートに出せない(share_target 非対応)ので、スクショの「完了 → コピーして削除」→ ここで貼る、で代える
+         (写真にも残らない)。書式の文字があれば従来どおり文字を優先。画像はキーがある時だけClaudeへ */
       else if(a==="popen"){
         const fallback=(txt)=>{ UI.pasteOpen=true; UI.pasteText=txt||""; render(); };
-        if(navigator.clipboard && navigator.clipboard.readText){
-          navigator.clipboard.readText().then(txt=>{
-            const t=String(txt||"").trim();
-            if(!t){ toast("クリップボードが空です"); fallback(""); return; }
+        {
+          rcptClip().then(({text, img})=>{
+            const t=String(text||"").trim();
             const r=parseReceipt(t);
+            if(img && !r.items.length){
+              if(!rcptKey()){ toast("画像を読むには、管理 → レシートの読み取り でAPIキーを設定してください"); return; }
+              rcptFromFiles([img]); return;
+            }
+            if(!t){ toast("クリップボードが空です(PDFは「写真・PDFから読む」から)"); fallback(""); return; }
             if(!r.items.length){ toast("書式が読み取れません"); fallback(t); return; }
             const n=applyReceipt(t);
             if(!n){ fallback(t); return; }
@@ -10178,7 +10219,7 @@ function bindEntry(){
             /* v4.67: 日付ありの経路は確認ダイアログで既に出しているので、ここは重複させない */
             const note=receiptNote(r); if(note) alert(note);
           }).catch(()=>fallback(""));
-        } else fallback("");
+        }
       }
       else if(a==="pcancel"){ UI.pasteOpen=false; render(); }
       /* v6.23: 読み取りをやめる(通信も止める)・メモを閉じる */
