@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.21 (localStorage保存・完全オフライン)
+   Tally 6.23 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -577,7 +577,8 @@ let UI = {
   mdbForm:null,                        // 機種マスタドラフト
   msg:"",                              // backup画面メッセージ
   detAsc:false,                        // 明細の並び(v5.57・既定=新しい順。突合の時だけ古い順)
-  recon:false, reconWal:null, bm:null, bmWal:null, bmOpen:{}           // 照合モード(v5.58)。✓自体はエントリのe.chkに保存(v5.60)
+  recon:false, reconWal:null, bm:null, bmWal:null, bmOpen:{},          // 照合モード(v5.58)。✓自体はエントリのe.chkに保存(v5.60)
+  rcptBusy:null, rcptTest:null                                         // v6.23 写真から読む(読み取り中の印・接続の確認の結果)
 };
 
 function migrateEntry(e){
@@ -1063,7 +1064,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.21";
+const APP_VERSION = "6.23";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1264,6 +1265,7 @@ function _renderScreen(app){
   if(UI.screen==="svdrill"){ app.innerHTML = viewSvDrill(); bindSvDrill(); return; }
   if(UI.screen==="advdrill"){ app.innerHTML = viewAdvDrill(); bindAdvDrill(); return; }   /* v6.15 */
   if(UI.screen==="bankmatch"){ app.innerHTML = viewBankMatch(); bindBankMatch(); return; }   /* v6.18 */
+  if(UI.screen==="rcptset"){ app.innerHTML = viewRcptSet(); bindRcptSet(); return; }   /* v6.23 */
   if(UI.screen==="payroll"){ app.innerHTML = viewPayroll(); bindPayroll(); return; }
   if(UI.screen==="tredit"){ app.innerHTML = viewTrEdit(); bindTrEdit(); return; }
   if(UI.screen==="mjlog"){ app.innerHTML = viewMjLog(); bindMjLog(); return; }
@@ -1653,7 +1655,7 @@ function viewBankMatch(){
   const uLab=u=>{ const m=u.ms[0]; return md(m.date)+' '+bmLabel(m)+(u.ms.length>1?' ほか'+(u.ms.length-1)+'件':'')+' '+signYen(u.amt); };
   if(R.bankOnly.length){
     h+=band("銀行にあってTallyに無い", '<span class="mono muted" style="font-size:11px">'+R.bankOnly.length+'件</span>',
-      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。<b>ATM</b>と、店名にTallyの財布の名前が入っている行(Suicaのチャージなど)は<b>振替</b>で開きます(ATMは、相手の財布や軍資金を選びます)。それ以外は支出(入金なら収入)で開くので、店名・品目・分類を足して保存します。<br><br><b>いつもの形</b>: 同じ摘要の行を前にどう付けたか(分類・店名、振替なら相手)をTallyが覚えていて、その形で開きます。覚えるのは銀行と一致した行からで、付け方が割れている時(8割に届かない時)は、その項目は決めません。レシートをClaudeで読ませてあったなら、記録の画面の「レシートを取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br>下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(銀行の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
+      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。<b>ATM</b>と、店名にTallyの財布の名前が入っている行(Suicaのチャージなど)は<b>振替</b>で開きます(ATMは、相手の財布や軍資金を選びます)。それ以外は支出(入金なら収入)で開くので、店名・品目・分類を足して保存します。<br><br><b>いつもの形</b>: 同じ摘要の行を前にどう付けたか(分類・店名、振替なら相手)をTallyが覚えていて、その形で開きます。覚えるのは銀行と一致した行からで、付け方が割れている時(8割に届かない時)は、その項目は決めません。レシートをClaudeで読ませてあったなら、記録の画面の「レシートを取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br><b>何の支払いか分からない行</b>は、一覧の下の「分からない行をClaude用にコピー」でまとめてコピーできます(手がかり・いつもの形が出ている行と、ATM・チャージの行は入りません)。レシートを変換しているClaudeのチャットに貼ると、店を調べて1行ずつ取り込み用の形にして返します。その行を押して開いた画面で「レシートを取り込む」を押すと入ります。<br><br>下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(銀行の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
     h+='<div class="card" style="margin-bottom:14px;padding:4px 14px 6px">'+R.bankOnly.map((r,k)=>
       '<div style="padding:8px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
       '<div class="row between" style="align-items:baseline;cursor:pointer" data-bm="add" data-v="'+r.i+'">'+
@@ -1662,6 +1664,10 @@ function viewBankMatch(){
         esc(r.hint.text)+': '+esc(uLab(r.hint.u))+' ›</div>'
         : (()=>{ const sh=bmShape(r, W); return sh ? '<div class="muted" style="font-size:11px;margin-top:3px">'+esc(bmShapeText(sh, r, W))+'</div>' : ''; })())+
       '</div>').join("")+'</div>';
+    /* v6.22: Tallyだけでは中身が分からない行(手がかりも・いつもの形も無く、ATM・振替でもない)を、レシートのチャットに渡す形でコピーする。
+       店の正体はチャットがWebやカレンダーで調べ、取り込み用のブロックにして返す(ユーザーの提案: 明細をチャットに渡して知らない内容を考えてもらう) */
+    const unk=bmUnknown(R, W);
+    if(unk.length) h+='<div style="text-align:right;margin:-6px 2px 14px"><button class="navbtn" style="color:var(--teal);font-size:12px;text-decoration:underline" data-bm="copyunk">分からない行をClaude用にコピー('+unk.length+'件)</button></div>';
   }
   /* ── Tallyにあって銀行に無い ── */
   if(R.tallyOnly.length){
@@ -1726,6 +1732,13 @@ function bindBankMatch(){
       if(a==="back"){ UI.screen="main"; render(); return; }
       if(a==="wal"){ if(UI.bm) UI.bm.walId=String(v); else UI.bmWal=String(v); render(); return; }
       if(a==="fold"){ UI.bmOpen=Object.assign({}, UI.bmOpen||{}, {[v]:!(UI.bmOpen||{})[v]}); render(); return; }
+      if(a==="copyunk"){
+        const t=bmUnknownText(bankMatch(UI.bm), String(UI.bm.walId));
+        const done=()=>toast("コピーしました。レシートのチャットに貼ってください");
+        if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, ()=>alert(t));
+        else alert(t);
+        return;
+      }
       if(a==="paste"){
         if(navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(t=>bmLoad(t,"貼り付け"), ()=>toast("貼り付けできませんでした"));
         else toast("この端末では貼り付けを読めません");
@@ -3992,6 +4005,11 @@ function viewTool(){
     '<div style="font-size:13px;font-weight:600">起動時に記帳画面を開く</div>'+
     '</div>'+
     '<span class="btn '+(S.openAddOnLaunch?"sel":"")+'" style="flex:none;font-size:11px;padding:6px 14px">'+(S.openAddOnLaunch?"ON":"OFF")+'</span></div></div>';
+  /* v6.23: レシートの読み取り(Claude API)の設定。状態(未設定/モデル)を小さく出す */
+  h += '<div class="card" data-a="rcptset" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div>'+
+    '<div style="font-size:13px;font-weight:600">レシートの読み取り(Claude)</div>'+
+    '<div class="muted" style="font-size:11px;margin-top:2px">'+(rcptKey() ? esc(rcptModel().name) : '未設定')+'</div></div>'+
+    '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += band("麻雀");
   h += '<div class="card" data-a="mjtlist" style="cursor:pointer"><div class="row between" style="align-items:center"><div>'+
     '<div style="font-size:13px;font-weight:600">スコア表</div>'+
@@ -6158,6 +6176,12 @@ function bmShape(r, W){
   if((type==="expense" && r.amt>0) || (type==="income" && r.amt<0)) return null;   /* 返金など、向きが違う行には使わない */
   const cat=mode(m.cat), cats=(type==="income"?INCOME_CATS:EXPENSE_CATS);
   return {type:type, cat:(cats.indexOf(cat)>=0?cat:""), store:mode(m.store)};
+}
+/* v6.22: Tallyでは埋められない行(手がかり・いつもの形・ATMや財布の名前からの振替、のどれも無い) */
+function bmUnknown(R, W){ return R.bankOnly.filter(r=>!r.hint && !bmShape(r, W) && !bmTransferGuess(r, W)); }
+function bmUnknownText(R, W){
+  return "銀行の明細の記帳漏れ(財布: "+walName(W)+")。何の支払いか調べて、1行ずつ取り込み用のブロックにしてください。\n"+
+    bmUnknown(R, W).map(r=>r.date+" | "+(r.merch||r.desc)+" | "+(r.amt>0?"+":"-")+Math.abs(r.amt)).join("\n");
 }
 /* 画面に出す一言 */
 function bmShapeText(sh, r, W){
@@ -8846,6 +8870,7 @@ function bindMain(){
       else if(a==="wallet"){ UI.screen="wallet"; render(); }
       else if(a==="savings"){ UI.screen="savings"; render(); }
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
+      else if(a==="rcptset"){ UI.screen="rcptset"; UI.rcptTest=null; render(); }   /* v6.23 */
       else if(a==="svdrill"){ UI.screen="svdrill"; render(); }
       else if(a==="advdrill"){ UI.advDoneOpen=false; UI.screen="advdrill"; render(); }   /* v6.15 */
       else if(a==="payroll"){ UI.screen="payroll"; render(); }
@@ -9368,7 +9393,7 @@ function receiptNote(r){
 }
 /* v4.53: 行に日付が付いていれば**フォームではなく直接エントリを作る**。
    フォームは日付を1つしか持てないため。**保存前に必ず件数と合計を確認させる**(取り込みは目視できる形を崩さない) */
-function applyReceiptDated(r){
+function applyReceiptDated(r, extra){   /* v6.23: extra = 写真から読んだ時のClaudeのメモ(保存前の確認に出す) */
   const cats = r.type==="income" ? INCOME_CATS : EXPENSE_CATS;
   const cat = (r.category && cats.indexOf(r.category)>=0) ? r.category : (r.type==="income"?"臨時":"消費");
   const rs = receiptSrc(r.wallet);
@@ -9383,7 +9408,7 @@ function applyReceiptDated(r){
   const days = [...new Set(rows.map(x=>x.date))].sort();
   /* v4.67: **保存前に止められる唯一の場所**なので、警告はここに出す */
   const note=receiptNote(r);
-  if(!confirm((note?note+"\n\n":"")+rows.length+"件を取り込みます\n\n"+days[0]+" 〜 "+days[days.length-1]+"\n"+
+  if(!confirm((extra?"Claudeのメモ:\n"+extra+"\n\n":"")+(note?note+"\n\n":"")+rows.length+"件を取り込みます\n\n"+days[0]+" 〜 "+days[days.length-1]+"\n"+
       (store?store+"\n":"")+(bk?"軍資金:"+bankName(bk):walName(wal))+" / "+cat+"\n合計 ¥"+total.toLocaleString("ja-JP")+
       (()=>{ const ls=rows.map(linkTo).filter(Boolean); if(!ls.length) return ""; const nm=[...new Set(ls.map(p=>p.name))].join("・");
         return "\n"+nm+"の分にします("+ls.length+"件)"; })()+
@@ -9446,6 +9471,354 @@ function applyReceipt(txt){
   f.item=r.items[0].item; f.amount=r.items[0].amount;
   f.extra=r.items.slice(1).map(x=>({item:x.item, amount:x.amount}));
   return r.items.length;
+}
+/* ========================= v6.23 レシートをTallyの中で読む(Claude API) =========================
+   ユーザー判断(11/01): **チャットとTallyの行き来が面倒** → 写真を選ぶとTallyがClaudeに送り、記録の画面を埋める。
+   v4.67でチャット方式を続けた3つの理由との関係:
+   ①プロジェクトの指示が効かない → 指示書はTallyが持つ(下の rcptSystem)。一覧は毎回データから作るので古くならない
+   ②聞き返しが失われる → **読めない所は空けてメモに書かせ、保存の前に必ずフォームを見る**(ユーザーが選んだ形)。
+     日付つきの履歴(Suica)は直接保存するが、保存前の確認にメモを出す
+   ③タップの差が小さい → 行き来そのものが消える。加えて「読ませて貼り忘れる」が構造上起きない(相談の発端・v6.18)
+   **キーはこの端末の localStorage だけ**に置く(Sに入れない=同期・バックアップ・スナップショットに乗らない)。
+   費用は Maxプランの APIクレジット(月$100・繰り越し無し)で賄う想定。1枚 数円 */
+const RCPT_URL="https://api.anthropic.com/v1/messages";
+const RCPT_KEY_LS="tally:claudeKey", RCPT_MODEL_LS="tally:claudeModel";
+/* 画像の上限は「Claude 4.7 以降」の高解像度(長辺 2,576px・4,784トークン)。超えるとAPI側で縮められるので、
+   こちらで先に合わせて送る量を減らす(レシートの文字が潰れない範囲で一番大きく) */
+const RCPT_MODELS=[
+  {id:"claude-sonnet-5-5", name:"Sonnet 5.5", note:"標準・速い", edge:2576, tok:4784},
+  {id:"claude-opus-5-5",   name:"Opus 5.5",   note:"読み違いが多い時", edge:2576, tok:4784}];
+function rcptLS(k, v){
+  try{
+    if(v===undefined) return String(localStorage.getItem(k)||"");
+    if(v===null) localStorage.removeItem(k); else localStorage.setItem(k, String(v));
+  }catch(e){}
+  return "";
+}
+function rcptKey(){ return rcptLS(RCPT_KEY_LS).trim(); }
+function rcptModel(){ const id=rcptLS(RCPT_MODEL_LS); return RCPT_MODELS.find(m=>m.id===id) || RCPT_MODELS[0]; }
+/* 表記を揃えるための一覧。**よく使う順**に、店は80・駅は60まで(多すぎると指示書が膨らむだけ) */
+function rcptLists(){
+  const st={}, sta={}, add=(m,k)=>{ if(k) m[k]=(m[k]||0)+1; };
+  (S.entries||[]).forEach(e=>{
+    if(e.src==="slot" || e.src==="mahjong") return;   /* 遊技の収支の行は店名ではない。遊技経費(gexp)は雀荘の名前なので入れる */
+    const s=String(e.store||"").trim(); if(!s) return;
+    if(TRANS_MODES.indexOf(s)>=0){
+      if(s!=="タクシー"){ const m=/^(.+?)\s*(?:→|->)\s*(.+)$/.exec(String(e.item||"")); if(m){ add(sta, m[1].trim()); add(sta, m[2].trim()); } }
+      return;
+    }
+    add(st, s);
+  });
+  const top=(m,n)=>Object.keys(m).sort((a,b)=>(m[b]-m[a]) || (a<b?-1:a>b?1:0)).slice(0,n);
+  return {stores:top(st,80), stations:top(sta,60)};
+}
+/* 指示書。もとは別チャットの RECEIPT_PROMPT.md(v4.53〜)。**聞き返せない**ことに合わせて「返し方」を変えた */
+function rcptSystem(){
+  const P=walletPots(), W=P.map(p=>p.name);
+  const bank=((P.find(p=>/ソニー/.test(p.name)) || P.find(p=>/銀行/.test(p.name)) || P[0] || {}).name) || "";
+  const L=rcptLists(), fence="```";
+  const pay=[];
+  if(W.indexOf("Suica")>=0) pay.push("交通系IC・Suica → Suica");
+  if(W.indexOf("現金")>=0) pay.push("現金・お預り・お釣り → 現金");
+  return [
+"あなたは家計簿アプリ「Tally」の取り込み係です。送られた画像(レシート・領収書・ネット注文の画面・Suicaの利用履歴・給与明細)を、Tallyが読む取り込み用のテキストに変換してください。",
+"",
+"## 返し方",
+"- 取り込み用のテキストを**コードブロック**で返す。前置きや解説は書かない",
+"- **聞き返しはできない。** 読めない値・決められない値を推測で埋めない",
+"  - ヘッダ(#date・#wallet など)なら、その行を書かない",
+"  - 品目名なら空にして金額だけ書く(`| 210`)",
+"- 読めなかった所と、迷った判断(分類が消費か娯楽か・財布の推定など)は、**コードブロックの後に1行ずつ**短く書く(例: 「乗車駅が読めません」「支払い方法の印字がありません」)。わたしは記録の画面でそのメモを見て直す。何も無ければ書かない",
+"- 家計簿に付けるものが無い画像(源泉徴収票など)は、コードブロックを出さずに一言だけ返す",
+"",
+"## 書式",
+fence,
+"#date 2026-08-06",
+"#store ファミリーマート 宮城野通駅前店",
+"#wallet "+(bank||"ソニー銀行"),
+"#category 消費",
+"#type expense",
+"#total 430",
+"ヤクルトY1000 | 162",
+"グリルチキン BP | 268",
+fence,
+"- `#` で始まる行がヘッダ、それ以外は `品目 | 金額`",
+"- 金額は半角数字。**合計を品目の行として書かない**(Tallyが足す)",
+"- `#total` はレシートに印字された請求額(実際に払った額)をそのまま書く。品目から計算し直さない(Tallyが品目の合計と突き合わせ、ずれていれば知らせる)",
+"- レシートが2枚以上写っていたら、1枚ずつ別のコードブロックにする",
+"",
+"### 日付が行ごとに違う時(Suicaの利用履歴など)",
+fence,
+"#store 地下鉄",
+"#wallet Suica",
+"#category 消費",
+"#type expense",
+"2026-08-01 | 宮城野通駅→連坊駅 | 210",
+"2026-08-03 | 宮城野通駅→仙台駅 | 210",
+fence,
+"- `#date` と `#total` は書かない",
+"- 日付が読めない行は書かない(メモに「10/2? 宮城野通駅→連坊駅 210円の日付が読めません」のように書く)",
+"- 店・財布・分類はブロックで共通なので、路線(地下鉄・バスなど)や分類が変わる所でブロックを分ける",
+"- チャージは書かない(財布どうしの移動で、支出ではない)。利用だけを書く",
+"",
+"### 交通の書き方",
+"| 種別 | #store | 品目 |",
+"|---|---|---|",
+"| 地下鉄・バス・電車 | 地下鉄 / バス / 電車 | 乗車駅→降車駅 |",
+"| タクシー | タクシー | 乗った場所→降りた場所 |",
+"| 駐輪 | 場所の名前 | 駐輪 |",
+"- 往復は2行に分ける(A→B と B→A)",
+"- 駅名は下の「これまでの駅名」の表記に合わせる(仙台市地下鉄は「〜駅」を付ける)。読めない駅名・場所は書かない(品目を空にしてメモに書く)",
+"",
+"## ヘッダの値",
+"- `#wallet`: "+W.join(" / ")+" のどれか。支払い方法の印字に従う",
+pay.length ? "  - "+pay.join(" / ") : null,
+"  - クレジット・デビット・カードの印字だけなら "+bank+"(そう推定したことをメモに書く)",
+"  - 支払い方法の印字が無ければ書かない",
+"- `#category`(支出): 消費 / 娯楽 / 承認",
+"  - 消費 = 生活に要る支出、娯楽 = 裁量の支出。分かれ目は「収入が止まったら止める支出か」(止めるなら娯楽)",
+"  - 映画・レジャーは娯楽。散髪など身だしなみのサービスは消費。大きな家電をまとめて買った時は承認",
+"  - 店が雀荘・パチンコ店そのもの(店内の飲食など)なら 遊技経費",
+"  - 立替・軍資金・貯金の箱は、わたしが記録の画面で選ぶので書かない",
+"- `#category`(収入): 給与 / 賞与 / 臨時",
+"- `#type`: expense(支出)/ income(収入)",
+"",
+"## 変換のきまり",
+"1. 税込で書く。外税のレシートは、品目ごとに税(8%・10%)を足した額にする",
+"2. 金額0の行は書かない",
+"3. 割引・クーポンはマイナスの行にせず、対象の品目から引く。対象が決まらない値引きは金額の比で按分する。品目の合計が請求額と1円まで合うように",
+"4. 配送料・手数料は按分せず、独立した品目にする",
+"5. 品目名はレシートの略称をそのまま使う(正式名称は調べない)。詰まって読みにくい所だけスペースを入れる。長すぎる名前は意味が通る範囲で短く",
+"6. 数量・点数・容量は品目名に入れない(候補が割れるため)",
+"7. 日付はレシートの印字(取引日・お買上日)を使う。年が無ければ今日に近い年。印字が無ければ #date を書かない",
+"8. 店名は下の「これまでの店名」にあれば、その表記に合わせる。無ければ新しくてよいが、長い正式名称は削り、支店名は残す",
+"",
+"## 給与明細",
+"- 差引支給額(手取り)の1行だけ。#type income、#category 給与(賞与なら 賞与)、品目は 給与(賞与なら 賞与)、#date は支給日、#wallet は "+bank,
+"- 源泉徴収票は記帳しない",
+"",
+"## これまでの店名",
+L.stores.length ? L.stores.join("\n") : "(まだ無い)",
+"",
+"## これまでの駅名",
+L.stations.length ? L.stations.join(" / ") : "(まだ無い)"
+  ].filter(x=>x!==null).join("\n");
+}
+/* 送る中身。effort は medium(既定の high は1枚に時間がかかりすぎる。按分と税の計算があるので low にはしない)。
+   max_tokens は考える分も含むので余裕を持たせる(長い履歴で切れないように。使った分しか費用はかからない)。
+   temperature 等は 5系では400になるので付けない */
+function rcptBody(content){
+  return {model:rcptModel().id, max_tokens:16000, output_config:{effort:"medium"}, system:rcptSystem(),
+    messages:[{role:"user", content:content}]};
+}
+function rcptInit(body, key, ctl){
+  return {method:"POST", headers:{"content-type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01",
+    "anthropic-dangerous-direct-browser-access":"true"}, body:JSON.stringify(body), redirect:"error", signal:(ctl ? ctl.signal : undefined)};
+}
+function rcptText(js){ return ((js && js.content) || []).filter(b=>b && b.type==="text").map(b=>String(b.text||"")).join("\n"); }
+/* 失敗の言い方。**次に何をすればいいか**まで書く(エラーの名前だけでは直せない) */
+function rcptErr(status, js){
+  const m=String((js && js.error && js.error.message) || "");
+  if(status===401) return "APIキーが違います。\n管理 → レシートの読み取り で貼り直してください。";
+  if(status===400 && /credit balance/i.test(m)) return "APIのクレジットが足りません。\nclaude.ai の設定でConsoleの組織をつないだか、今月の分を使い切っていないか確かめてください。";
+  if(status===404 || (status===400 && /model/i.test(m))) return "モデルが見つかりません。\n管理 → レシートの読み取り で別のモデルを選んでください。";
+  if(status===403) return "このAPIキーでは使えません。\n"+m;
+  if(status===413) return "画像が大きすぎます。枚数を減らしてください。";
+  if(status===429) return "回数の上限に当たりました。少し待ってから、もう一度。";
+  if(status===529 || status>=500) return "Claudeが混んでいます。少し待ってから、もう一度。";
+  return "読み取れませんでした("+status+")"+(m?"\n"+m:"");
+}
+/* 画像をJPEGにして縮める(長辺とトークンの両方に収める)。トークン = ⌈幅/28⌉×⌈高さ/28⌉ */
+function rcptFit(w, h, edge, maxTok){
+  let s=Math.min(1, edge/Math.max(w,h)), W=w, H=h;
+  for(let i=0;i<80;i++){
+    W=Math.max(1,Math.round(w*s)); H=Math.max(1,Math.round(h*s));
+    if(Math.ceil(W/28)*Math.ceil(H/28)<=maxTok) break;
+    s*=0.97;
+  }
+  return {w:W, h:H};
+}
+function rcptImage(file, model){
+  return new Promise((ok, ng)=>{
+    const url=URL.createObjectURL(file), img=new Image();
+    img.onload=()=>{
+      try{
+        const t=rcptFit(img.naturalWidth||img.width, img.naturalHeight||img.height, model.edge, model.tok);
+        const c=document.createElement("canvas"); c.width=t.w; c.height=t.h;
+        const g=c.getContext("2d"); g.imageSmoothingEnabled=true; g.imageSmoothingQuality="high";
+        g.fillStyle="#fff"; g.fillRect(0,0,t.w,t.h); g.drawImage(img,0,0,t.w,t.h);
+        const d=c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(url);
+        c.width=0; c.height=0; img.src="";   /* iPhoneのメモリを早く返す */
+        ok({type:"image", source:{type:"base64", media_type:"image/jpeg", data:d.slice(d.indexOf(",")+1)}});
+      }catch(e){ URL.revokeObjectURL(url); ng(e); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); ng(new Error("画像を開けませんでした")); };
+    img.src=url;
+  });
+}
+/* 返事を記録の画面へ。**コードブロックの外の文はメモ**として画面に出す(聞き返しの代わり)。
+   日付つきのブロック(履歴)はブロックごとに確認して直接保存、日付なしの最初の1枚はフォームへ */
+function rcptApply(txt, f, stop){
+  const src=String(txt||"");
+  const blocks=[...src.matchAll(/```[^\n]*\n[\s\S]*?(?:```|$)/g)].map(m=>m[0]);
+  const memo=src.replace(/```[^\n]*\n[\s\S]*?(?:```|$)/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  /* v6.23(レビュー): **閉じていない最後のブロック**(返事が途中で切れた)は、最後の1行が金額の途中で切れていることがある
+     (「| 230」が「| 2」で終わる)→ その1行は読み捨てる。履歴(日付つき)なら丸ごと保存しない——足りない行に気付けないまま保存されるため */
+  const open=blocks.length>0 && ((src.match(/```/g)||[]).length % 2===1);
+  if(open) blocks[blocks.length-1]=blocks[blocks.length-1].replace(/\n[^\n]*$/, "");
+  const notes=[];
+  if(open || stop==="max_tokens") notes.push("⚠ 返事が途中で切れました。最後の行は読み捨てています。足りない品目が無いか確かめてください");
+  if(memo) notes.push(memo);
+  const rs=blocks.map((b,i)=>({r:parseReceipt(b), b:b, open:(open && i===blocks.length-1)})).filter(x=>x.r.items.length);
+  if(!rs.length){ f.rcptNote=notes.join("\n\n") || "取り込めるものがありませんでした"; return {form:true, saved:0, empty:true}; }
+  const isDated=x=>x.r.items.some(it=>it.date);
+  const dated=rs.filter(isDated), plain=rs.filter(x=>!isDated(x));
+  let saved=0, head=notes.join("\n\n");
+  const after=[];   /* 保存した後も画面に残すメモ */
+  dated.forEach(x=>{
+    const lab=String(x.r.store||"").trim() || "履歴";
+    if(x.open){ after.push("⚠ "+lab+"の履歴は途中で切れたので保存していません。写真を減らして読み直してください"); return; }
+    /* v6.23(レビュー): 日付の無い行は applyReceiptDated が黙って落とすので、**確認と画面のメモで言う** */
+    const nd=x.r.items.filter(it=>!it.date);
+    const ndText=nd.length ? "⚠ "+lab+": 日付の無い行が"+nd.length+"件あります(保存しません)\n"+nd.map(it=>(String(it.item||"").replace(/^[|｜]\s*/,"")||"(品目なし)")+" ¥"+num(it.amount).toLocaleString("ja-JP")).join("\n") : "";
+    if(ndText) after.push(ndText);
+    saved+=applyReceiptDated(x.r, [head, ndText].filter(Boolean).join("\n\n"))||0;
+    head="";
+  });
+  if(plain.length){
+    rcptReset(f);
+    applyReceipt(plain[0].b);
+    rcptKeepBank(f);
+    UI.pasteOpen=false; UI.pasteText="";
+    f.rcptNote=notes.concat(after, [receiptNote(plain[0].r), plain.length>1 ? "ほかに"+(plain.length-1)+"枚分のレシートがありました。1枚ずつ読み直してください。" : ""]).filter(Boolean).join("\n\n");
+    return {form:true, saved:saved};
+  }
+  /* 履歴だけ: メモが無ければ元の画面へ。**メモがあれば記録の画面に残して見せる**(確認の画面は閉じると消えるため。読めなかった行をその場で足せる) */
+  const keep=notes.concat(after).filter(Boolean);
+  if(keep.length){ f.rcptNote=keep.join("\n\n"); return {form:true, saved:saved, kept:true}; }
+  return {form:false, saved:saved};
+}
+/* v6.23(レビュー): 返事が書かなかったヘッダは、**最初に読む前のフォームの値**に戻してから当てる。
+   戻さないと、前に読んだレシートの店・日付・財布が残り、完成した記録に見えてしまう */
+function rcptReset(f){
+  const B=f.rcptBase; if(!B) return;
+  f.date=B.date; f.store=B.store; f.type=B.type; f.category=B.category; f.wal=B.wal;
+}
+/* 銀行の明細の行から開いた時は、**財布と収支の向きは明細で決まっている**(Claudeの推定で上書きしない。上書きすると突き合わせの相手が消える) */
+function rcptKeepBank(f){
+  const B=f.rcptBase; if(!f.bankHint || !B) return;
+  f.wal=B.wal; f.type=B.type; f.bkSrc="";
+  if((f.type==="income" ? INCOME_CATS : EXPENSE_CATS).indexOf(f.category)<0) f.category=B.category;
+}
+function rcptBegin(f){
+  if(!f.rcptBase) f.rcptBase={date:f.date, store:String(f.store||""), type:f.type, category:f.category, wal:f.wal};
+  f.rcptNote="";
+  const t={form:f, model:rcptModel().name, ctl:(typeof AbortController==="function") ? new AbortController() : null};
+  UI.rcptBusy=t; render(); return t;
+}
+/* この画面の読み取りを止める(戻る・振替に切り替えた時も)。止めたら true */
+function rcptCancel(f){
+  const t=UI.rcptBusy; if(!t || (f && t.form!==f)) return false;
+  UI.rcptBusy=null; if(t.ctl) t.ctl.abort(); return true;
+}
+async function rcptSend(t, imgs){
+  const f=t.form;
+  const ask=["今日は "+todayStr()+" です。この画像を取り込み用のテキストにしてください。"];
+  if(f.bankHint) ask.push("この記録は銀行の明細の行「"+f.bankHint+"」から開いています。レシートの合計がこの金額と違えば、メモに書いてください。"+
+    "財布は「"+walName(f.wal)+"」(この明細の口座)で決まっているので、#wallet は書かないでください。");
+  const body=rcptBody(imgs.concat([{type:"text", text:ask.join("\n")}]));
+  let timer=0, res=null, js=null, err=null;
+  if(t.ctl) timer=setTimeout(()=>{ t.timeout=true; t.ctl.abort(); }, 180000);   /* Opusで写真5枚でも収まる長さ。いつでも「やめる」で止められる */
+  try{ res=await fetch(RCPT_URL, rcptInit(body, rcptKey(), t.ctl)); try{ js=await res.json(); }catch(e){ js=null; } }
+  catch(e){ err=e; }
+  if(timer) clearTimeout(timer);
+  if(UI.rcptBusy!==t) return;   /* やめた(または次の読み取りが始まった) */
+  UI.rcptBusy=null;
+  if(UI.screen!=="entry" || UI.entryForm!==f){ toast("記録の画面を離れたので、読み取りの結果は使いませんでした"); return; }
+  if(f.type==="transfer"){ render(); toast("振替に切り替えたので、読み取りの結果は使いませんでした"); return; }
+  if(err){ render(); alert(t.timeout ? "時間がかかりすぎたので止めました。写真を減らすか、少し待ってから、もう一度。" : "Claudeにつながりませんでした(オフラインか、電波が弱い)。"); return; }
+  if(!res || !res.ok){ render(); alert(rcptErr(res ? res.status : 0, js)); return; }
+  if(!js){ render(); alert("返事を最後まで受け取れませんでした(途中で切れた)。もう一度試してください。"); return; }
+  const out=rcptApply(rcptText(js), f, js.stop_reason);
+  if(out.form){
+    render();
+    toast(out.empty ? "取り込めるものがありませんでした(メモを見てください)"
+      : out.kept ? (out.saved ? "履歴の"+out.saved+"件を保存しました。メモを見てください" : "保存していません。メモを見てください")
+      : out.saved ? "読み取りました(履歴の"+out.saved+"件は保存済み)" : "読み取りました。確かめて保存してください");
+    return;
+  }
+  if(out.saved){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
+  render(); toast("取り込みをやめました");
+}
+async function rcptFromFiles(files){
+  const f=UI.entryForm; if(!f || !files || !files.length) return;
+  if(!rcptKey()){ alert("APIキーが未設定です。\n管理 → レシートの読み取り で設定してください。"); return; }
+  if(navigator.onLine===false){ alert("オフラインです。電波のある所で、もう一度。"); return; }
+  const t=rcptBegin(f), m=rcptModel();
+  if(files.length>5) toast("写真は5枚までです。最初の5枚を読みます");
+  /* v6.23(レビュー): **1枚ずつ**縮める(iPhoneで5枚を同時に開くとメモリが足りずページごと落ちることがある) */
+  const imgs=[];
+  try{ for(const fl of files.slice(0,5)){ imgs.push(await rcptImage(fl, m)); if(UI.rcptBusy!==t) return; } }
+  catch(e){ if(UI.rcptBusy===t){ UI.rcptBusy=null; render(); alert("画像を開けませんでした(この端末では開けない形式かもしれません)。"); } return; }
+  if(UI.rcptBusy!==t) return;
+  /* 縮めている間に画面を離れていたら送らない(費用がかかるだけ) */
+  if(UI.screen!=="entry" || UI.entryForm!==f){ UI.rcptBusy=null; return; }
+  await rcptSend(t, imgs);
+}
+/* 設定の画面(管理 → レシートの読み取り) */
+function viewRcptSet(){
+  const k=rcptKey(), m=rcptModel(), T=UI.rcptTest;
+  const info="写真を選ぶと、Tallyが画像をClaude(AnthropicのAPI)に送って読み取り、記録の画面を埋めます。保存の前に中身を見て直せます。読めなかった所は、画面の「Claudeのメモ」に出ます。<br><br>"+
+    "<b>はじめに一度だけ</b><br>① claude.ai の設定 → 請求(Billing)の「API credits」で、Claude Console の組織をつなぐ(Maxプランは毎月$100分。翌月には繰り越さない)<br>"+
+    "② Console(platform.claude.com)の API Keys でキーを作り、コピーする<br>③ ここに貼って保存する<br><br>"+
+    "<b>キーの置き場所</b>: この端末の中だけ。同期・バックアップには入りません(別の端末では、そこでもう一度貼ります)。<br><br>"+
+    "<b>送るもの</b>: 画像と、財布・店名・駅名の一覧(表記を揃えるため)。金額や記録そのものは送りません(銀行の明細の行から開いた時だけ、その行の日付・店名・金額を添えます)。<br><br>"+
+    "<b>費用</b>: 1枚 数円ほど。Consoleに支払い方法を登録していなければ、クレジットを使い切った時点で読み取りが止まるだけです。";
+  let h='<div class="hdr"><button class="navbtn" data-rs="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">レシートの読み取り</div><div style="width:44px"></div></div>';
+  h+='<div class="card" style="margin-bottom:14px"><div class="fxl">APIキー'+infoBtn(info)+'</div>'+
+    '<div class="mono" style="font-size:12px;margin-bottom:8px">'+(k ? esc(k.slice(0,7)+"…"+k.slice(-4)) : '<span class="muted">未設定</span>')+'</div>'+
+    '<input class="input mono" id="rs-key" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="width:100%;margin-bottom:8px;font-size:12px">'+
+    '<div class="row" style="gap:8px"><button class="btn tealb" style="flex:1;padding:10px 0;font-size:12px;font-weight:700" data-rs="save">'+(k?'貼り直す':'保存')+'</button>'+
+    (k ? '<button class="btn" style="flex:none;padding:10px 18px;font-size:12px;color:var(--red)" data-rs="del">消す</button>' : '')+'</div></div>';
+  h+='<div class="card" style="margin-bottom:14px"><div class="fxl">読み取るモデル</div><div class="row" style="gap:8px">'+
+    RCPT_MODELS.map(x=>'<button class="btn'+(x.id===m.id?' sel':'')+'" style="flex:1;min-height:44px;font-size:12px;line-height:1.5" data-rs="model" data-v="'+esc(x.id)+'">'+
+      esc(x.name)+'<br><span class="muted" style="font-size:10px">'+esc(x.note)+'</span></button>').join("")+'</div></div>';
+  if(k) h+='<div class="card" style="margin-bottom:14px"><button class="btn full" style="padding:10px 0;font-size:12px" data-rs="test">'+((T && T.busy) ? '確かめています…' : 'つながるか確かめる')+'</button>'+
+    ((T && T.msg) ? '<div class="'+(T.ok?'teal':'red')+'" style="font-size:12px;margin-top:8px;line-height:1.6">'+esc(T.msg).replace(/\n/g,"<br>")+'</div>' : '')+'</div>';
+  return h;
+}
+async function rcptTest(){
+  const k=rcptKey(); if(!k || (UI.rcptTest && UI.rcptTest.busy)) return;
+  UI.rcptTest={busy:true}; render();
+  let res=null, js=null, err=null;
+  const ctl=(typeof AbortController==="function") ? new AbortController() : null, timer=ctl ? setTimeout(()=>ctl.abort(), 30000) : 0;
+  try{ res=await fetch(RCPT_URL, rcptInit(rcptBody([{type:"text", text:"接続の確認です。「OK」とだけ返してください。"}]), k, ctl)); try{ js=await res.json(); }catch(e){ js=null; } }
+  catch(e){ err=e; }
+  if(timer) clearTimeout(timer);
+  UI.rcptTest = err ? {ok:false, msg:"つながりませんでした(オフラインか、電波が弱い)。"}
+    : res.ok ? {ok:true, msg:"つながりました("+rcptModel().name+")。記録の画面に「写真から読む」が出ます。"}
+    : {ok:false, msg:rcptErr(res.status, js)};
+  if(UI.screen==="rcptset") render();
+}
+function bindRcptSet(){
+  document.querySelectorAll("[data-rs]").forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset.rs, v=el.dataset.v;
+      if(a==="back"){ UI.screen="main"; UI.rcptTest=null; render(); return; }
+      if(a==="save"){
+        const inp=document.getElementById("rs-key"), k=String((inp && inp.value) || "").replace(/\s+/g,"");
+        if(!/^sk-ant-[A-Za-z0-9_\-]{8,}$/.test(k)){ toast("APIキーは sk-ant- で始まる文字です"); return; }
+        rcptLS(RCPT_KEY_LS, k); UI.rcptTest=null; render(); toast("保存しました(この端末だけ)"); return;
+      }
+      if(a==="del"){
+        if(!confirm("この端末からAPIキーを消しますか?\n\n「写真から読む」が使えなくなります(Consoleのキー自体は残ります)。")) return;
+        rcptLS(RCPT_KEY_LS, null); UI.rcptTest=null; render(); toast("消しました"); return;
+      }
+      if(a==="model"){ rcptLS(RCPT_MODEL_LS, String(v)); UI.rcptTest=null; render(); return; }
+      if(a==="test"){ rcptTest(); return; }
+    };
+  });
 }
 /* v6.15: 記録を編集する時のフォームの中身。明細・分類の内訳・立替の内訳の3か所から開くので、**同じものを3回書かない** */
 function entryFormOf(e){
@@ -9659,14 +10032,30 @@ function viewEntry(){
      交通こそレシートが出ず履歴を貼る用途なのに、そのフローから貼り付けに入れないのは逆 */
   let pasteHtml="";
   if(!isTr && UI.editEntryId===null){
-    pasteHtml = UI.pasteOpen
+    /* v6.23: **写真から読む**(Claude API)。キーがある時だけ出す。読み取り中はこの場所に「読んでいます」、
+       終わったら**Claudeのメモ**(読めなかった所・迷った判断)をここに出す——押した場所に結果が出るので見落とさない */
+    const rBusy = !!(UI.rcptBusy && UI.rcptBusy.form===f);
+    const rMemo = f.rcptNote ? '<div class="card" style="margin-bottom:12px;padding:9px 12px;border-color:var(--teal)">'+
+      '<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">Claudeのメモ</span>'+
+      '<button class="navbtn" style="font-size:11px;color:var(--muted);padding:0" data-a="rcptmemo">閉じる</button></div>'+
+      '<div style="font-size:12px;line-height:1.6;margin-top:3px">'+esc(f.rcptNote).replace(/\n/g,"<br>")+'</div></div>' : '';
+    const rBusyHtml = '<div class="card" style="margin-bottom:12px;padding:10px 12px"><div class="row between" style="align-items:center;gap:8px">'+
+      '<span style="font-size:12px">Claudeが読んでいます('+esc(rBusy?UI.rcptBusy.model:"")+')…</span>'+
+      '<button class="btn" style="flex:none;font-size:11px;padding:6px 14px" data-a="rcptstop">やめる</button></div>'+
+      '<div class="muted" style="font-size:11px;margin-top:4px">10〜30秒ほど。終わるとこの画面が埋まります</div></div>';
+    const rTwo = '<div class="row" style="gap:8px;margin-bottom:12px">'+
+      '<label class="btn" style="flex:1;padding:9px 0;font-size:12px;text-align:center;cursor:pointer;display:block;position:relative;color:var(--teal);font-weight:700">写真から読む'+
+      '<input type="file" id="e-photo" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none"></label>'+
+      '<button class="btn" style="flex:1;padding:9px 0;font-size:12px;color:var(--teal)" data-a="popen">レシートを取り込む</button></div>';
+    pasteHtml = rMemo + (rBusy ? rBusyHtml : UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px">'+
         '<div class="muted" style="font-size:11px;margin-bottom:8px">レシートを貼る'+infoBtn("レシートの写真をClaudeに読み取らせ、返ってきた文字列をそのまま貼り付けると、まとめて記録に変換します。<br><br>書き方の例は入力欄に薄く表示されています(「#date」「#store」の行のあとに「品目 | 金額」を1行ずつ)。")+'</div>'+
         '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | 宮城野通→連坊 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
         '<button class="btn tealb" style="flex:1;font-size:12px;padding:9px 0;font-weight:700" data-a="papply">取り込む</button></div></div>'
-      : '<button class="btn full" style="padding:9px 0;font-size:12px;margin-bottom:12px;color:var(--teal)" data-a="popen">レシートを取り込む</button>';
+      : rcptKey() ? rTwo
+      : '<button class="btn full" style="padding:9px 0;font-size:12px;margin-bottom:12px;color:var(--teal)" data-a="popen">レシートを取り込む</button>');
   }
   let extraHtml="";
   if(!isTr && UI.editEntryId===null && !(f.tmode)){
@@ -9736,6 +10125,8 @@ function bindEntry(){
   { const ea=document.getElementById("e-amount"); if(ea) ea.oninput = e=>f.amount=e.target.value; }
   /* v4.35: 追加した品目行。**再描画で消えないようUI側に保持**する(入力のたびにrenderはしない) */
   { const pt=document.getElementById("e-paste"); if(pt) pt.oninput = e=>{ UI.pasteText=e.target.value; }; }
+  /* v6.23: 写真を選んだら読み取りへ(同じ写真をもう一度選べるよう、値は先に空にする) */
+  { const ph=document.getElementById("e-photo"); if(ph) ph.onchange = e=>{ const fs=[...((e.target && e.target.files) || [])]; e.target.value=""; if(fs.length) rcptFromFiles(fs); }; }
   (f.extra||[]).forEach((x,i)=>{
     const ei=document.getElementById("e-xi-"+i); if(ei) ei.oninput = e=>{ x.item=e.target.value; };
     const ea=document.getElementById("e-xa-"+i); if(ea) ea.oninput = e=>{ x.amount=e.target.value; };
@@ -9750,8 +10141,9 @@ function bindEntry(){
   document.querySelectorAll("[data-a]").forEach(el=>{
     el.onclick = ()=>{
       const a=el.dataset.a, v=el.dataset.v;
-      if(a==="back"){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }
-      else if(a==="etype"){ f.type=v; if(v!=="transfer") f.category = v==="expense"?"消費":"給与";
+      if(a==="back"){ rcptCancel(f); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }   /* v6.23: 読み取り中なら止める(費用だけかかるので) */
+      else if(a==="etype"){ if(v==="transfer" && rcptCancel(f)) toast("読み取りをやめました");   /* v6.23: 振替ではボタンごと消えるので止める */
+        f.type=v; if(v!=="transfer") f.category = v==="expense"?"消費":"給与";
         f.bkSrc=""; f.svPot=""; f.svDraw=undefined;   /* v5.95: 支出の出所が収入の行き先に化けないように */
         render(); }
       else if(a==="ewal"){ f.wal=String(v); if(f.type!=="income") f.bkSrc=""; render(); }   /* v5.70: 財布を選んだら軍資金からは外す(v5.95: 収入では財布は経由なので行き先を残す) */
@@ -9777,7 +10169,7 @@ function bindEntry(){
             if(!r.items.length){ toast("書式が読み取れません"); fallback(t); return; }
             const n=applyReceipt(t);
             if(!n){ fallback(t); return; }
-            UI.pasteOpen=false; UI.pasteText="";
+            UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";   /* v6.23: 写真のメモが前の中身のまま残らないように */
             if(n<0){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
             render(); toast(n+"件を取り込みました");
             /* v4.67: 日付ありの経路は確認ダイアログで既に出しているので、ここは重複させない */
@@ -9786,12 +10178,15 @@ function bindEntry(){
         } else fallback("");
       }
       else if(a==="pcancel"){ UI.pasteOpen=false; render(); }
+      /* v6.23: 読み取りをやめる(通信も止める)・メモを閉じる */
+      else if(a==="rcptstop"){ rcptCancel(f); render(); toast("読み取りをやめました"); }
+      else if(a==="rcptmemo"){ f.rcptNote=""; render(); }
       else if(a==="papply"){
         const el=document.getElementById("e-paste");
         const raw=el?el.value:UI.pasteText;
         const n=applyReceipt(raw);
         if(!n){ toast("品目を読み取れませんでした"); return; }
-        UI.pasteOpen=false; UI.pasteText="";
+        UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";
         if(n<0){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
         render(); toast(n+"件を取り込みました");
         const note=receiptNote(parseReceipt(raw)); if(note) alert(note);
