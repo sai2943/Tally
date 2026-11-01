@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.26 (localStorage保存・完全オフライン)
+   Tally 6.28 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1064,7 +1064,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.26";
+const APP_VERSION = "6.28";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -9393,7 +9393,8 @@ function receiptNote(r){
 }
 /* v4.53: 行に日付が付いていれば**フォームではなく直接エントリを作る**。
    フォームは日付を1つしか持てないため。**保存前に必ず件数と合計を確認させる**(取り込みは目視できる形を崩さない) */
-function applyReceiptDated(r, extra){   /* v6.23: extra = 写真から読んだ時のClaudeのメモ(保存前の確認に出す) */
+/* v6.28: 日付つきの行を記録にする段取り(確認に出す中身と、保存)を分けた——**まとめて取り込む**時に確認を1回にするため */
+function receiptPlan(r, rowsIn){
   const cats = r.type==="income" ? INCOME_CATS : EXPENSE_CATS;
   const cat = (r.category && cats.indexOf(r.category)>=0) ? r.category : (r.type==="income"?"臨時":"消費");
   const rs = receiptSrc(r.wallet);
@@ -9403,36 +9404,151 @@ function applyReceiptDated(r, extra){   /* v6.23: extra = 写真から読んだ�
   const boxP = r.box ? savingsPots().find(p=>p.name===String(r.box).trim()) : null;
   const linkTo = x => (r.type!=="income" && !bk && !GAME_CATS[r.category||""]) ? (boxP || (((r.category||"")==="承認") ? svPeriodPot(x.date) : null)) : null;
   const store = (r.store||"").trim();
-  const rows = r.items.filter(x=>x.date);
+  const rows = rowsIn || r.items.filter(x=>x.date);
   const total = rows.reduce((a,x)=>a+num(x.amount),0);
   const days = [...new Set(rows.map(x=>x.date))].sort();
+  const typ=(r.type==="income"?"income":"expense");
+  const links=rows.map(linkTo).filter(Boolean);
+  return {r:r, rows:rows, total:total, days:days, store:store, cat:cat, wal:wal, bk:bk, typ:typ, links:links,
+    src:(bk ? "軍資金:"+bankName(bk) : walName(wal)),
+    linkText:(()=>{ if(!links.length) return ""; const nm=[...new Set(links.map(p=>p.name))].join("・"); return nm+"の分にします("+links.length+"件)"; })(),
+    commit:()=>{
+      rows.forEach(x=>{
+        const item=(x.item||"").trim(), am=num(x.amount);
+        const e={id:uid(), date:x.date, type:typ, category:cat, amount:am, store:store, item:item,
+          memo:[store,item].filter(Boolean).join(" "), wal:wal};
+        S.entries.push(e);
+        /* v5.83: **画面から保存した時と同じ扱いにする**。v5.72までこの経路は項目を置くだけで、
+           遊技経費を取り込むと src が付かず遊技の収支に入らない・軍資金と紐づかない**半端な記録**になっていた */
+        const gsrc = (typ==="expense") ? (GAME_CATS[cat]||"") : "";
+        if(gsrc){
+          const bw = bk || String(bankPots()[0].id);
+          e.src=gsrc; e.bwal=bw;
+          if(!bk) entryGtSync(e, wal, am, x.date, bw);   /* 所持金から払った遊技経費 → 所持金→軍資金の補充 */
+        } else if(typ==="expense" && bk){
+          entryBkSync(e, bk, am, x.date, wal);            /* 軍資金で払った生活の支出 → 軍資金→所持金の戻し */
+        }
+        { const lp=linkTo(x); if(lp && typ==="expense" && !gsrc && !bk) e.svPot=String(lp.id); }   /* v5.98 */
+      });
+      return rows.length;
+    }};
+}
+/* v4.53: 行に日付が付いていれば**フォームではなく直接エントリを作る**(1ブロックの時。確認の文は前のまま) */
+function applyReceiptDated(r, extra){   /* v6.23: extra = 写真から読んだ時のClaudeのメモ(保存前の確認に出す) */
+  const p=receiptPlan(r);
   /* v4.67: **保存前に止められる唯一の場所**なので、警告はここに出す */
   const note=receiptNote(r);
-  if(!confirm((extra?"Claudeのメモ:\n"+extra+"\n\n":"")+(note?note+"\n\n":"")+rows.length+"件を取り込みます\n\n"+days[0]+" 〜 "+days[days.length-1]+"\n"+
-      (store?store+"\n":"")+(bk?"軍資金:"+bankName(bk):walName(wal))+" / "+cat+"\n合計 ¥"+total.toLocaleString("ja-JP")+
-      (()=>{ const ls=rows.map(linkTo).filter(Boolean); if(!ls.length) return ""; const nm=[...new Set(ls.map(p=>p.name))].join("・");
-        return "\n"+nm+"の分にします("+ls.length+"件)"; })()+
+  if(!confirm((extra?"Claudeのメモ:\n"+extra+"\n\n":"")+(note?note+"\n\n":"")+p.rows.length+"件を取り込みます\n\n"+p.days[0]+" 〜 "+p.days[p.days.length-1]+"\n"+
+      (p.store?p.store+"\n":"")+p.src+" / "+p.cat+"\n合計 ¥"+p.total.toLocaleString("ja-JP")+
+      (p.linkText ? "\n"+p.linkText : "")+
       "\n\nよろしいですか?")) return 0;
-  const typ=(r.type==="income"?"income":"expense");
-  rows.forEach(x=>{
-    const item=(x.item||"").trim(), am=num(x.amount);
-    const e={id:uid(), date:x.date, type:typ, category:cat, amount:am, store:store, item:item,
-      memo:[store,item].filter(Boolean).join(" "), wal:wal};
-    S.entries.push(e);
-    /* v5.83: **画面から保存した時と同じ扱いにする**。v5.72までこの経路は項目を置くだけで、
-       遊技経費を取り込むと src が付かず遊技の収支に入らない・軍資金と紐づかない**半端な記録**になっていた */
-    const gsrc = (typ==="expense") ? (GAME_CATS[cat]||"") : "";
-    if(gsrc){
-      const bw = bk || String(bankPots()[0].id);
-      e.src=gsrc; e.bwal=bw;
-      if(!bk) entryGtSync(e, wal, am, x.date, bw);   /* 所持金から払った遊技経費 → 所持金→軍資金の補充 */
-    } else if(typ==="expense" && bk){
-      entryBkSync(e, bk, am, x.date, wal);            /* 軍資金で払った生活の支出 → 軍資金→所持金の戻し */
-    }
-    { const lp=linkTo(x); if(lp && typ==="expense" && !gsrc && !bk) e.svPot=String(lp.id); }   /* v5.98 */
-  });
+  const n=p.commit();
   save();
-  return rows.length;
+  return n;
+}
+/* v6.28: **記録済みかどうか**。同じ期間を何度読んでも二重にならないように(ユーザー要望: Amazonの注文をメールからまとめて)。
+   注文(日付なしのブロック=1件の買い物): 同じ店で、合計と同じ額の記録(1件、またはその日の同じ店の合計)が、注文日の3日前〜10日後にある
+   (銀行の明細から付けた記録は引き落としの日付なので後ろへずれる。突き合わせの幅 BM_LAG と同じ考え)。
+   履歴の行(日付つき): 同じ日・同じ店・同じ品目・同じ額の記録の**数**だけ飛ばす(同じ区間を1日2回乗った時に1回分を消さないように) */
+function receiptOrderDup(r, T){
+  const st=String(r.store||"").trim(); if(!st || !r.date) return false;
+  const typ=(r.type==="income"?"income":"expense"), by={};
+  (S.entries||[]).forEach(e=>{
+    if(e.type!==typ || String(e.store||"").trim()!==st || !e.date) return;
+    const dd=bmDays(r.date, e.date); if(dd<-3 || dd>10) return;
+    (by[e.date]=by[e.date]||[]).push(e);
+  });
+  return Object.keys(by).some(d=>by[d].some(e=>num(e.amount)===T) || by[d].reduce((a,e)=>a+num(e.amount),0)===T);
+}
+function receiptNewRows(r, rows){
+  const st=String(r.store||"").trim(), typ=(r.type==="income"?"income":"expense"), have={};
+  const key=(d,it,am)=>d+"|"+String(it||"").trim()+"|"+num(am);
+  (S.entries||[]).forEach(e=>{ if(e.type!==typ || String(e.store||"").trim()!==st) return; const k=key(e.date, e.item, e.amount); have[k]=(have[k]||0)+1; });
+  const out=[]; let dup=0;
+  rows.forEach(x=>{ const k=key(x.date, x.item, x.amount); if(have[k]>0){ have[k]--; dup++; } else out.push(x); });
+  return {rows:out, dup:dup};
+}
+/* v6.28: **まとめて取り込む**(Amazonの注文をGmailからまとめて・1枚の写真に複数のレシート・履歴の複数ブロック)。
+   list = [{r: parseReceipt の結果, open: 途中で切れたブロックか}]。**確認は1回**で、記録済みは飛ばす。
+   日付の無いレシート(1件の買い物で #date が無い)は保存できないので飛ばしてメモに回す */
+function receiptImportMany(list, extra){
+  const md=d=>String(d||"").slice(5).replace("-","/");
+  const plans=[], lines=[], skipped=[], notes=[], taken={};
+  (list||[]).forEach(x=>{
+    const r=x.r, lab=String(r.store||"").trim() || "(店名なし)";
+    const dated=r.items.some(it=>it.date);
+    if(x.open){ notes.push("⚠ "+lab+(dated?"の履歴":"のレシート")+"は途中で切れたので保存していません。写真を減らして読み直してください"); return; }
+    if(dated){
+      /* v6.23(レビュー): 日付の無い行は保存できない → 確認とメモで言う(黙って落とさない) */
+      const nd=r.items.filter(it=>!it.date);
+      if(nd.length) notes.push("⚠ "+lab+": 日付の無い行が"+nd.length+"件あります(保存しません)\n"+nd.map(it=>(String(it.item||"").replace(/^[|｜]\s*/,"")||"(品目なし)")+" ¥"+num(it.amount).toLocaleString("ja-JP")).join("\n"));
+      const nr=receiptNewRows(r, r.items.filter(it=>it.date));
+      if(nr.dup) skipped.push(lab+" の履歴 "+nr.dup+"件");
+      if(!nr.rows.length) return;
+      const p=receiptPlan(r, nr.rows); plans.push(p);
+      lines.push(md(p.days[0])+(p.days.length>1?"〜"+md(p.days[p.days.length-1]):"")+" "+lab+" "+p.rows.length+"件 ¥"+p.total.toLocaleString("ja-JP")+"("+p.src+"・"+p.cat+")"+(p.linkText?" ※"+p.linkText:""));
+    } else {
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(String(r.date||""))){ notes.push("⚠ 日付の無いレシート("+lab+")は取り込んでいません。1枚ずつ読み直してください"); return; }
+      const rows=r.items.map(it=>Object.assign({}, it, {date:r.date}));
+      const T=rows.reduce((a,it)=>a+num(it.amount),0), k=r.date+"|"+lab+"|"+T;
+      if(taken[k] || receiptOrderDup(r, T)){ skipped.push(md(r.date)+" "+lab+" ¥"+T.toLocaleString("ja-JP")); return; }
+      taken[k]=1;
+      const p=receiptPlan(r, rows); plans.push(p);
+      const it0=String(rows[0].item||"").trim() || "(品目なし)";
+      lines.push(md(r.date)+" "+lab+" ¥"+T.toLocaleString("ja-JP")+" "+(it0.length>16?it0.slice(0,16)+"…":it0)+(rows.length>1?" ほか"+(rows.length-1)+"品":"")+"("+p.src+"・"+p.cat+")"+(p.linkText?" ※"+p.linkText:""));
+      const nt=receiptNote(r); if(nt) notes.push(md(r.date)+" "+lab+": "+nt.replace(/^⚠ /,"⚠ "));
+    }
+  });
+  if(!plans.length) return {saved:0, allDup:!!skipped.length, notes:notes, skipped:skipped};
+  const n=plans.reduce((a,p)=>a+p.rows.length,0);
+  const text=[extra ? "Claudeのメモ:\n"+extra : "", notes.join("\n\n"), n+"件を取り込みます\n\n"+lines.join("\n"),
+    skipped.length ? "記録済みなので飛ばします("+skipped.length+"件):\n"+skipped.join("\n") : ""].filter(Boolean).join("\n\n")+"\n\nよろしいですか?";
+  if(!confirm(text)) return {saved:0, declined:true, notes:notes, skipped:skipped};
+  let saved=0; plans.forEach(p=>{ saved+=p.commit(); }); save();
+  return {saved:saved, notes:notes, skipped:skipped};
+}
+/* コードブロックごとに分ける。v6.28: **フェンスが無い時も、品目の行の後にヘッダ(#date など)が来たら、そこから次のブロック**
+   (チャットの返事を、フェンス無しの文字でコピーした時。以前は後のヘッダが前の注文に被さって1件に混ざっていた) */
+function receiptBlocks(txt){
+  const t=String(txt||"");
+  const m=[...t.matchAll(/```[^\n]*\n[\s\S]*?(?:```|$)/g)].map(x=>x[0]);
+  if(m.length) return m;
+  const out=[]; let cur=[], seenItem=false;
+  t.split(/\r?\n/).forEach(ln=>{
+    const s2=ln.trim();
+    const head=/^#\s*[A-Za-z]+\s*[:=]?\s*\S/.test(s2);
+    if(head && seenItem){ out.push(cur.join("\n")); cur=[]; seenItem=false; }
+    if(!head && (/[|｜]\s*[¥￥]?\s*[\d,]+\s*円?$/.test(s2) || /[\s\u3000]+[¥￥]?\s*[\d,]+\s*円?$/.test(s2))) seenItem=true;
+    cur.push(ln);
+  });
+  if(cur.length) out.push(cur.join("\n"));
+  return out;
+}
+/* v6.28: 貼り付けた文字を取り込む(「レシートを取り込む」と、貼り付け欄の「取り込む」で共通)。
+   **1枚のレシート(日付なしの1ブロック)は今までどおりフォームへ**(見て直してから保存)。
+   ブロックが2つ以上(Amazonの注文をメールからまとめて・複数のレシート)か、日付つきの履歴なら、まとめて1回の確認で保存し、記録済みは飛ばす。
+   何か取り込めた(または確認まで進んだ)ら true。品目が1つも読めなければ false */
+function receiptPasteText(raw, f){
+  const list=receiptBlocks(raw).map(b=>({r:parseReceipt(b)})).filter(x=>x.r.items.length);
+  if(!list.length) return false;
+  if(list.length===1 && !list[0].r.items.some(it=>it.date)){
+    const n=applyReceipt(raw); if(!n) return false;
+    UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";   /* v6.23: 写真のメモが前の中身のまま残らないように */
+    render(); toast(n+"件を取り込みました");
+    const note=receiptNote(list[0].r); if(note) alert(note);
+    return true;
+  }
+  const res=receiptImportMany(list, "");
+  if(res.saved){
+    UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";
+    UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
+    toast("取り込んで保存しました"+(res.skipped.length ? "(記録済みの"+res.skipped.length+"件は飛ばしました)" : ""));
+    return true;
+  }
+  if(res.allDup){ alert("記録済みなので、取り込むものがありません\n\n"+res.skipped.join("\n")); return true; }
+  if(!res.declined && res.notes.length){ alert(res.notes.join("\n\n")); return true; }
+  toast("取り込みをやめました");
+  return true;
 }
 function applyReceipt(txt){
   const f=UI.entryForm, r=parseReceipt(txt);
@@ -9455,7 +9571,11 @@ function applyReceipt(txt){
       f.tmode="駐輪"; f.tplace=st;
     }
   }
-  if(r.items.some(x=>x.date)) return applyReceiptDated(r) ? -1 : 0;
+  if(r.items.some(x=>x.date)){   /* v6.28: 履歴はまとめて取り込む形に(記録済みの乗車を飛ばす) */
+    const res=receiptImportMany([{r:r}], "");
+    if(res.allDup) alert("記録済みなので、取り込むものがありません\n\n"+res.skipped.join("\n"));
+    return res.saved ? -1 : 0;
+  }
   if(/^\d{4}-\d{2}-\d{2}$/.test(r.date)) f.date=r.date;
   if(r.store) f.store=r.store;
   if(r.type==="income"||r.type==="expense") f.type=r.type;
@@ -9673,7 +9793,7 @@ function rcptApply(txt, f, stop){
   const blocks=[...src.matchAll(/```[^\n]*\n[\s\S]*?(?:```|$)/g)].map(m=>m[0]);
   const memo=src.replace(/```[^\n]*\n[\s\S]*?(?:```|$)/g, "").replace(/\n{3,}/g, "\n\n").trim();
   /* v6.23(レビュー): **閉じていない最後のブロック**(返事が途中で切れた)は、最後の1行が金額の途中で切れていることがある
-     (「| 230」が「| 2」で終わる)→ その1行は読み捨てる。履歴(日付つき)なら丸ごと保存しない——足りない行に気付けないまま保存されるため */
+     (「| 230」が「| 2」で終わる)→ その1行は読み捨てる。まとめて保存する時は、そのブロックごと保存しない */
   const open=blocks.length>0 && ((src.match(/```/g)||[]).length % 2===1);
   if(open) blocks[blocks.length-1]=blocks[blocks.length-1].replace(/\n[^\n]*$/, "");
   const notes=[];
@@ -9681,32 +9801,22 @@ function rcptApply(txt, f, stop){
   if(memo) notes.push(memo);
   const rs=blocks.map((b,i)=>({r:parseReceipt(b), b:b, open:(open && i===blocks.length-1)})).filter(x=>x.r.items.length);
   if(!rs.length){ f.rcptNote=notes.join("\n\n") || "取り込めるものがありませんでした"; return {form:true, saved:0, empty:true}; }
-  const isDated=x=>x.r.items.some(it=>it.date);
-  const dated=rs.filter(isDated), plain=rs.filter(x=>!isDated(x));
-  let saved=0, head=notes.join("\n\n");
-  const after=[];   /* 保存した後も画面に残すメモ */
-  dated.forEach(x=>{
-    const lab=String(x.r.store||"").trim() || "履歴";
-    if(x.open){ after.push("⚠ "+lab+"の履歴は途中で切れたので保存していません。写真を減らして読み直してください"); return; }
-    /* v6.23(レビュー): 日付の無い行は applyReceiptDated が黙って落とすので、**確認と画面のメモで言う** */
-    const nd=x.r.items.filter(it=>!it.date);
-    const ndText=nd.length ? "⚠ "+lab+": 日付の無い行が"+nd.length+"件あります(保存しません)\n"+nd.map(it=>(String(it.item||"").replace(/^[|｜]\s*/,"")||"(品目なし)")+" ¥"+num(it.amount).toLocaleString("ja-JP")).join("\n") : "";
-    if(ndText) after.push(ndText);
-    saved+=applyReceiptDated(x.r, [head, ndText].filter(Boolean).join("\n\n"))||0;
-    head="";
-  });
-  if(plain.length){
+  /* **1枚のレシート(日付なしの1ブロック)だけなら、今までどおりフォームへ**(保存の前に見て直す=聞き返しの代わり) */
+  if(rs.length===1 && !rs[0].r.items.some(it=>it.date)){
+    const x=rs[0];
     rcptReset(f);
-    applyReceipt(plain[0].b);
+    applyReceipt(x.b);
     rcptKeepBank(f);
     UI.pasteOpen=false; UI.pasteText="";
-    f.rcptNote=notes.concat(after, [receiptNote(plain[0].r), plain.length>1 ? "ほかに"+(plain.length-1)+"枚分のレシートがありました。1枚ずつ読み直してください。" : ""]).filter(Boolean).join("\n\n");
-    return {form:true, saved:saved};
+    f.rcptNote=notes.concat([receiptNote(x.r)]).filter(Boolean).join("\n\n");
+    return {form:true, saved:0};
   }
-  /* 履歴だけ: メモが無ければ元の画面へ。**メモがあれば記録の画面に残して見せる**(確認の画面は閉じると消えるため。読めなかった行をその場で足せる) */
-  const keep=notes.concat(after).filter(Boolean);
-  if(keep.length){ f.rcptNote=keep.join("\n\n"); return {form:true, saved:saved, kept:true}; }
-  return {form:false, saved:saved};
+  /* v6.28: それ以外(履歴・1枚の写真に複数のレシート・注文の一覧)は、**まとめて1回の確認で保存**し、記録済みは飛ばす */
+  const res=receiptImportMany(rs, notes.join("\n\n"));
+  const keep=notes.concat(res.notes||[], (res.skipped||[]).length ? ["記録済みなので飛ばしました: "+res.skipped.join("、")] : []).filter(Boolean);
+  /* 保存した後もメモがあれば記録の画面に残して見せる(確認の画面は閉じると消えるため。読めなかった行をその場で足せる) */
+  if(keep.length){ f.rcptNote=keep.join("\n\n"); return {form:true, saved:res.saved, kept:true}; }
+  return {form:false, saved:res.saved};
 }
 /* v6.23(レビュー): 返事が書かなかったヘッダは、**最初に読む前のフォームの値**に戻してから当てる。
    戻さないと、前に読んだレシートの店・日付・財布が残り、完成した記録に見えてしまう */
@@ -10086,8 +10196,7 @@ function viewEntry(){
       '<button class="btn" style="flex:1;padding:9px 0;font-size:12px;color:var(--teal)" data-a="popen">レシートを取り込む</button></div>';
     pasteHtml = rMemo + (rBusy ? rBusyHtml : UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px">'+
-        '<div class="muted" style="font-size:11px;margin-bottom:8px">レシートを貼る'+infoBtn("レシートの写真をClaudeに読み取らせ、返ってきた文字列をそのまま貼り付けると、まとめて記録に変換します。<br><br>書き方の例は入力欄に薄く表示されています(「#date」「#store」の行のあとに「品目 | 金額」を1行ずつ)。")+'</div>'+
-        (rcptKey() ? '<div class="teal" style="font-size:11px;margin:-2px 0 8px;line-height:1.6">PDF・画像は、この欄を長押しして「ペースト」すると、Claudeが読みます</div>' : '')+   /* v6.26 */
+        '<div class="muted" style="font-size:11px;margin-bottom:8px">レシートを貼る'+infoBtn("レシートの写真をClaudeに読み取らせ、返ってきた文字列をそのまま貼り付けると、まとめて記録に変換します。<br><br>書き方の例は入力欄に薄く表示されています(「#date」「#store」の行のあとに「品目 | 金額」を1行ずつ)。<br><br><b>まとめて</b>: ブロックが2つ以上あれば(チャットにAmazonの注文をまとめて頼んだ時など)、1回の確認でまとめて保存します。<b>記録済みの注文・乗車は飛ばす</b>ので、同じ期間をもう一度貼っても二重になりません。")+'</div>'+
         '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | 宮城野通→連坊 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
@@ -10163,7 +10272,9 @@ function bindEntry(){
   { const ea=document.getElementById("e-amount"); if(ea) ea.oninput = e=>f.amount=e.target.value; }
   /* v4.35: 追加した品目行。**再描画で消えないようUI側に保持**する(入力のたびにrenderはしない) */
   { const pt=document.getElementById("e-paste"); if(pt){ pt.oninput = e=>{ UI.pasteText=e.target.value; };
-    /* v6.26: **クリップボードのPDFは、この欄への「ペースト」で受け取る**(ユーザー要望: レシートを取り込むでクリップボードのPDFも)。
+    /* v6.27: **iPhoneでは、共有シートの「コピー」で入れたPDFは、この欄に貼っても来なかった**(ユーザー確認 11/01)ので画面の案内は外した。
+       Chrome(家のAndroidのタブレットを使う時など)ではファイルとして来るので、受け取る処理は残す。
+       v6.26: **クリップボードのPDFは、この欄への「ペースト」で受け取る**(ユーザー要望: レシートを取り込むでクリップボードのPDFも)。
        Safariのクリップボードの読み取り(clipboard.read)が渡すのは 文字・HTML・URL・PNG の4種類だけでPDFは来ない(WebKitの仕様)。
        欄に貼った時の paste イベントにはファイルとして来ることがあるので、それを読む。ファイルが無ければ何もしない(文字の貼り付けは今までどおり) */
     pt.onpaste = e=>{
@@ -10224,15 +10335,10 @@ function bindEntry(){
               if(!rcptKey()){ toast("画像を読むには、管理 → レシートの読み取り でAPIキーを設定してください"); return; }
               rcptFromFiles([img]); return;
             }
-            if(!t){ toast(rcptKey() ? "文字や画像が見つかりません。PDFなら、開いた欄を長押しして「ペースト」" : "クリップボードが空です"); fallback(""); return; }
+            /* v6.27: iPhoneでは、欄に貼ってもPDFは来なかった(ユーザー確認)→ 確実に読める「ファイルを選択」へ案内する */
+            if(!t){ toast(rcptKey() ? "文字や画像が見つかりません(PDFは「写真・PDFから読む」→「ファイルを選択」から)" : "クリップボードが空です"); fallback(""); return; }
             if(!r.items.length){ toast("書式が読み取れません"); fallback(t); return; }
-            const n=applyReceipt(t);
-            if(!n){ fallback(t); return; }
-            UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";   /* v6.23: 写真のメモが前の中身のまま残らないように */
-            if(n<0){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
-            render(); toast(n+"件を取り込みました");
-            /* v4.67: 日付ありの経路は確認ダイアログで既に出しているので、ここは重複させない */
-            const note=receiptNote(r); if(note) alert(note);
+            if(!receiptPasteText(t, f)) fallback(t);   /* v6.28: 1枚ならフォーム、まとめてなら1回の確認で保存 */
           }).catch(()=>fallback(""));
         }
       }
@@ -10243,12 +10349,7 @@ function bindEntry(){
       else if(a==="papply"){
         const el=document.getElementById("e-paste");
         const raw=el?el.value:UI.pasteText;
-        const n=applyReceipt(raw);
-        if(!n){ toast("品目を読み取れませんでした"); return; }
-        UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";
-        if(n<0){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
-        render(); toast(n+"件を取り込みました");
-        const note=receiptNote(parseReceipt(raw)); if(note) alert(note);
+        if(!receiptPasteText(raw, f)) toast("品目を読み取れませんでした");
       }
       else if(a==="exadd"){ f.extra=(f.extra||[]).concat([{item:"",amount:""}]); render(); }
       else if(a==="exdel"){ f.extra=(f.extra||[]).filter((_,i)=>String(i)!==String(v)); render(); }
