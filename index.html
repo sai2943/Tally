@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.28 (localStorage保存・完全オフライン)
+   Tally 6.29 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1064,7 +1064,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.28";
+const APP_VERSION = "6.29";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -7119,6 +7119,17 @@ function bindWallet(){
         ((S.savings||{}).txns||[]).forEach(t=>{ if(t.walId!=null && tWal(t)===String(v)) t.walId=String(dest); });
         ((S.bank||{}).txns||[]).forEach(t=>{ if(t.walId!=null && tWal(t)===String(v)) t.walId=String(dest); });
         (W.txns||[]).forEach(t=>{ if(tWal(t)===String(v)) t.walId=String(dest); });
+        /* v6.29【修正】(ユーザー質問: Suicaを消すとデータも消えないか)。**財布を指している所は全部移す**。
+           v6.28までは固定費のひな形・代打ちの受け取り先・投資の買付と待機資金・突き合わせのいつもの形の相手を移しておらず、
+           消した財布を指したまま残った(固定費は次に作られる分から、無い財布の記録になって財布ごとの残高から消える) */
+        (S.fixed||[]).forEach(t=>{ if(t && t.wal!=null && String(t.wal)===String(v)) t.wal=String(dest); });
+        (S.sessions||[]).forEach(se=>{ if(se && se.wal!=null && String(se.wal)===String(v)) se.wal=String(dest); });
+        (((S.invest||{}).holdings)||[]).forEach(h=>(h.buys||[]).forEach(b=>{ if(b && b.walId!=null && String(b.walId)===String(v)) b.walId=String(dest); }));
+        (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if(t && t.walId!=null && String(t.walId)===String(v)) t.walId=String(dest); });
+        Object.keys(S.bankMemo||{}).forEach(k=>{ const o=(S.bankMemo[k]||{}).other; if(o && o[String(v)]){ o[String(dest)]=(o[String(dest)]||0)+o[String(v)]; delete o[String(v)]; } });
+        if(String(UI.reconWal||"")===String(v)) UI.reconWal=null;
+        if(String(UI.bmWal||"")===String(v)) UI.bmWal=null;
+        if(UI.bm && String(UI.bm.walId||"")===String(v)) UI.bm.walId=String(dest);
         W.pots=(W.pots||[]).filter(x=>String(x.id)!==String(v));
         if(String(UI.trFrom||"")===String(v)) UI.trFrom="";
         if(String(UI.trTo||"")===String(v)) UI.trTo="";
