@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.29 (localStorage保存・完全オフライン)
+   Tally 6.30 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -681,13 +681,8 @@ function applyData(d){
   S.genres = (d.genres && typeof d.genres==="object") ? d.genres : {};   /* v3.16: 店→ジャンル辞書 */
   S.bankMemo = (d.bankMemo && typeof d.bankMemo==="object") ? d.bankMemo : {};   /* v6.21: 銀行の摘要→いつもの付け方(突き合わせで覚える) */
   S.genreCaps = (d.genreCaps && typeof d.genreCaps==="object") ? d.genreCaps : {};   /* v3.64: ジャンル内枠(食費など) */
-  /* v3.97【バグ修正】ふるさと納税の限度額がホワイトリストから漏れており、applyDataを通るたびに失われていた
-     (=クラウド復元・インポート・スナップ復元・他端末からのpull の全経路で消える)。
-     同一セッション中はS上の値が生き残るため気付けなかった——v3.13(openAddOnLaunch)と全く同じ事故 */
-  S.furusato = (d.furusato && typeof d.furusato==="object") ? d.furusato : {};   /* v3.38: {year,limit} */
-  /* v5.20: 給与試算の前提。**ホワイトリストに載せないと復元のたびに失われる**——
-     v3.97のふるさと納税と全く同じ事故になるところを、不変量テストが止めた */
-  S.payroll = (d.payroll && typeof d.payroll==="object") ? d.payroll : {};
+  /* v6.30: 給与の試算(v5.20・S.payroll)とふるさと納税(v3.38・S.furusato)は**機能ごと削除**(ユーザー判断: 不要)。
+     ホワイトリストから外したので、残っていた設定は次の読み込みで消える(記録=店名「ふるさと納税」の支出はそのまま) */
   /* v5.34: 半荘の記録。**ホワイトリストに載せないと復元のたびに失われる**(v3.97/v5.20と同じ事故) */
   S.mjLog = (d.mjLog && typeof d.mjLog==="object") ? d.mjLog : {};
   /* v5.78: v5.77の「差し馬」ボタン(sashi)は**着順の差**で数えていた=今の定義では馬身。um へ移す */
@@ -1064,7 +1059,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.29";
+const APP_VERSION = "6.30";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1122,9 +1117,6 @@ function subnavExtra(sc){
   /* v4.98: 予算の設定も下バーへ(ユーザー要望)。**v4.43の規則の適用漏れ**で、
      ここだけ本文の一番下まで探しに行く形が残っていた */
   if(sc==="budget") return [["[data-bu='save']",'保存する',SV]];
-  /* v5.26: 給与の試算は**押したときだけ計算する**(ユーザー設計: 入力途中に数字を出しても意味がない)。
-     これで`oninput`から再描画が消え、テンキーが閉じる事故も根から無くなる */
-  if(sc==="payroll") return [["[data-pa='calc']",'試算する',SV]];
   /* v5.31: 振替の編集も保存は下バー(戻るの右)。削除は本文に置く——**危険な操作を定位置に置かない**。
      **編集対象が無いときは出さない**(描画スイープが「本文に届かない」で捕捉した) */
   if(sc==="tredit" && UI.trForm) return [["[data-te='save']",'更新する',SV]];
@@ -1266,7 +1258,6 @@ function _renderScreen(app){
   if(UI.screen==="advdrill"){ app.innerHTML = viewAdvDrill(); bindAdvDrill(); return; }   /* v6.15 */
   if(UI.screen==="bankmatch"){ app.innerHTML = viewBankMatch(); bindBankMatch(); return; }   /* v6.18 */
   if(UI.screen==="rcptset"){ app.innerHTML = viewRcptSet(); bindRcptSet(); return; }   /* v6.23 */
-  if(UI.screen==="payroll"){ app.innerHTML = viewPayroll(); bindPayroll(); return; }
   if(UI.screen==="tredit"){ app.innerHTML = viewTrEdit(); bindTrEdit(); return; }
   if(UI.screen==="mjlog"){ app.innerHTML = viewMjLog(); bindMjLog(); return; }
   if(UI.screen==="mjconf"){ app.innerHTML = viewMjConf(); bindMjConf(); return; }
@@ -1876,114 +1867,6 @@ function bindSvDrill(){
       /* v5.17: 箱ごとの開閉。**既定は開**なので、閉じたものだけをfalseで覚える */
       if(a==="toggle"){ UI.svdOpen=UI.svdOpen||{};
         UI.svdOpen[v] = (UI.svdOpen[v]===false); render(); return; }
-    };
-  });
-}
-/* v5.20: 給与の試算画面。管理タブから開く */
-function viewPayroll(){
-  /* v5.21: 出勤日数と年休日数も入力に。時給制なので**基本賃金が日数で動く** */
-  const f=UI.payForm||(UI.payForm={h:"",m:"",d:"",y:""});
-  const r=payCalc(f.h, f.m, f.d, f.y), c=r.c;
-  /* v5.23: **`yen()`は`Math.abs`で符号を落とす**(符号は`signYen`が付ける約束)。
-     給与画面でそのまま使い、**手取りがマイナスでもプラスで出ていた**(ユーザー指摘)。
-     マイナスになりうる行(手取り)は`signYen`+赤にする */
-  const row=(lab,val,sub)=>'<div class="row between" style="font-size:'+(sub?11:12)+'px;padding:'+(sub?3:5)+'px 0'+(sub?';padding-left:12px':'')+'">'+
-    '<span class="'+(sub?'muted':'')+'">'+lab+'</span><span class="mono'+(sub?' muted':'')+'" style="font-weight:'+(sub?400:600)+'">'+yen(val)+'</span></div>';
-  let h='<div class="hdr"><button class="navbtn" data-pa="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">給与の試算</div><div style="width:44px"></div></div>';
-  h+='<div class="card" style="margin-bottom:14px">'+
-    /* v5.23: **注記を落とす**(ユーザー指摘: 説明文の改行が気になる)。
-       時間と分の欄に分けてある以上、HH.MMの読み違いは起きない——
-       **欄の作りが既に言っていることを、語で繰り返していた** */
-    '<div class="muted" style="font-size:11px;margin-bottom:6px">出勤時間</div>'+
-    '<div class="fxg">'+
-    '<div><div class="fxl">時間</div><input class="input mono r" type="number" inputmode="numeric" id="pay-d" placeholder="176" value="'+esc(f.d)+'"></div>'+
-    '<div><div class="fxl">分</div><input class="input mono r" type="number" inputmode="numeric" id="pay-y" placeholder="0" value="'+esc(f.y)+'"></div>'+
-    '</div>'+
-    '<div class="muted" style="font-size:11px;margin:10px 0 6px">残業時間</div>'+
-    '<div class="fxg">'+
-    '<div><div class="fxl">時間</div><input class="input mono r" type="number" inputmode="numeric" id="pay-h" placeholder="0" value="'+esc(f.h)+'"></div>'+
-    '<div><div class="fxl">分</div><input class="input mono r" type="number" inputmode="numeric" id="pay-m" placeholder="0" value="'+esc(f.m)+'"></div>'+
-    '</div></div>';
-  /* v5.23: **出勤時間が未入力なら試算を出さない**(ユーザー指摘: 数字を入れる前からプラスが出る)。
-     基本賃金0のまま控除だけ引くので手取りがマイナスになり、意味のない数字が出ていた。
-     **0は情報にならない**——入力を促すだけにする */
-  /* v5.26: **試算は押したときだけ**(ユーザー設計)。押す前・入力を触った後は案内だけ出す。
-     本文の試算ボタンは隠して下バーからclick()する——他の保存ボタンと同じ方式(v4.43) */
-  h+='<button style="display:none" data-pa="calc">試算する</button>';
-  const _show = UI.payShow && r.workH>0;
-  h+='<div class="card" id="pay-hint" style="margin-bottom:14px'+(_show?';display:none':'')+'">'+
-    '<div class="muted" style="font-size:12px;line-height:1.7">'+
-    (r.workH>0 ? '下の「試算する」を押してください。'
-               : '出勤時間を入れて「試算する」を押してください。')+
-    infoBtn("給与明細の「出勤時間」と「普通残業」は、<b>時間.分</b>の書き方です(小数ではありません)。<br>例: 167.37 は 167時間37分です(167.37時間ではありません)。明細の数字をそのまま入れてください。<br><br>入れ終わったら、下の「試算する」を押すと手取りの見込みが出ます。")+'</div></div>';
-  h+='<div class="card" style="margin-bottom:14px'+(_show?'':';display:none')+'" id="pay-out">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:10px">'+
-    '<span style="font-size:13px;font-weight:700">差引支給額</span>'+
-    '<span class="mono '+(r.net<0?'red':'teal')+'" style="font-size:22px;font-weight:700">'+(r.net<0?'−':'')+yen(r.net)+'</span></div>'+
-    row("支給額計", r.gross)+
-    row("基本賃金", r.base, 1)+row("役割手当", num(c.role), 1)+
-    row("普通残業手当", r.otPay, 1)+row("通勤定期", num(c.commute), 1)+
-    '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line)"></div>'+
-    row("控除合計", r.ded)+
-    row("雇用保険料", r.koyou, 1)+row("健康保険料", num(c.kenpo), 1)+
-    row("厚生年金保険", num(c.kounen), 1)+row("所得税", r.tax, 1)+row("住民税", num(c.juumin), 1)+
-    '</div>';
-  h+='<div class="muted" style="font-size:11px;margin-bottom:14px;line-height:1.7">'+
-    '出勤 <span class="mono">'+r.workH.toFixed(2)+'h</span>'+
-    '<span style="margin-left:10px">割増単価 <span class="mono">'+Math.round(r.unit).toLocaleString("ja-JP")+'円/h</span></span>'+
-    infoBtn("所得税は、国税庁の源泉徴収税額表をもとに、この給与の金額帯だけを直線で近似して計算しています。そのため、実際の明細とは少しずれることがあります。")+'</div>';
-  h+='<div class="card" data-pa="conf" style="cursor:pointer"><div class="row between" style="align-items:center">'+
-    '<div style="font-size:13px;font-weight:600">前提を変える</div>'+
-    '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
-  return h;
-}
-function bindPayroll(){
-  const f=UI.payForm||(UI.payForm={h:"",m:"",d:"",y:""});
-  /* v5.25【バグ修正】**`oninput`で`render()`を呼ぶと1文字ごとに入力欄が作り直され、
-     フォーカスが飛んでテンキーが閉じる**(ユーザー指摘。麻雀のスコア表でも踏んだ同じ事故)。
-     他の画面(予算・麻雀)はどれも`oninput`で再描画していない——**ここだけが例外だった**。
-     ただし試算は入力に応じて即座に更新したいので、**画面全体を描き直さずに
-     出力カードの中身だけ差し替える**。入力欄には触れないのでフォーカスが保たれる */
-  /* v5.26【バグ修正の決着】**`oninput`では値を持つだけ。描画は一切しない**。
-     v5.25の部分更新は、**未入力のときは出力カードが存在しない**ので1文字目で`render()`に落ち、
-     症状がそのまま残っていた。試算を押したときだけ計算する形にすれば、この経路自体が消える。
-     入力を触ったら**結果を隠す**(直接styleを触るだけなので再描画は起きない)——
-     古い数字が残って嘘をつくのを防ぐ */
-  ["h","m","d","y"].forEach(k=>{ const el=document.getElementById("pay-"+k);
-    if(el) el.oninput=e=>{
-      f[k]=e.target.value;
-      UI.payShow=false;
-      const out=document.getElementById("pay-out"); if(out) out.style.display="none";
-      const hint=document.getElementById("pay-hint"); if(hint) hint.style.display="";
-    }; });
-  document.querySelectorAll("[data-pa]").forEach(el=>{
-    el.onclick=()=>{
-      const a=el.dataset.pa;
-      if(a==="back"){ UI.screen="main"; render(); return; }
-      /* v5.26: 押したときだけ計算する。ここで初めて描画が走る */
-      if(a==="calc"){ UI.payShow=true; render(); return; }
-      /* v5.20: 前提は数が多いので1件ずつ聞かず、**1つのプロンプトに全部出して行で編集**する。
-         箱の目標(v4.95)と同じ発想——入口を増やさず、書き方で意味を持たせる */
-      if(a==="conf"){
-        const c=payConf();
-        const K=[["wage","時給"],["avgHours","月平均所定時間"],
-                 ["role","役割手当"],["commute","通勤費(非課税)"],
-                 ["rate","割増率(%)"],["kenpo","健康保険料"],["kounen","厚生年金保険"],["juumin","住民税"],
-                 ["koyou","雇用保険料率(%)"],["taxBase","所得税:折れ点の課税対象"],["taxAmt","所得税:折れ点の税額"],
-                 ["taxRate","所得税:折れ点より上の率(%)"],["taxLowRate","所得税:折れ点より下の率(%)"]];
-        const cur=K.map(([k,lab])=>lab+"="+c[k]).join("\n");
-        const txt=prompt("前提(1行に1つ。= の右だけ直す)\n\n昇格や保険料改定で変わったらここを更新すると、試算がまた合うようになります。", cur);
-        if(txt===null) return;
-        const m={}; K.forEach(([k,lab])=>m[lab]=k);
-        const next=Object.assign({}, c);
-        String(txt).split(/\r?\n/).forEach(ln=>{
-          const i=ln.indexOf("="); if(i<0) return;
-          const key=m[ln.slice(0,i).trim()]; if(!key) return;
-          const v=num(ln.slice(i+1)); if(!isNaN(v)) next[key]=v;
-        });
-        S.payroll=next; save(); render(); return;
-      }
     };
   });
 }
@@ -3379,35 +3262,16 @@ function viewLedger(){
   /* v6.13: 催促は「いま所持金から移せる額」で頭打ちにした目標で判定する(svPlan)。移せない額を催促しない(v4.17と同じ考え) */
   const _pl74=svPlan(bmk), _ps74={sv:_pl74.sv, iv:_pl74.iv};
   {
-    const _fs98=furusatoDue(mk);   /* v5.56: ふるさと納税は**暦月のまま**(年内が期限なので12月判定を動かさない) */
     const _isCur = (bmk === curBudgetMk());
     const _incomeLanded = mainIncomeLanded(bmk);   /* v4.17: 臨時収入では発火させない */
     /* v5.07: 判定は`sv`に戻す(実績の定義が「貯金へ移した額」に戻ったため)。**2箇所の基準は必ず揃える** */
     const _left = Math.max(0,_ps74.sv-_sp62.sv) + Math.max(0,_ps74.iv-_sp62.iv);
     const _anyDone = (_sp62.sv+_sp62.iv) > 0;
-    if(_isCur && ((_incomeLanded || _anyDone) && _left > 0 || _fs98.active)){
+    if(_isCur && (_incomeLanded || _anyDone) && _left > 0){
       h += band("振替");
       h += '<div class="card" style="margin-bottom:14px">';
       h += '<div class="amber" style="font-size:11px;font-weight:700;margin-bottom:10px">'+
-        (_fs98.active ? '今年のふるさと納税枠が未消化です' : '今月の積立がまだです')+'</div>';
-      /* v3.98: ふるさと納税を最上段に置く=可処分から最初に引かれる順番と表示順を一致させる。
-         色はバー連動(v3.92)でamber——消費でも貯蓄でもない「期限付きの権利行使」なので固有色を当てる */
-      if(_fs98.active){
-        const _fpct=Math.min(100, _fs98.done/_fs98.target*100);
-        h += '<div style="cursor:pointer" data-a="furuset">'+
-          '<div class="row between" style="align-items:baseline">'+
-          '<span><span class="muted" style="font-size:12px;font-weight:700">ふるさと納税</span>'+
-          '<span class="mono muted" style="font-size:11px"> ¥'+_fs98.done.toLocaleString("ja-JP")+' / ¥'+_fs98.target.toLocaleString("ja-JP")+'</span></span>'+
-          '<span><span class="mono muted" style="font-size:11px">あと</span> '+
-          '<span class="mono amber" style="font-size:17px;font-weight:700">¥'+_fs98.left.toLocaleString("ja-JP")+'</span>'+
-          '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
-          '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+_fpct+'%;background:var(--amber)"></div></div>'+
-          /* v3.99: 何から出るのかを1行で示す。貯金で足りるなら予算は絞られない */
-          '<div class="muted" style="font-size:11px;margin-top:5px">年内が期限。'+
-          (_fs98.short>0
-            ? '貯金で ¥'+_fs98.covered.toLocaleString("ja-JP")+' 、不足 ¥'+_fs98.short.toLocaleString("ja-JP")+' は今月の予算から確保'
-            : '貯金から出せます(今月の予算は削りません)')+'</div></div>';
-      }
+        '今月の積立がまだです</div>';
       /* v3.61: 滝の定数が見えないと「¥89,508残る」が実態と乖離する(先取り分は口座に残らない)。
          secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
          v3.62: 貯金/投資の2枠に分割 */
@@ -3415,8 +3279,7 @@ function viewLedger(){
          同じ数字を2箇所に並べない——催促カードの役目は「やれ」とボタンを出すことで、
          残高の提示は予算カードの貯金の行が担う。投資は予算カードに置いていないのでここに残す */
       [["投資", _sp62.iv, _ps74.iv, "invest", "invest"]].forEach(([nm,done,target,act,key],pi)=>{
-        /* v3.98: ふるさと納税行が上にある場合は1行目にも区切りを入れる */
-        const _sep = (pi || _fs98.active) ? ';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)' : '';
+        const _sep = pi ? ';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)' : '';
         if(target<=0){
           h += '<div style="cursor:pointer'+_sep+'" data-a="setpre" data-v="'+key+'">'+
             '<div class="row between" style="align-items:center"><span style="font-size:12px"><span class="muted" style="font-weight:700">'+nm+'</span> '+
@@ -3904,93 +3767,17 @@ function bindMjtList(){
   });
 }
 
-/* v5.20: **給与の試算**(ユーザー要望: 出勤日数と残業時間から事前に計算したい)。
-   **入力は残業時間だけ**——明細2ヶ月の実測で、出勤日数は手取りに影響しないと確認した
-   (7月22日/8月21日+年休1日で基本賃金は同額¥352,000。月給制で年休も有給、所定時間も176.00固定)。
-   例外は欠勤で、そのときは欠勤控除が入るが**実績が無いので式を作れない**。
-   導いた式(実測との差は手取りで最大8円):
-     残業手当 = 残業時間 × 割増単価(=(基本+役割)÷所定 × 割増率)
-     雇用保険 = 支給額計 × 0.5%(切り捨て)
-     健保・厚年・住民税 = 固定
-     所得税 = 源泉徴収税額表を**この帯だけ直線で近似**(基準点+率)
-   **定数は全部設定に置く**——基幹職になれば基本賃金も所定時間も変わるし、
-   管理監督者なら残業手当そのものが消えうる。コードに埋めない。
-   **残業時間は明細のHH.MM表記(37.28=37時間28分)**。10進で読むと合わないので、
-   入力は時間と分に分ける(読み違いの余地を作らない) */
-/* v5.21: **時給制**(ユーザー指摘。v5.20は月給制と誤認していた)。
-   誤認の原因: 明細2ヶ月がどちらも22日相当(7月=出勤22日 / 8月=出勤21日+年休1日)で
-   基本賃金が同額だったため「日数は効かない」と結論した。**2点が偶然一致しただけ**で検証になっていなかった。
-   裏付け: **時給¥2,000 × 176時間 = ¥352,000** と基本賃金が完全一致する。
-   **残業単価の根拠も判明**——`(時給 + 役割手当 ÷ 月平均所定173.2h) × 1.25 = 2,608.26`(実測2,608.27)。
-   役割手当を時間単価へ割り戻すのに**月平均所定労働時間**(年間所定÷12)を使う、法定どおりの計算だった。
-   だから**日数が変わっても残業単価は動かない**(基本賃金だけが動く)。 */
-/* v5.22: 明細4ヶ月(5〜8月)で検証。**基本賃金 = 時給¥2,000 × 出勤時間**が全月で一致(誤差1円以内)。
-   **5月だけ出勤時間が167.37(=167時間37分)**で、(出勤18+年休3)×8=168hから23分足りない。
-   **日数×8では出ない**ので、入力は**出勤時間そのもの**にする(明細にHH.MMで載っている)。
-   所得税は**税額表が階段**なので1本の直線では足りない: 実測の傾きは
-   ¥295,785〜¥319,130が5.06% / それ以上が8.17%。**折れ点を持つ2本の直線**にする。 */
-const PAY_DEF = {wage:2000, avgHours:173.2, role:15000, commute:8220, rate:125,
-  kenpo:17221, kounen:31110, juumin:11700, koyou:0.5,
-  taxBase:319130, taxAmt:9090, taxRate:8.167, taxLowRate:5.055};
-function payConf(){ return Object.assign({}, PAY_DEF, S.payroll||{}); }
-function payCalc(otH, otM, days, paidLeave){
-  const c=payConf();
-  /* **率は小数を持つので fnum を使う**——`num`はparseIntなので0.5が0になる
-     (実際に雇用保険料が0になって手取りが¥2,334ズレた)。単価も小数を保つ */
-  const ot=Math.max(0, num(otH)) + Math.max(0, num(otM))/60;
-  /* v5.22: **出勤時間を直接受け取る**(時給制)。明細の「出勤時間」はHH.MM表記で、
-     5月は167.37(=167時間37分)と8時間の倍数にならない。日数×8では再現できない */
-  const workH=Math.max(0, num(days)) + Math.max(0, num(paidLeave))/60;
-  const base=Math.round(fnum(c.wage)*workH);
-  /* 残業単価は**時給+手当の時間割り**。月平均所定で割り戻すので**日数では動かない** */
-  const unit=(fnum(c.wage)+num(c.role)/Math.max(1,fnum(c.avgHours))) * (fnum(c.rate)/100);
-  const otPay=Math.round(unit*ot);
-  const gross=base+num(c.role)+otPay+num(c.commute);
-  const koyou=Math.floor(gross*fnum(c.koyou)/100);
-  const shaho=koyou+num(c.kenpo)+num(c.kounen);
-  const taxable=gross-num(c.commute)-shaho;
-  /* 税額表は階段なので**折れ点(基準点)を境に2本の直線**で近似する。10円刻み */
-  const tb=num(c.taxBase), tr=(taxable>=tb ? fnum(c.taxRate) : fnum(c.taxLowRate));
-  const tax=Math.max(0, Math.round((num(c.taxAmt)+(taxable-tb)*tr/100)/10)*10);
-  const ded=shaho+tax+num(c.juumin);
-  return {ot:ot, unit:unit, otPay:otPay, base:base, workH:workH,
-          gross:gross, koyou:koyou, tax:tax, ded:ded, net:gross-ded, c:c};
-}
 function viewTool(){
   if(UI.screen==="mjtable") return "";  // 別画面で描画
   let h = band("家計簿");
   h += '<div class="card" data-a="fixed" style="cursor:pointer"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">固定費</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
-  /* v5.20: 給与の試算。**残業時間から手取りを先に読む**ので、給料日を待たずに今月の枠が組める */
   /* v5.50: **予算の設定に管理タブから入れる**(ユーザー指摘: どこから期間を変えるの)。
      v5.49まで入口は「予算カード→内訳→予算変更」だけで、**期間を変えたいときに辿り着けない** */
   h += '<div class="card" data-a="setbudget" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">予算の設定</div>'+
     '<div class="muted" style="font-size:11px;margin-top:2px">'+
     (cycleStartDay() ? '期間: 給料日('+cycleStartDay()+'日)から' : '期間: 暦月')+'</div></div>'+
     '<span style="font-size:18px;color:var(--muted)">›</span></div></div>';
-  h += '<div class="card" data-a="payroll" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">給与の試算</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
   h += '<div class="card" data-a="wishlist" style="cursor:pointer;margin-top:8px"><div class="row between" style="align-items:center"><div><div style="font-size:13px;font-weight:600">ほしい物</div></div><span style="font-size:18px;color:var(--muted)">›</span></div></div>';
-  /* v3.38: ふるさと納税 残枠カード。限度額の計算は外部シミュレーター(税制の毎年改正を追わない=時価不追随と同型)。
-     アプリは限度額1個の入力(S.furusato={year,limit})と当年寄付の全導出トラッキングに徹する。
-     記帳規約: 店名「ふるさと納税」固定・分類=承認(バー対象外)。
-     v3.42 資産→ツール(家計簿バンド)へ移設: 資産タブを純粋な金の置き場に */
-  const fsS=S.furusato||{}; const fsY=todayStr().slice(0,4);
-  const fsDon=(S.entries||[]).filter(e=>e.type==="expense"&&e.date&&e.date.startsWith(fsY)&&(e.store||"").trim()==="ふるさと納税").reduce((a,e)=>a+e.amount,0);
-  const fsLimit=(String(fsS.year)===fsY)?num(fsS.limit):0;
-  if(fsLimit>0){
-    const fsPct=Math.min(100,fsDon/fsLimit*100), fsOver=fsDon-fsLimit;
-    h+='<div class="card" style="margin-top:8px;cursor:pointer" data-a="furuset">'+
-      '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">ふるさと納税 <span class="muted" style="font-size:11px;font-weight:400">'+fsY+'年枠</span></span>'+
-      '<span><span class="mono '+(fsOver>0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+fsDon.toLocaleString("ja-JP")+'</span><span class="muted" style="font-size:11px"> / ¥'+fsLimit.toLocaleString("ja-JP")+'</span></span></div>'+
-      (fsOver>0
-        ? '<div style="height:18px;background:var(--red);border-radius:9px;display:flex;align-items:center;justify-content:center"><span style="font-size:11px;font-weight:700;color:var(--bg);letter-spacing:.12em">限度額オーバー</span></div>'
-        : '<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+fsPct+'%;background:var(--teal)"></div></div>')+
-      '<div class="row between" style="font-size:11px;margin-top:5px">'+(fsOver>0?'<span class="red" style="font-weight:700">超過 ¥'+fsOver.toLocaleString("ja-JP")+'(自己負担)</span>':'<span class="muted">残り ¥'+Math.max(0,fsLimit-fsDon).toLocaleString("ja-JP")+'</span>')+'<span class="mono muted">'+Math.floor(fsPct)+'% ・ タップで限度額変更</span></div></div>';
-  } else {
-    h+='<div class="card" style="margin-top:8px;cursor:pointer" data-a="furuset">'+
-      '<div class="row between" style="align-items:center"><span style="font-size:13px"><span style="font-weight:700">ふるさと納税</span> '+(fsDon>0?'<span class="mono muted" style="font-size:11px">寄付済 ¥'+fsDon.toLocaleString("ja-JP")+'</span>':'')+'</span><span class="amber" style="font-size:11px">＋ '+fsY+'年の限度額を設定</span></div>'+
-      (String(fsS.year||"")&&String(fsS.year)!==fsY&&num(fsS.limit)>0?'<div class="muted" style="font-size:11px;margin-top:4px">'+String(fsS.year)+'年の限度額 ¥'+num(fsS.limit).toLocaleString("ja-JP")+' は年替わりで失効。<br>外部シミュレーターで再計算を。</div>':'')+
-      '</div>';
-  }
   const lm=leakMonths().map(leakAgg);
   let leakTxt="測定待ち";
   for(let li=0;li<lm.length-1;li++){
@@ -5536,16 +5323,6 @@ function preSplit(mk){
   const sv=Math.min(rest, Math.round(rest*rs/tot));
   return {rest:rest, sv:sv, iv:Math.max(0, rest-sv), hasRatio:true};
 }
-/* v3.99【設計修正】**控除は「貯金で賄えない分」だけにする**(ユーザー設計)。
-   v3.98は残枠を丸ごと可処分から引いていたが、実際の捻出は貯金(ストック)から行う運用なので、
-   12月のフローからも同額を確保するのは**二重取り**だった(消費枠が寄付前だけ半減していた)。
-   控除 = max(0, 残枠 − 貯金残高)。
-   ・貯金が足りていれば控除ゼロ=12月の生活費は一切削られない
-   ・積立をサボっていれば不足分だけフローが締まる(正しいフィードバックになる)
-   ・「余ったら貯金に回す」は自動的に成立する。実額だけ引き出せば残りは元々貯金に居るので、
-     箱の移し替えという操作自体が発生しない
-   記帳規約はv3.38のまま(店名「ふるさと納税」固定・分類=承認なのでバー対象外)。
-   出す条件は先取り(v3.91)と同じ: 12月 かつ その年の枠 かつ (収入着弾済み or 一部寄付済み) かつ 残枠あり */
 /* v4.17【バグ修正】**「収入が着弾したか」を1件でも入ったか、で見ていたのが誤り**(ユーザー指摘)。
    実データで、8/3の割戻金¥7,516が「給料が来た」と判定され、給料日(8/14)の10日前に
    「今月の振替がまだです あと¥36,808」が出ていた——所持金¥33,016では**物理的に不可能**な催促。
@@ -5558,21 +5335,6 @@ function mainIncomeLanded(mk){
   if(all<=0) return false;
   const got=me.filter(e=>e.date<=todayStr()).reduce((a,e)=>a+e.amount,0);
   return got >= all*0.5;
-}
-function furusatoDue(mk){
-  const fs=S.furusato||{}, y=String(mk).slice(0,4), mo=String(mk).slice(5,7);
-  const target=num(fs.limit)||0;
-  const done=(S.entries||[]).filter(e=>e.type==="expense"&&e.date&&e.date.startsWith(y)&&(e.store||"").trim()==="ふるさと納税")
-    .reduce((a,e)=>a+e.amount,0);
-  const left=Math.max(0, target-done);
-  const inMonth = (mo==="12" && String(fs.year)===y && target>0);
-  const landed=mainIncomeLanded(mk);   /* v4.17: 主要な収入(=給料)の着弾で判定 */
-  /* v4.01: 箱の紐づけは撤去(ユーザー指摘)。**どの箱から出すかは支出の記帳時に選ぶ**方が自然なので、
-     ここでは「貯金全体で払えるか」だけを見る。払えるなら12月の予算は絞らない */
-  const covered=Math.max(0, savingsBalance());
-  const short=Math.max(0, left-covered);              /* フローから確保すべき分 */
-  return {target:target, done:done, left:left, covered:Math.min(left,covered), short:short,
-          active: !!(inMonth && left>0 && (landed || done>0))};
 }
 /* v4.52: **固定費として登録しても、計上先は「固定費」と「変動支出」を選べる**(ユーザー指摘)。
    Amazonの定期便のように**自動で来るが削れる支出**を固定費に入れると、
@@ -6293,8 +6055,8 @@ function disposableBase(mk){
   const me=(S.entries||[]).filter(e=>inBudget(e.date, mk));   /* v5.49: 予算の期間で絞る */
   const inc=me.filter(e=>e.type==="income"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69: 立替精算は収入ではない */
   const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
-  const fs=furusatoDue(mk);                      /* v3.99: 貯金で賄えない分(short)だけをフローから確保する */
-  return Math.max(0, inc-fx-(fs.active?fs.short:0));
+  /* v6.30: ふるさと納税の確保(v3.99: 12月に貯金で賄えない分だけ可処分から引く)は、機能ごと削除した */
+  return Math.max(0, inc-fx);
 }
 function budgetAmt(val, base){
   /* v3.74: 複合指定 "30000|30%" に対応し**小さい方**を採る(ユーザー設計)。
@@ -8884,7 +8646,6 @@ function bindMain(){
       else if(a==="rcptset"){ UI.screen="rcptset"; UI.rcptTest=null; render(); }   /* v6.23 */
       else if(a==="svdrill"){ UI.screen="svdrill"; render(); }
       else if(a==="advdrill"){ UI.advDoneOpen=false; UI.screen="advdrill"; render(); }   /* v6.15 */
-      else if(a==="payroll"){ UI.screen="payroll"; render(); }
       else if(a==="mjlog"){ UI.screen="mjlog"; render(); }
       else if(a==="catdrill"){ UI.drillCat=v; UI.drillOpenStore=null; UI.drillMode="chain"; UI.drillAssign=null; UI.drillVarOnly=(v==="消費"); UI.screen="catdrill"; render(); }
       else if(a==="setbudget"){ UI.screen="budget"; UI.budForm=null; render(); }
@@ -8894,7 +8655,6 @@ function bindMain(){
         if(p===null)return; const ps=String(p).trim();
         (S.budgets=S.budgets||{})[cat] = (ps.indexOf("|")>=0 || /%$/.test(ps)) ? ps : String(num(ps));
         save(); render(); }
-      else if(a==="furuset"){ const cy=todayStr().slice(0,4); const cur=(S.furusato&&String(S.furusato.year)===cy)?(S.furusato.limit||""):""; const p=prompt(cy+"年のふるさと納税 限度額(円):\n計算は外部シミュレーターで(税制は毎年変わるため)。\n記帳は 店名「ふるさと納税」・分類「承認」で。\n0で枠表示を解除。", cur); if(p===null)return; S.furusato={year:cy, limit:String(num(p))}; save(); render(); }
       else if(a==="mjtnew"){ UI.mjt=newMjTable(); UI.mjtCell=null; saveMjt(false); UI.screen="mjtable"; render(); }
       else if(a==="opentool"){ if(el.dataset.v==="bordertool"){ UI.screen="bordertool"; render(); } }
       else if(a==="mjtopen"){ const t=(S.mjTables||[]).find(x=>String(x.id)===String(v)); if(t){ UI.mjt=t; UI.mjtCell=null; UI.screen="mjtable"; render(); } }
