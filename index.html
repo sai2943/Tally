@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.31 (localStorage保存・完全オフライン)
+   Tally 6.32 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1059,7 +1059,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.31";
+const APP_VERSION = "6.32";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1129,6 +1129,7 @@ function subnavExtra(sc){
      置くのは、前の半荘を直している時の「更新する」と、全員の席がそろっていない時(古い形の記録)の「記録する」だけ。
      下バーは画面を描く前に作られるので、席の形と押しかけの着順をここで先に整える(描く時と同じ mjlEnsure。座っていない人の押しかけが残っていると「締める」が出ない) */
   if(sc==="mjlog"){
+    if(mjlNeedSetup()) return [];   /* v6.32: 席を聞いている間は戻るだけ(席が全部決まると、そのまま記録の画面になる) */
     mjlEnsure();
     if((()=>{ const t=mjLogTotals(); return t.settled && t.n && !mjlPending(); })())
       return [["[data-ml='close']",'この卓を締める','color:var(--teal);font-weight:700']];
@@ -2019,14 +2020,18 @@ function _mjRow(lab, yen){
    チップと飛びは**半荘と非同期**(ゲーム中に発生する)ので上に独立して置く。
    着順と馬身は半荘ごとに1タップずつ */
 function viewMjLog(){
-  mjlEnsure();   /* v5.79: 席の形を整える(人数・自分・空席は仮称) */
-  const c=mjLogConf(), rows=mjLogRows(), t=mjLogTotals(), L=S.mjLog||{};
-  const f=UI.mjlForm||(UI.mjlForm={rank:0, uma:0});
-  const RANKS=[1,2,3,4].slice(0,c.seats);
   /* v6.17: 右上は「設定」(v6.16まで「単価」)。チップ・飛びを使う/使わないもここにあるのに、名前からは見つけられなかった */
-  let h='<div class="hdr"><button class="navbtn" data-ml="back">‹ 戻る</button>'+
+  const hdr='<div class="hdr"><button class="navbtn" data-ml="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">半荘の記録</div>'+
     '<button class="navbtn" data-ml="conf" style="font-size:12px">設定</button></div>';
+  /* v6.32: **席が決まっていない新しい卓は、まず席だけを聞く**(リセットした後・卓を締めた後・初めて)。決まったらいつもの画面 */
+  if(mjlNeedSetup()) return hdr+viewMjlSetup();
+  mjlEnsure();   /* v5.79: 席の形を整える(人数・自分・空席は仮称) */
+  const c=mjLogConf(), rows=mjLogRows(), t=mjLogTotals(), L=S.mjLog||{};
+  if(rows.length && !L.seatOk) S.mjLog.seatOk=true;   /* v6.32: 前の版から打っている卓は、席が決まっている(全部消しても席を聞き直さない) */
+  const f=UI.mjlForm||(UI.mjlForm={rank:0, uma:0});
+  const RANKS=[1,2,3,4].slice(0,c.seats);
+  let h=hdr;
   /* v6.17【並びを使う頻度の順に】(ユーザー: チップが1番、次が着順、その次が飛び。精算は1回しか入れない。ゲーム中に着順の履歴をよく見る)。
      上から チップ → 着順 → 飛び → この卓の記録(直近8半荘) → 座席 → 相手ごとの成績 → 店での精算 → リセット。
      ・v6.16までの一番上の集計カード(半荘数・着順の回数・チップ・差し馬・馬身・飛び)はやめた——着順の回数以外は
@@ -2329,9 +2334,13 @@ function bindMjLog(){
       /* v5.77: **リセット**。確かめてから、この卓の記録だけを消す(メンバーと単価は残す) */
       if(a==="reset"){
         const t0=mjLogTotals();
-        if(!confirm("この卓の記録を消して、最初からにしますか?\n\n消えるもの: "+t0.n+"半荘の着順・チップ・飛び・精算・差し馬と馬身の選択\n残るもの: メンバーと単価")) return;
+        if(!confirm("この卓の記録を消して、最初からにしますか?\n\n消えるもの: "+t0.n+"半荘の着順・チップ・飛び・精算・差し馬と馬身の選択・席\n残るもの: 単価と設定\n\n消した後は、最初に席を聞きます。")) return;
         delete S.mjLog.rows; delete S.mjLog.chip; delete S.mjLog.tobi; delete S.mjLog.settle; delete S.mjLog.sa; delete S.mjLog.um; delete S.mjLog.pendEv;
-        mjlPrune(); UI.mjlForm={rank:0, uma:0}; UI.mjlHistAll=false;
+        /* v6.32: **席も外す**(ユーザー: リセットしたら席順を最初に聞いて欲しい・毎回中途半端に情報が残っているのが気になる)。
+           v6.31までは「メンバーは残す」で、前の卓の人が座ったまま残っていた。人の名前は消さずに、席を聞く時の名前のボタンに使う
+           (ここで mjlPrune すると、座っていない人として全部消えてしまう)。席を決めた時に人の一覧は作り直す */
+        delete S.mjLog.seat; delete S.mjLog.seatOk;
+        mjlUiFresh();
         save(); render(); toast("リセットしました"); return;
       }
       /* v5.79: 座席 */
@@ -2412,6 +2421,7 @@ function bindMjLog(){
         render(); return;
       }
       if(a==="undo"){ mjlUndo(); return; }   /* v6.31 */
+      if(a==="sume"||a==="supick"||a==="sux"||a==="suname"){ mjlSetupTap(a, v); return; }   /* v6.32: 新しい卓の席を聞く */
       /* v5.78: 差し馬(sa)と馬身(um)は別々に選ぶ */
       if(a==="sa"||a==="um"){ const m0=Object.assign({}, S.mjLog[a]||{}); if(m0[v]) delete m0[v]; else m0[v]=true; S.mjLog[a]=m0; save(); render(); return; }
       if(a==="rank"){ f.rank=num(v); render(); return; }
@@ -5492,8 +5502,10 @@ function mjlNextX(){
   for(let k=1;k<50;k++){ for(const L of ["X","Y","Z"]){ const nm=L+(k>1?k:""); if(!used.has(nm)) return nm; } }
   return "X"+uid().slice(-3);
 }
+/* 新しい人の id。v6.32: uid は時刻+乱数3桁なので、同じミリ秒に続けて作ると重なりうる(重なると2つの席が同じ人になる)→ 重ならない id にする */
+function mjlNewId(){ const P=mjlPeople(); let id="p"+uid(), k=0; while(P[id]!=null) id="p"+uid()+"_"+(++k); return id; }
 /* 仮称の人を1人立てて id を返す */
-function mjlNewX(){ const id="p"+uid(), nm=mjlNextX(); S.mjLog.people=Object.assign({}, mjlPeople(), {[id]:nm}); return id; }
+function mjlNewX(){ const id=mjlNewId(), nm=mjlNextX(); S.mjLog.people=Object.assign({}, mjlPeople(), {[id]:nm}); return id; }
 /* 席の形を整える(人数に合わせる・自分を必ず1人だけ置く・空席は仮称で埋める)。画面を出す前に呼ぶ */
 function mjlEnsure(){
   S.mjLog=S.mjLog||{};
@@ -5649,6 +5661,7 @@ function mjlCommit(){
      v5.80は席の並びの変化から推測していたので、ツルさんと一緒に卓を移った時(=1人は同じ)を「交代」と誤表示した */
   if(S.mjLog.pendEv){ row.ev=S.mjLog.pendEv; delete S.mjLog.pendEv; }
   S.mjLog.rows=rows0.concat([row]);
+  S.mjLog.seatOk=true;   /* v6.32: 記録したら席は決まっている(取り消して0半荘に戻っても、席を聞き直さない) */
   /* **次の半荘へすぐ入れる**ように選択を外す。取り消すための印と、この半荘の前の空き(長ければ付け忘れを聞く) */
   UI.mjlForm={rank:0, uma:0};
   const gap=prev ? now-prev : 0, long=!!(prev && mjlLong(gap/60000, us));
@@ -5689,6 +5702,102 @@ function mjlOnResume(away){
     if(!(num(away)>=MJL_AWAY_MS) || !mjlInPlay() || !mjlResting()) return false;
   }catch(e){ console.error(e); return false; }   /* 補助なので、記録が壊れていても戻った画面はそのまま */
   UI.tab="games"; UI.screen="mjlog"; render(); return true;
+}
+/* v6.32【新しい卓は最初に席を聞く】(ユーザー: 半荘の記録をリセットしたら席順を最初に聞いて欲しい。しかも入力は簡単に。
+   その後はこの画面で良い。毎回中途半端に情報が残っているのが気になる)。
+   ・席がまだ決まっていない(seatOk が無い)0半荘の卓は、**席を聞くカードだけ**を出す(リセットした後・卓を締めた後・初めて)
+   ・聞くのは「自分の席」と、ほかの席に座っている人。人は**名前のボタン1回**(前の卓の人・最近の麻雀の記録の同卓者)・
+     知らない人(X・Y…の仮称)・名前を入れる の3通り。前の卓の人をそのまま座らせておくことはしない
+   ・全部の席が決まった時点で、そのままいつもの画面になる(「始める」は押さない)。直す時はいつもの座席の「交代」「自分の席」 */
+function mjlNeedSetup(){ return !mjLogRows().length && !(S.mjLog||{}).seatOk; }
+/* 画面の状態(押しかけ・開閉・席を聞く下書き)を新しい卓の形に戻す。リセット・締めた後・席を決めた時 */
+function mjlUiFresh(){
+  UI.mjlForm={rank:0, uma:0}; UI.mjlJust=null; UI.mjlSetup=null; UI.mjlHistAll=false; UI.mjlVsOpen=false;
+  UI.mjlMemOpen=null; UI.mjlSeatEd=null; UI.mjlMoving=false; UI.mjlNewName="";
+}
+function mjlSetupDraft(){
+  const n=mjLogConf().seats; let d=UI.mjlSetup;
+  if(!d || !Array.isArray(d.pick) || d.pick.length!==n) d=UI.mjlSetup={pick:new Array(n).fill(null)};
+  return d;
+}
+/* 名前のボタンに出す人: 前の卓の人(リセットした卓) → 最近の麻雀の記録の同卓者(新しい日から)。仮称は出さない。8人まで */
+function mjlSetupCands(){
+  const out=[], seen=new Set();
+  const add=nm=>{ nm=String(nm==null?"":nm).trim(); if(!nm || nm==="自分" || mjlIsX(nm) || seen.has(nm)) return; seen.add(nm); out.push(nm); };
+  Object.values(mjlPeople()).forEach(add);
+  (S.mjSessions||[]).slice().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).forEach(m=>(m.players||[]).forEach(add));
+  return out.slice(0,8);
+}
+const MJL_SETUP_INFO="卓の座順を A・B・C(4麻なら D)として、<b>自分の席</b>と、ほかの席に座っている人を選びます。<b>全部の席が決まると、そのまま着順を押す画面になります</b>。<br><br>"+
+  "名前のボタンは、前の卓の人と、最近の麻雀の記録で一緒に打った人です。<b>知らない人</b>は X・Y などの仮の名前で始め、名前が分かったら座席の名前を押して直せます(それまでの記録もその名前になります)。<br><br>"+
+  "決めた後に変える時は、座席の「交代」と「自分の席」で。リセットした後と卓を締めた後は、次の卓でまたここから聞きます。";
+function viewMjlSetup(){
+  const d=mjlSetupDraft(), n=d.pick.length, me=d.pick.indexOf("me"), cands=mjlSetupCands();
+  const B='style="font-size:14px;padding:9px 14px;font-weight:600"';
+  let h='<div class="card" style="margin-bottom:12px">'+
+    '<div class="fxl">この卓の席'+infoBtn(MJL_SETUP_INFO)+'</div>'+
+    '<div class="row between" style="align-items:center;gap:8px;padding:4px 0 10px">'+
+    '<span style="font-size:13px;font-weight:600">自分の席</span>'+
+    '<span class="row" style="gap:6px">'+MJL_SEATS.slice(0,n).map((L,k)=>
+      '<button class="btn'+(me===k?' sel':'')+'" style="font-size:15px;padding:9px 16px;font-weight:700" data-ml="sume" data-v="'+k+'">'+L+'</button>').join("")+'</span></div>';
+  if(me<0) h+='<div class="muted" style="font-size:12px;padding:10px 0 2px;border-top:1px solid var(--line)">まず自分の席を押してください。</div>';
+  else d.pick.forEach((p,i)=>{
+    if(i===me) return;
+    const used=new Set(d.pick.filter((x,k)=>k!==i && x && x!=="me" && x!=="?"));   /* ほかの席で選んだ人は出さない(同じ人を2つの席に座らせない) */
+    let list=cands.filter(nm=>!used.has(nm));
+    if(p && p!=="?" && list.indexOf(p)<0) list=[p].concat(list);   /* 名前を入れた人 */
+    h+='<div style="padding:10px 0 4px;border-top:1px solid var(--line)">'+
+      '<div class="row" style="align-items:baseline;gap:8px;margin-bottom:8px">'+
+      '<span class="mono" style="font-size:15px;font-weight:700;width:18px">'+MJL_SEATS[i]+'</span>'+
+      (p ? '<span style="font-size:13px;font-weight:700">'+esc(p==="?" ? "知らない人" : p)+'</span>' : '<span class="muted" style="font-size:12px">に座っている人</span>')+'</div>'+
+      '<div class="row" style="gap:6px;flex-wrap:wrap">'+
+      list.map(nm=>'<button class="btn'+(p===nm?' sel':'')+'" '+B+' data-ml="supick" data-v="'+i+'|'+esc(nm)+'">'+esc(nm)+'</button>').join("")+
+      '<button class="btn'+(p==="?"?' sel':'')+'" '+B+' data-ml="sux" data-v="'+i+'">知らない人</button>'+
+      '<button class="btn" style="font-size:13px;padding:9px 12px" data-ml="suname" data-v="'+i+'">名前を入れる</button>'+
+      '</div></div>';
+  });
+  return h+'</div>';
+}
+/* 席を聞くカードの操作。押すたびに全部の席が決まったか見て、決まればそのまま席を決める */
+function mjlSetupTap(a, v){
+  const d=mjlSetupDraft(), n=d.pick.length;
+  if(a==="sume"){
+    const k=num(v), old=d.pick.indexOf("me"); if(k<0||k>=n) return;
+    if(old!==k){ if(old>=0) d.pick[old]=d.pick[k]; d.pick[k]="me"; }   /* 席を変えたら、そこに選んでいた人は前の自分の席へ */
+  } else {
+    const p=String(v==null?"":v).split("|"), i=num(p[0]);
+    if(i<0||i>=n||d.pick[i]==="me") return;
+    let val;
+    if(a==="sux") val="?";
+    else if(a==="supick") val=p.slice(1).join("|");
+    else {   /* suname */
+      const nm0=prompt(MJL_SEATS[i]+"席に座っている人の名前", (d.pick[i] && d.pick[i]!=="?") ? d.pick[i] : "");
+      if(nm0===null) return; const nm=String(nm0).trim(); if(!nm) return;
+      if(nm==="自分"){ toast("自分は「自分の席」で選びます"); return; }
+      val=nm;
+    }
+    if(a!=="suname" && d.pick[i]===val) d.pick[i]=null;   /* もう一度押したら外す */
+    else {
+      if(val!=="?") d.pick.forEach((x,k)=>{ if(k!==i && x===val) d.pick[k]=null; });   /* 同じ人は1つの席だけ */
+      d.pick[i]=val;
+    }
+  }
+  if(d.pick.indexOf("me")>=0 && d.pick.every(x=>x!=null)){ mjlSetupCommit(); return; }
+  render();
+}
+/* 席を決める: 人の一覧は作り直す(前の卓の人・仮称を持ち越さない)。名前の人を先に作り、知らない人は X・Y… */
+function mjlSetupCommit(){
+  const d=mjlSetupDraft(); S.mjLog=S.mjLog||{};
+  S.mjLog.people={};
+  const st=d.pick.map(p=>{
+    if(p==="me") return "me";
+    if(p==="?") return null;
+    const id=mjlNewId(); S.mjLog.people=Object.assign({}, mjlPeople(), {[id]:p}); return id;
+  });
+  st.forEach((x,i)=>{ if(x===null) st[i]=mjlNewX(); });
+  S.mjLog.seat=st; S.mjLog.seatOk=true; delete S.mjLog.pendEv; delete S.mjLog.roster;
+  mjlUiFresh();
+  save(); render(); toast("席を決めました("+st.map((x,i)=>MJL_SEATS[i]+" "+mjlName(x)).join("・")+")");
 }
 /* 今座っている人と、残っている記録に出てくる人だけを残す(リセット・締めの後に呼ぶ) */
 function mjlPrune(){
@@ -8769,9 +8878,13 @@ function saveMj(){
     /* v6.31: この卓の半荘の間隔を人数ごとに覚えておく(次の卓の打ち始め、まだ間隔が2つ取れない間の「いつもの間隔」) */
     { const g=mjlGapOf(mjLogRows()); if(g) keep.gap=Object.assign({}, keep.gap||{}, {[String(mjLogConf().seats)]:g}); }
     delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle; delete keep.sa; delete keep.um; delete keep.pendEv;   /* v5.77/78: 差し馬・馬身の選択はその卓限り */
+    /* v6.32: **席も外す**——次の卓は最初に席を聞く(ユーザー: 毎回中途半端に情報が残っているのが気になる)。
+       v5.77の「メンバーは残す(同じ面子なら入れ直さない)」はやめた。同じ面子なら、席を聞く画面の名前のボタン
+       (この卓の同卓者は締めた記録の players に入る)を押すだけで済む */
+    delete keep.seat; delete keep.seatOk;
     S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
-    mjlPrune();   /* v5.77: メンバーは残す(同じ面子なら入れ直さない)。もう使わない人だけ消す */
-    UI.mjlForm={rank:0, uma:0}; UI.mjlHistAll=false;
+    mjlPrune();   /* 座っている人も記録も無いので、人の一覧は空になる(仮称も残らない) */
+    mjlUiFresh();
     UI.mjlPending=false;
   }
   const linkId = "mj-"+m.id;
