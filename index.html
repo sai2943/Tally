@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.30 (localStorage保存・完全オフライン)
+   Tally 6.31 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1059,7 +1059,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.30";
+const APP_VERSION = "6.31";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1125,10 +1125,16 @@ function subnavExtra(sc){
      v5.89【修正】**入れかけの半荘があるなら、締めるより記録が先**(ユーザー指摘: 切り替わる条件がおかしい)。
      v5.44は「締める時は記録が済んでいる」と決めつけていた。実際は、精算を先に打ってから最後の半荘の着順を押すことがあり、
      その状態で締めると**押した着順が記録されずに卓が閉じる**。前の半荘を直している最中に「更新する」が消える穴も同じ原因 */
-  if(sc==="mjlog" && (()=>{ const t=mjLogTotals(); return t.settled && t.n && !mjlPending(); })())
-    return [["[data-ml='close']",'この卓を締める','color:var(--teal);font-weight:700']];
-  if(sc==="mjlog") return [["[data-ml='add']",
-    ((UI.mjlForm&&UI.mjlForm.editIdx!=null) ? '更新する' : '記録する'), SV]];
+  /* v6.31: **新しい半荘は着順がそろった時点で記録する**ので「記録する」は置かない(着順を押しかけの間は「締める」も出ない・v5.89)。
+     置くのは、前の半荘を直している時の「更新する」と、全員の席がそろっていない時(古い形の記録)の「記録する」だけ。
+     下バーは画面を描く前に作られるので、席の形と押しかけの着順をここで先に整える(描く時と同じ mjlEnsure。座っていない人の押しかけが残っていると「締める」が出ない) */
+  if(sc==="mjlog"){
+    mjlEnsure();
+    if((()=>{ const t=mjLogTotals(); return t.settled && t.n && !mjlPending(); })())
+      return [["[data-ml='close']",'この卓を締める','color:var(--teal);font-weight:700']];
+    if(UI.mjlForm&&UI.mjlForm.editIdx!=null) return [["[data-ml='add']",'更新する',SV]];
+    return mjlFull() ? [] : [["[data-ml='add']",'記録する',SV]];
+  }
   /* v5.42: 単価の設定も保存は下バー(戻るの右・v4.43の規則) */
   if(sc==="mjconf") return [["[data-mc='save']",'保存する',SV]];
   if(sc==="entry"){
@@ -2109,7 +2115,7 @@ function viewMjLog(){
        保存は`f.st`の並び(=直す前のまま)で書くので、**押しても何も変わらなかった**。保存側(fullIn)と同じ条件に揃える */
     ((f.st || f.parts || (!_ed && mjlFull()))
       ? (()=>{ const parts=(f.st || (f.parts ? ['me'].concat(f.parts) : mjlSeat())), ord=f.order||[];   /* v5.79: 席順で並べる */
-          return '<div class="fxl">着順(1着から順に名前を押す)</div>'+
+          return '<div class="fxl">着順(1着から順に名前を押す)'+(_ed?'':infoBtn(MJL_ORD_INFO))+'</div>'+
             '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:6px">'+
             parts.map((pid,pi)=>{ const k=ord.indexOf(pid);
               const lt=(f.st||!f.parts) ? '<span class="mono muted" style="font-size:11px;font-weight:400">'+MJL_SEATS[pi]+'</span> ' : '';
@@ -2124,6 +2130,8 @@ function viewMjLog(){
           mjUmaSteps(c.seats).map(u=>'<button class="btn'+(num(f.uma)===u?' sel':'')+'" '+
             'style="flex:1;padding:12px 0;font-size:14px;font-weight:700'+(u<0?';color:var(--red)':'')+'" '+
             'data-ml="uma" data-v="'+u+'">'+(u>0?'+':'−')+Math.abs(u)+'</button>').join("")+'</div>' : ''))+
+    /* v6.31: すぐ下に、記録した直後の確かめ(取り消す)か、前の記録からの時間。直している間は出さない */
+    (_ed ? '' : '<div id="mjl-st">'+(_mjlStH=mjlStatusHtml())+'</div>')+
     '</div>';
   /* 飛び(非同期)——清算と一緒に払うので回数だけ数える。v6.17: 着順の下へ(使う頻度はチップ・着順の次) */
   if(c.useTobi){
@@ -2306,6 +2314,9 @@ function bindMjLog(){
     el.onclick=()=>{
       const a=el.dataset.ml, v=el.dataset.v;
       S.mjLog=S.mjLog||{};
+      /* v6.31【見直しで足した】記録した直後(1.5秒)の下バーは効かせない。下バーの右は前は「記録する」だったので、
+         前の癖でそこを押すと、今は「戻る」(右まで広がる)や「この卓を締める」に当たる */
+      if((a==="back"||a==="close") && UI.mjlJust && Date.now()-num(UI.mjlJust.t)<MJL_HABIT_MS){ toast("記録しました(「記録する」は押さなくて大丈夫です)"); return; }
       if(a==="back"){ UI.screen="main"; render(); return; }
       /* **チップは非同期**——ゲーム中でも押せる。押すたびに累計が動く */
       if(a==="chip"){ S.mjLog.chip=num(S.mjLog.chip)+num(v); save(); render(); return; }
@@ -2388,12 +2399,19 @@ function bindMjLog(){
       /* **1着から順に押す**。押した人を押し直すと、その順位から後ろをやり直す。残り1人は自動で決まる */
       if(a==="ord"){
         const parts=(f.st || (f.parts ? ['me'].concat(f.parts) : mjlSeat()));   /* v5.79 */
+        if(parts.indexOf(v)<0) return;   /* v6.31: 座っていない人のボタン(描き直す前の古い画面)は効かせない */
         let ord=(f.order||[]).slice();
+        if(ord.some(x=>parts.indexOf(x)<0)) ord=[];   /* v6.31: 押しかけに座っていない人がいたら押しかけごとやり直す(mjlEnsureと同じ) */
         const at=ord.indexOf(v);
         if(at>=0) ord=ord.slice(0,at);
         else { ord.push(v); if(ord.length===parts.length-1){ const last=parts.find(x=>ord.indexOf(x)<0); if(last!=null) ord.push(last); } }
-        f.order=ord; render(); return;
+        f.order=ord;
+        /* v6.31: **新しい半荘は、着順がそろった時点で記録する**(ユーザー: 着順を押す手間)。3麻なら2回、4麻なら3回押せば終わり。
+           前の半荘を直している時は今までどおり「更新する」で保存する(直す時は見比べてから決める) */
+        if(f.editIdx==null && ord.length===parts.length){ mjlCommit(); return; }
+        render(); return;
       }
+      if(a==="undo"){ mjlUndo(); return; }   /* v6.31 */
       /* v5.78: 差し馬(sa)と馬身(um)は別々に選ぶ */
       if(a==="sa"||a==="um"){ const m0=Object.assign({}, S.mjLog[a]||{}); if(m0[v]) delete m0[v]; else m0[v]=true; S.mjLog[a]=m0; save(); render(); return; }
       if(a==="rank"){ f.rank=num(v); render(); return; }
@@ -2415,7 +2433,10 @@ function bindMjLog(){
         const i=num(v); const rows=mjLogRows();
         if(!rows[i]) return;
         if(!confirm((i+1)+"半荘目を消しますか?")) return;
-        S.mjLog.rows=rows.filter((_,k)=>k!==i); save(); render(); return;
+        S.mjLog.rows=rows.filter((_,k)=>k!==i);
+        /* v6.31: 直している途中に行を消したら、直すのをやめる(消した行より後ろは番号がずれ、「更新する」で別の半荘を書き換えていた) */
+        if(f.editIdx!=null) UI.mjlForm={rank:0, uma:0};
+        save(); render(); return;
       }
       /* v5.41: **卓を締めて家計簿へ反映する**(ユーザー: この記録をどう反映させますか)。
          既存の「麻雀を記録」と**同じ経路**に乗せる——`S.entries`に`src:"mahjong"`で1件作れば、
@@ -2463,45 +2484,17 @@ function bindMjLog(){
           bwal:String(S.mjLog.bwal||(bankPots()[0]||{}).id||"")
         };
         UI.mjIsNew=true;
-        /* 締めた印。**保存されたら記録を空にする**——保存前に消すと戻れなくなる */
-        UI.mjlPending=true;
+        /* 締めた印。**保存されたら記録を空にする**——保存前に消すと戻れなくなる。
+           v6.31【見直しで直した】印は**この下書きの id**にする。true だと、締めるを押してから戻った後に、
+           別の麻雀の記録(前の記録を直す等)を保存した時にも、打っている卓の記録を空にしていた */
+        UI.mjlPending=UI.mjDraft.id;
         UI.screen="mahjong-edit"; render();
         toast("店と同卓者を足して保存してください");
         return;
       }
       if(a==="conf"){ UI.mjcDraft={}; UI.screen="mjconf"; render(); return; }
-      if(a==="add"){
-        /* v5.77: 全員の着順で入れる時は、最後の人まで決まっていないと記録しない */
-        const fullIn = !!(f.st || f.parts || (f.editIdx==null && mjlFull()));
-        let row;
-        if(fullIn){
-          const parts=(f.st || (f.parts ? ['me'].concat(f.parts) : mjlSeat())), ord=f.order||[];
-          if(ord.length!==parts.length){ toast("着順を最後まで押してください"); return; }
-          const ranks={}; ord.forEach((pid,k)=>{ ranks[pid]=k+1; });
-          row={rank:ranks.me, ranks:ranks, uma:0, at:todayStr()};
-          /* v5.79: その半荘の席順(A・B・C…)も残す。v5.77の行(parts)は席の情報を持たないのでそのまま */
-          if(!f.parts) row.st=parts.slice();
-        } else {
-          if(!f.rank){ toast("着順を選んでください"); return; }
-          row={rank:num(f.rank), uma:num(f.uma), at:todayStr()};
-        }
-        if(f.editIdx!=null && mjLogRows()[f.editIdx]){
-          const at=mjLogRows()[f.editIdx].at;
-          const _ev=mjLogRows()[f.editIdx].ev;   /* v5.82: 直しても、その半荘の前に起きた出来事の印は残す */
-          S.mjLog.rows=mjLogRows().map((x,k)=> k===num(f.editIdx) ? Object.assign(row,{at:at||row.at}, _ev?{ev:_ev}:{}) : x);
-          UI.mjlForm={rank:0, uma:0};
-          save(); render(); toast((num(f.editIdx)+1)+"半荘目を直しました");
-          return;
-        }
-        /* v5.82: **実際に行った操作を印として付ける**(ユーザー指摘: 卓移動と交代を区別して出して欲しい)。
-           v5.80は席の並びの変化から推測していたので、ツルさんと一緒に卓を移った時(=1人は同じ)を「交代」と誤表示した */
-        if(S.mjLog.pendEv){ row.ev=S.mjLog.pendEv; delete S.mjLog.pendEv; }
-        S.mjLog.rows=(S.mjLog.rows||[]).concat([row]);
-        /* **次の半荘へすぐ入れる**ように選択を外す */
-        UI.mjlForm={rank:0, uma:0};
-        save(); render(); toast(mjLogRows().length+"半荘目を記録");
-        return;
-      }
+      /* v6.31: 中身は mjlCommit へ(着順がそろった時の自動の記録と同じ道を通す)。下バーに出るのは直している時の「更新する」だけ */
+      if(a==="add"){ mjlCommit(); return; }
     };
   });
 }
@@ -5512,6 +5505,11 @@ function mjlEnsure(){
   if(st.length>n){ const me=st.indexOf("me"); const keep=st.filter(x=>x!=="me").slice(0, n-1); keep.splice(Math.min(me, n-1),0,"me"); st=keep; }
   while(st.length<n) st.push(mjlNewX());
   L.seat=st;
+  /* v6.31【見直しで直した】押しかけの着順に、もう座っていない人がいたら押しかけごと外す(交代・卓移動・人数を変えた後)。
+     そのままだと、そろった時点の自動の記録が**前の人のまま**行になり(新しい人は着順なし)、相手ごとの成績・差し馬・馬身がずれた。
+     画面には座っている人の着順しか出ないので、見た目(何も押していない)とも食い違っていた */
+  const f=UI.mjlForm;
+  if(f && f.editIdx==null && !f.st && !f.parts && (f.order||[]).some(x=>st.indexOf(x)<0)) f.order=[];
 }
 function mjlSeat(){ return ((S.mjLog&&S.mjLog.seat)||["me"]).slice(); }
 function mjlName(id){ return id==="me" ? "自分" : (mjlPeople()[id] || "?"); }
@@ -5521,6 +5519,177 @@ function mjlRoster(){ return mjlSeat().filter(x=>x!=="me"); }
 function mjlFull(){ const st=mjlSeat(); return st.length===mjLogConf().seats && st.indexOf("me")>=0; }
 /* v5.89: 入れかけの半荘があるか(着順を1人でも押した・自分の着順や馬身を選んだ・前の半荘を直している) */
 function mjlPending(){ const f=UI.mjlForm||{}; return f.editIdx!=null || ((f.order||[]).length>0) || num(f.rank)>0 || num(f.uma)!==0; }
+/* v6.31【打っている最中の手間と付け忘れ】(ユーザー: 着順を押す手間と付け忘れ)。
+   ・**着順がそろった時点で記録する**(「記録する」を押さない)。押し間違いは、記録から2分の間「取り消す」で戻す
+   ・**前の記録からの時間**を着順のすぐ下に出し、いつもの間隔よりずっと長ければ付け忘れを聞く。
+     そのために行に**記録した時刻 t(ミリ秒)**を持たせる——at は日付だけで、間隔が分からなかった
+   ・**打っている最中(最後の記録から3時間)は、アプリを開くとこの画面**(起動した時・しばらく離れて戻った時)
+   通知は使わない(ユーザーが見送り済み)ので、気付かせる機会は「開いた時」と「記録した時」の2回 */
+const MJL_PLAY_MS=3*3600*1000;   /* 最後の記録からこの間は「打っている最中」 */
+const MJL_AWAY_MS=5*60*1000;     /* これより長く離れてから戻ったら「開いた」と見なす */
+const MJL_UNDO_MS=2*60*1000;     /* 記録の直後に「取り消す」を出す間 */
+const MJL_TWICE_MS=60*1000;      /* 記録してすぐ次の着順がそろったら、押し直し(二重の記録)ではないか確かめる */
+const MJL_ORD_INFO="1着から順に名前を押します。最後の1人は自動で決まり、<b>そろった時点で記録します</b>(「記録する」は押しません)。<br><br>"+
+  "押し間違えたら、記録してから2分の間、すぐ下の「取り消す」で戻せます。それより前の半荘は、下の表の行を押して直し、「更新する」で保存します。<br><br>"+
+  "<b>前の記録</b>: 最後に記録してからの時間です。いつもの間隔(この卓の半荘の間隔。まだ少ない時は前の卓の間隔)よりずっと長く空いていると、付け忘れが無いか聞きます。"+
+  "付け忘れた半荘は、気付いた時にそのまま押して足せます(表では後ろに並びますが、半荘数・着順の回数・相手ごとの成績は同じです)。<br><br>"+
+  "<b>開いた時</b>: 最後の記録から3時間の間は、アプリを開くとこの画面が出ます。卓を締めると、いつもの画面に戻ります。";
+const MJL_HABIT_MS=1500;          /* 記録した直後のこの間は、下バー(前は「記録する」があった所)を効かせない */
+/* 行が壊れていても(null など)落ちないように読む——起動時にも呼ぶので、ここで落ちると画面が出なくなる */
+function mjlLastT(rows){ let t=0; (rows||mjLogRows()).forEach(r=>{ const x=num(r&&r.t); if(x>t) t=x; }); return t; }
+/* 半荘の間隔(分)の中央値。5分未満(まとめて入れた分)と2時間半より長い分(休憩・卓の外)は数えない。2つ取れなければ0 */
+function mjlGapOf(rows){
+  const g=[];
+  for(let i=1;i<rows.length;i++){ const a=num((rows[i-1]||{}).t), b=num((rows[i]||{}).t); if(!a||!b) continue; const m=(b-a)/60000; if(m>=5 && m<=150) g.push(m); }
+  if(g.length<2) return 0;
+  g.sort((x,y)=>x-y); const k=g.length>>1;
+  return Math.round(g.length%2 ? g[k] : (g[k-1]+g[k])/2);
+}
+/* いつもの間隔(分): この卓の間隔。まだ2つ取れていなければ、前の卓を締めた時に覚えた値(人数ごと)。どちらも無ければ0 */
+function mjlUsual(rows){ return mjlGapOf(rows||mjLogRows()) || num(((S.mjLog||{}).gap||{})[String(mjLogConf().seats)]) || 0; }
+/* 付け忘れを疑う長さか。いつもの間隔が分かれば その1.6倍(かつ15分以上長い)、分からなければ75分。6時間を超えたら同じ卓の続きではないので聞かない */
+function mjlLong(min, usual){ return min<360 && (usual ? (min>=usual*1.6 && min>=usual+15) : min>=75); }
+function mjlAgo(ms){ const m=Math.max(0, Math.floor(ms/60000)); if(m<60) return m+"分"; return Math.floor(m/60)+"時間"+(m%60 ? (m%60)+"分" : ""); }
+/* 打っている最中か: 最後の記録から3時間以内。時刻の無い前の版の行だけなら、最後の行が今日か */
+function mjlInPlay(now){
+  const rows=mjLogRows(); if(!rows.length) return false;
+  const t=mjlLastT(rows);
+  if(t) return (num(now)||Date.now())-t < MJL_PLAY_MS;
+  return (rows[rows.length-1]||{}).at===todayStr();
+}
+/* 最後に記録した半荘の前の空き。長ければ(付け忘れを疑う)、**次の半荘を記録するまで**聞き続ける。
+   v6.31の見直しで直した: 記録の直後(取り消すの2分)だけ出していたので、2回押してすぐ画面を消すと一度も読めなかった */
+function mjlLastGap(rows){
+  rows=rows||mjLogRows(); const n=rows.length; if(n<2) return null;
+  const t=num((rows[n-1]||{}).t), prev=mjlLastT(rows.slice(0,-1)); if(!t || !prev || t<prev) return null;
+  const gap=t-prev, us=mjlUsual(rows.slice(0,-1));   /* いつもの間隔は、その半荘より前の行で数える(空いた分を混ぜない) */
+  return {gap:gap, usual:us, long:mjlLong(gap/60000, us)};
+}
+/* 着順の欄のすぐ下の1行。記録した直後(2分)は「✓ N半荘目 1着…」と「取り消す」、それ以外は前の記録からの時間。
+   長く空いていたら付け忘れを聞く——押す前(今の空き)にも、押した後(今記録した半荘の前の空き)にも。
+   押してから気付いても、付け忘れた半荘をその場で足せる(順番は後ろになるが、半荘数・着順の回数・相手ごとの成績は同じ) */
+function mjlStatusHtml(now){
+  now=num(now)||Date.now();
+  const f=UI.mjlForm||{}, rows=mjLogRows();
+  if(f.editIdx!=null || !rows.length) return '';
+  const lastT=mjlLastT(rows); if(!lastT) return '';
+  const last=rows[rows.length-1]||{}, t=num(last.t), j=UI.mjlJust, lg=mjlLastGap(rows), before=(lg && lg.long) ? lg : null;
+  const usTxt=u=>u ? '(いつもは'+u+'分ほど)' : '';
+  let h, warn='';
+  if(j && t && num(j.t)===t && now-t<MJL_UNDO_MS && !(f.order||[]).length){
+    const rk=last.ranks||{me:last.rank}, ord=Object.keys(rk).sort((a,b)=>num(rk[a])-num(rk[b]));
+    h='<div class="row between" style="align-items:center;gap:8px">'+
+      '<span style="font-size:12px;line-height:1.5;min-width:0"><span class="teal" style="font-weight:700">✓ '+rows.length+'半荘目</span> '+
+      ord.map(p=>'<span style="white-space:nowrap">'+esc(rk[p]+'着 '+mjlName(p))+'</span>').join('・')+'</span>'+   /* 名前の途中で折り返さない */
+      '<button class="btn" style="font-size:11px;padding:5px 12px;flex-shrink:0" data-ml="undo">取り消す</button></div>';
+    if(before) warn='前の記録から'+mjlAgo(before.gap)+'空いていました'+usTxt(before.usual)+'。付け忘れはありませんか?';
+  } else {
+    const el=now-lastT, us=mjlUsual(rows), d=new Date(lastT);
+    const txt = el>=6*3600*1000 ? (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')
+      : (el<60000 ? 'たった今' : mjlAgo(el)+'前');
+    h='<div class="muted" style="font-size:12px">前の記録 '+txt+'</div>';
+    if(mjlLong(el/60000, us)) warn='前の記録から'+mjlAgo(el)+'たっています'+usTxt(us)+'。付け忘れはありませんか?';
+    else if(before && el<6*3600*1000) warn=rows.length+'半荘目の前が'+mjlAgo(before.gap)+'空いていました'+usTxt(before.usual)+'。付け忘れはありませんか?';
+  }
+  if(warn) h+='<div class="amber" style="font-size:12px;line-height:1.6;margin-top:4px">'+warn+'</div>';
+  return '<div style="margin-top:10px">'+h+'</div>';
+}
+/* 画面を描き直さずに、その1行だけ書き換える(しばらく離れて戻った時・20秒ごと)。描き直すと押しかけたボタンや精算の欄が外れる */
+let _mjlStH=null;
+function mjlStRefresh(){
+  if(UI.screen!=="mjlog") return false;
+  const el=document.getElementById("mjl-st"), h=mjlStatusHtml();
+  if(!el || h===_mjlStH) return false;
+  el.innerHTML=h; _mjlStH=h; bindMjLog(); return true;
+}
+/* 半荘を1行記録する(直している時はその行を更新する)。下バーの「更新する」と、着順がそろった時の自動の記録がここを通る */
+function mjlCommit(){
+  const f=UI.mjlForm||(UI.mjlForm={rank:0, uma:0});
+  S.mjLog=S.mjLog||{};
+  /* v5.77: 全員の着順で入れる時は、最後の人まで決まっていないと記録しない */
+  const fullIn = !!(f.st || f.parts || (f.editIdx==null && mjlFull()));
+  let row;
+  if(fullIn){
+    const parts=(f.st || (f.parts ? ['me'].concat(f.parts) : mjlSeat())), ord=f.order||[];
+    if(ord.length!==parts.length){ toast("着順を最後まで押してください"); return false; }
+    /* v6.31: 着順の顔ぶれは、その半荘の席の顔ぶれと同じでないと記録しない(座っていない人の着順・抜けた人を作らない) */
+    if(!parts.every(p=>ord.indexOf(p)>=0)){ f.order=[]; render(); toast("席が変わったので、着順を押し直してください"); return false; }
+    const ranks={}; ord.forEach((pid,k)=>{ ranks[pid]=k+1; });
+    row={rank:ranks.me, ranks:ranks, uma:0, at:todayStr()};
+    /* v5.79: その半荘の席順(A・B・C…)も残す。v5.77の行(parts)は席の情報を持たないのでそのまま */
+    if(!f.parts) row.st=parts.slice();
+  } else {
+    if(!f.rank){ toast("着順を選んでください"); return false; }
+    row={rank:num(f.rank), uma:num(f.uma), at:todayStr()};
+  }
+  const rows0=mjLogRows();
+  if(f.editIdx!=null && rows0[f.editIdx]){
+    /* v5.82: 直しても、その半荘の前に起きた出来事の印は残す。v6.31: 記録した時刻も残す(直すたびに間隔が狂わないように) */
+    const old=rows0[f.editIdx];
+    S.mjLog.rows=rows0.map((x,k)=> k===num(f.editIdx) ? Object.assign(row,{at:old.at||row.at}, old.ev?{ev:old.ev}:{}, old.t?{t:old.t}:{}) : x);
+    UI.mjlForm={rank:0, uma:0}; UI.mjlJust=null;
+    save(); render(); toast((num(f.editIdx)+1)+"半荘目を直しました");
+    return true;
+  }
+  const now=Date.now(), prev=mjlLastT(rows0), us=mjlUsual(rows0), j=UI.mjlJust;
+  /* v6.31: 記録してすぐ(1分)次の着順がそろったら、押し直しのつもりで二重に記録していないか聞く。
+     付け忘れた分を続けて足している最中(付け忘れを聞いた直後・一度「続けて記録」と答えた後)は聞かない(quiet)。
+     ただし**今記録したのと同じ着順**なら、足している最中でも聞く(見直しで直した: 長い半荘の後に付け忘れを聞いた直後だと、
+     「入らなかった」と思って押し直した二重の記録が素通りしていた。ゲーム代・トップ賞・スコア分が1半荘分ずれる) */
+  const quick = !!(j && prev && num(j.t)===prev && now-prev<MJL_TWICE_MS);
+  const rkKey=r=>r ? (r.ranks ? Object.keys(r.ranks).sort().map(k=>k+":"+r.ranks[k]).join(",") : "rank:"+num(r.rank)+"/"+num(r.uma)) : "";
+  const same = quick && rkKey(rows0[rows0.length-1])===rkKey(row);
+  if(quick && (!j.quiet || same)){
+    if(!confirm("さっき "+rows0.length+"半荘目を"+(same?"同じ着順で":"")+"記録したところです。\n続けて "+(rows0.length+1)+"半荘目として記録しますか?\n\n"+rows0.length+"半荘目の押し間違いなら「キャンセル」を押して、「取り消す」で戻してください。")){
+      f.order=[]; render(); return false;
+    }
+  }
+  row.t=now;
+  /* v5.82: **実際に行った操作を印として付ける**(ユーザー指摘: 卓移動と交代を区別して出して欲しい)。
+     v5.80は席の並びの変化から推測していたので、ツルさんと一緒に卓を移った時(=1人は同じ)を「交代」と誤表示した */
+  if(S.mjLog.pendEv){ row.ev=S.mjLog.pendEv; delete S.mjLog.pendEv; }
+  S.mjLog.rows=rows0.concat([row]);
+  /* **次の半荘へすぐ入れる**ように選択を外す。取り消すための印と、この半荘の前の空き(長ければ付け忘れを聞く) */
+  UI.mjlForm={rank:0, uma:0};
+  const gap=prev ? now-prev : 0, long=!!(prev && mjlLong(gap/60000, us));
+  UI.mjlJust={t:now, gap:gap, usual:us, long:long, quiet:(long || quick)};
+  save(); render(); toast(mjLogRows().length+"半荘目を記録");
+  return true;
+}
+/* 記録の直後の「取り消す」。消すのは最後の行がその記録のままの時だけ。卓移動・交代の印は次の半荘へ付け直す */
+const MJL_EV_RANK={"席替え":1,"交代":2,"卓移動":3};
+function mjlUndo(){
+  const j=UI.mjlJust, rows=mjLogRows(), last=rows[rows.length-1];
+  UI.mjlJust=null;
+  if(!j || !last || num(last.t)!==num(j.t)){ render(); toast("取り消せませんでした(表の行から直してください)"); return false; }
+  /* 出しているのは2分。書き換えが遅れて残ったボタンにも少しは応じるが、それを大きく過ぎたら消さない(表の✕で消せる) */
+  if(Date.now()-num(j.t) > MJL_UNDO_MS+60000){ render(); toast("記録から2分を過ぎたので、表の行の✕で消してください"); return false; }
+  S.mjLog.rows=rows.slice(0,-1);
+  if(last.ev && (MJL_EV_RANK[last.ev]||0)>(MJL_EV_RANK[S.mjLog.pendEv]||0)) S.mjLog.pendEv=last.ev;
+  UI.mjlForm={rank:0, uma:0};
+  save(); render(); toast(rows.length+"半荘目を取り消しました");
+  return true;
+}
+/* 新しい記録の画面の、何も触っていない形(起動時に開く形と同じ) */
+function mjlNewEntryForm(){ return {date:todayStr(),type:"expense",category:"消費",amount:"",store:"",item:"",memo:"",tmode:"",tfrom:"",tto:"",tplace:""}; }
+/* しばらく離れて戻った時に、半荘の記録へ移してよい画面か: タブの画面(照合モードは除く)と、**何も触っていない**新しい記録の画面だけ。
+   v6.31の見直しで厳しくした: 打った文字だけを見ていたので、振替の元/先・日付・交通の種類・財布を選んだだけの記録の画面も動かしていた。
+   照合モードは銀行のアプリと行き来しながら使うので、戻るたびに動かすと照合が続けられない */
+function mjlResting(){
+  if(UI.screen==="main") return !UI.recon;
+  if(UI.screen!=="entry" || UI.editEntryId!=null || UI.rcptBusy || UI.pasteOpen || UI.entryReturn) return false;
+  const f=UI.entryForm||{}, D=mjlNewEntryForm(), blank=v=> v==null || v==="" || (Array.isArray(v) && !v.length);
+  return Object.keys(D).every(k=>String(f[k]==null?"":f[k])===D[k]) && Object.keys(f).every(k=>(k in D) || blank(f[k]));
+}
+/* 戻ってきた時(away = 離れていたミリ秒)。半荘の記録にいれば前の記録の1行だけ書き換え、
+   打っている最中に5分より長く離れていたら、休んでいる画面から半荘の記録へ移す */
+function mjlOnResume(away){
+  try{
+    if(UI.screen==="mjlog"){ mjlStRefresh(); return false; }
+    if(!(num(away)>=MJL_AWAY_MS) || !mjlInPlay() || !mjlResting()) return false;
+  }catch(e){ console.error(e); return false; }   /* 補助なので、記録が壊れていても戻った画面はそのまま */
+  UI.tab="games"; UI.screen="mjlog"; render(); return true;
+}
 /* 今座っている人と、残っている記録に出てくる人だけを残す(リセット・締めの後に呼ぶ) */
 function mjlPrune(){
   if(!S.mjLog) return;
@@ -8595,8 +8764,10 @@ function saveMj(){
   /* v5.44: **半荘の記録から来たものが保存されたら、その記録を空にする**。
      保存前に消すと「やめる」で戻れなくなるので、**保存が済んでから**片付ける。
      単価と設定は残す(次の卓で入れ直さない) */
-  if(UI.mjlPending){
+  if(UI.mjlPending && UI.mjlPending===m.id){   /* v6.31: 締めた時の下書きを保存した時だけ */
     const keep=Object.assign({}, S.mjLog||{});
+    /* v6.31: この卓の半荘の間隔を人数ごとに覚えておく(次の卓の打ち始め、まだ間隔が2つ取れない間の「いつもの間隔」) */
+    { const g=mjlGapOf(mjLogRows()); if(g) keep.gap=Object.assign({}, keep.gap||{}, {[String(mjLogConf().seats)]:g}); }
     delete keep.rows; delete keep.chip; delete keep.tobi; delete keep.settle; delete keep.sa; delete keep.um; delete keep.pendEv;   /* v5.77/78: 差し馬・馬身の選択はその卓限り */
     S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
     mjlPrune();   /* v5.77: メンバーは残す(同じ面子なら入れ直さない)。もう使わない人だけ消す */
@@ -11723,14 +11894,29 @@ load();
   if(!sn.length || new Date(sn[0].ts).toDateString() !== new Date().toDateString()) takeSnap("日次");
 })();
 ensureFixedEntries();
-/* 起動時に記帳画面を開く(ツールでON/OFF・コールドスタート時のみ) */
-if(S.openAddOnLaunch){
-  UI.tab="ledger"; UI.editEntryId=null;
-  UI.entryForm={date:todayStr(),type:"expense",category:"消費",amount:"",store:"",item:"",memo:"",tmode:"",tfrom:"",tto:"",tplace:""};
-  UI.screen="entry";
-  render();
+/* 起動した時の画面。v6.31: **打っている最中(最後の半荘の記録から3時間)は半荘の記録**(ユーザー: 付け忘れ・行き来の手間)。
+   記帳画面を開く設定(ツールでON/OFF・コールドスタート時のみ)より先。検査から呼べるよう関数にしてある */
+function launchScreen(){
+  /* 見直しで足した: 半荘の記録が壊れていても(null の行など)起動は止めない——ここで落ちると画面が真っ白になり、バックアップにも行けない */
+  let play=false; try{ play=mjlInPlay(); }catch(e){ console.error(e); }
+  if(play){ UI.tab="games"; UI.screen="mjlog"; return "mjlog"; }
+  if(S.openAddOnLaunch){
+    UI.tab="ledger"; UI.editEntryId=null;
+    UI.entryForm=mjlNewEntryForm();
+    UI.screen="entry"; return "entry";
+  }
+  return "";
 }
+launchScreen();
 render();
+/* v6.31: iOSは裏に回したアプリを生かしておくことがあり、その時は起動し直さない。しばらく離れて戻った時も同じように扱う
+   (動かしてよい画面かは mjlOnResume が決める)。半荘の記録を開いている間は、前の記録からの時間を20秒ごとに書き換える */
+let _mjlHiddenAt=0;
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState==="hidden"){ _mjlHiddenAt=Date.now(); return; }
+  if(document.visibilityState==="visible"){ const away=_mjlHiddenAt ? Date.now()-_mjlHiddenAt : 0; _mjlHiddenAt=0; mjlOnResume(away); }
+});
+setInterval(()=>{ if(document.visibilityState==="visible"){ try{ mjlStRefresh(); }catch(e){ console.error(e); } } }, 20000);
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(()=>{ /* 未対応環境でも本体は動く */ });
 }
