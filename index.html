@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.32 (localStorage保存・完全オフライン)
+   Tally 6.33 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1059,7 +1059,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.32";
+const APP_VERSION = "6.33";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2077,7 +2077,8 @@ function viewMjLog(){
               const seated=new Set(st), cand=[];
               Object.keys(P).forEach(id=>{ if(!seated.has(id)) cand.push({id:id, nm:P[id]}); });
               const names=new Set(Object.values(P));
-              (S.mjSessions||[]).slice().reverse().forEach(m=>(m.players||[]).forEach(nm=>{ nm=String(nm||"").trim(); if(nm && !names.has(nm) && !cand.some(c=>c.nm===nm)) cand.push({id:null, nm:nm}); }));
+              const hid=mjlHiddenNames();   /* v6.33: 名前のボタンから消した名前は、前の記録の同卓者からは出さない(この卓に座った人は出す) */
+              (S.mjSessions||[]).slice().reverse().forEach(m=>(m.players||[]).forEach(nm=>{ nm=String(nm||"").trim(); if(nm && !hid.has(nm) && !names.has(nm) && !cand.some(c=>c.nm===nm)) cand.push({id:null, nm:nm}); }));
               row0+='<div style="padding:4px 0 10px 18px">'+
                 '<div class="muted" style="font-size:11px;margin-bottom:6px">'+L0+'に座る人</div>'+
                 '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">'+
@@ -2371,7 +2372,7 @@ function bindMjLog(){
       };
       if(a==="seatx"){ const i=num(v); const st=mjlSeat(); if(st[i]==null||st[i]==="me") return; const id=mjlNewX(); seatPut(i,id,null); return; }
       if(a==="seatpick"){ const p=String(v).split("|"); seatPut(num(p[0]), p[1]||null, p.slice(2).join("|")); return; }
-      if(a==="seatnew"){ const nm=String(UI.mjlNewName||"").trim(); if(!nm){ toast("名前を入れてください"); return; } seatPut(num(v), null, nm); return; }
+      if(a==="seatnew"){ const nm=String(UI.mjlNewName||"").trim(); if(!nm){ toast("名前を入れてください"); return; } mjlShowName(nm); seatPut(num(v), null, nm); return; }   /* v6.33: 消した名前でも、打って入れたら名前のボタンに戻す */
       /* 名前を直す(同じ人のまま)。**仮称を本名に置き換える**のもここ。
          同じ名前の人が既にいれば、同じ人としてまとめる(ただし同じ半荘・今の卓に2人として居たらまとめない) */
       if(a==="seatname"){
@@ -2422,6 +2423,7 @@ function bindMjLog(){
       }
       if(a==="undo"){ mjlUndo(); return; }   /* v6.31 */
       if(a==="sume"||a==="supick"||a==="sux"||a==="suname"){ mjlSetupTap(a, v); return; }   /* v6.32: 新しい卓の席を聞く */
+      if(a==="nmedit"||a==="nmhide"||a==="nmshow"){ mjlNameTap(a, v); return; }   /* v6.33: 名前のボタンから消す・戻す */
       /* v5.78: 差し馬(sa)と馬身(um)は別々に選ぶ */
       if(a==="sa"||a==="um"){ const m0=Object.assign({}, S.mjLog[a]||{}); if(m0[v]) delete m0[v]; else m0[v]=true; S.mjLog[a]=m0; save(); render(); return; }
       if(a==="rank"){ f.rank=num(v); render(); return; }
@@ -5713,23 +5715,31 @@ function mjlNeedSetup(){ return !mjLogRows().length && !(S.mjLog||{}).seatOk; }
 /* 画面の状態(押しかけ・開閉・席を聞く下書き)を新しい卓の形に戻す。リセット・締めた後・席を決めた時 */
 function mjlUiFresh(){
   UI.mjlForm={rank:0, uma:0}; UI.mjlJust=null; UI.mjlSetup=null; UI.mjlHistAll=false; UI.mjlVsOpen=false;
-  UI.mjlMemOpen=null; UI.mjlSeatEd=null; UI.mjlMoving=false; UI.mjlNewName="";
+  UI.mjlMemOpen=null; UI.mjlSeatEd=null; UI.mjlMoving=false; UI.mjlNewName=""; UI.mjlNameEdit=false;
 }
+/* v6.33【名前のボタンから消す】(ユーザー: 名前の予想をツル・チョロで統一したいので、さん付けの名前を消したい。ほかにも名前を消す機能がほしい)。
+   名前のボタンは**前の記録から作っている**(前の卓の人・麻雀の記録の同卓者)ので、消すのは**ボタンに出さない名前の一覧**(S.mjLog.hideNames)。
+   前の記録の同卓者(稼働の一覧のカードの名前)は書き換えない。消した名前は「消した名前」から戻せ、打って入れ直した時も戻る */
+function mjlHiddenNames(){ return new Set(((S.mjLog||{}).hideNames)||[]); }
+function mjlHideName(nm){ nm=String(nm==null?"":nm).trim(); if(!nm) return; S.mjLog=S.mjLog||{}; S.mjLog.hideNames=(S.mjLog.hideNames||[]).filter(x=>x!==nm).concat([nm]); }
+function mjlShowName(nm){ nm=String(nm==null?"":nm).trim(); const L=S.mjLog; if(!L || !L.hideNames) return; L.hideNames=L.hideNames.filter(x=>x!==nm); if(!L.hideNames.length) delete L.hideNames; }
 function mjlSetupDraft(){
   const n=mjLogConf().seats; let d=UI.mjlSetup;
   if(!d || !Array.isArray(d.pick) || d.pick.length!==n) d=UI.mjlSetup={pick:new Array(n).fill(null)};
   return d;
 }
-/* 名前のボタンに出す人: 前の卓の人(リセットした卓) → 最近の麻雀の記録の同卓者(新しい日から)。仮称は出さない。8人まで */
-function mjlSetupCands(){
-  const out=[], seen=new Set();
-  const add=nm=>{ nm=String(nm==null?"":nm).trim(); if(!nm || nm==="自分" || mjlIsX(nm) || seen.has(nm)) return; seen.add(nm); out.push(nm); };
+/* 名前のボタンに出す人: 前の卓の人(リセットした卓) → 最近の麻雀の記録の同卓者(新しい日から)。仮称・消した名前は出さない。
+   ボタンは8人まで(all=true なら全員。名前を消す一覧で使う) */
+function mjlSetupCands(all){
+  const out=[], seen=new Set(), hid=mjlHiddenNames();
+  const add=nm=>{ nm=String(nm==null?"":nm).trim(); if(!nm || nm==="自分" || mjlIsX(nm) || hid.has(nm) || seen.has(nm)) return; seen.add(nm); out.push(nm); };
   Object.values(mjlPeople()).forEach(add);
   (S.mjSessions||[]).slice().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).forEach(m=>(m.players||[]).forEach(add));
-  return out.slice(0,8);
+  return all ? out : out.slice(0,8);
 }
 const MJL_SETUP_INFO="卓の座順を A・B・C(4麻なら D)として、<b>自分の席</b>と、ほかの席に座っている人を選びます。<b>全部の席が決まると、そのまま着順を押す画面になります</b>。<br><br>"+
   "名前のボタンは、前の卓の人と、最近の麻雀の記録で一緒に打った人です。<b>知らない人</b>は X・Y などの仮の名前で始め、名前が分かったら座席の名前を押して直せます(それまでの記録もその名前になります)。<br><br>"+
+  "<b>名前を消す</b>: 要らない名前(「ツルさん」と「ツル」のような重なり)を、名前のボタンに出さないようにします。前の麻雀の記録の同卓者は書き換えません。消した名前は、同じ所の「消した名前」を押すと戻ります(名前を入れるで打ち直した時も戻ります)。<br><br>"+
   "決めた後に変える時は、座席の「交代」と「自分の席」で。リセットした後と卓を締めた後は、次の卓でまたここから聞きます。";
 function viewMjlSetup(){
   const d=mjlSetupDraft(), n=d.pick.length, me=d.pick.indexOf("me"), cands=mjlSetupCands();
@@ -5756,7 +5766,38 @@ function viewMjlSetup(){
       '<button class="btn" style="font-size:13px;padding:9px 12px" data-ml="suname" data-v="'+i+'">名前を入れる</button>'+
       '</div></div>';
   });
+  /* v6.33: 名前のボタンから消す。普段は右下の小さな文字だけ、押すと一覧(消す)と、消した名前(押すと戻る)を出す */
+  const allN=mjlSetupCands(true), hidN=((S.mjLog||{}).hideNames||[]);
+  if(!UI.mjlNameEdit){
+    if(allN.length || hidN.length) h+='<div style="text-align:right;margin-top:8px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-ml="nmedit">名前を消す</button></div>';
+  } else {
+    h+='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">'+
+      '<div class="row between" style="align-items:center;margin-bottom:4px">'+
+      '<span style="font-size:13px;font-weight:700">名前のボタンから消す</span>'+
+      '<button class="btn" style="font-size:12px;padding:5px 14px" data-ml="nmedit">閉じる</button></div>'+
+      '<div class="muted" style="font-size:11px;line-height:1.6;margin-bottom:4px">前の麻雀の記録は書き換えません。ボタンに出なくなるだけです。</div>'+
+      (allN.length ? allN.map(nm=>'<div class="row between" style="align-items:center;padding:7px 0;border-top:1px solid var(--line)">'+
+          '<span class="ellip" style="font-size:14px;min-width:0">'+esc(nm)+'</span>'+
+          '<button class="btn" style="font-size:12px;padding:5px 14px;flex-shrink:0;color:var(--red);border-color:var(--red)" data-ml="nmhide" data-v="'+esc(nm)+'">消す</button></div>').join("")
+        : '<div class="muted" style="font-size:12px;padding:6px 0">名前のボタンに出ている名前はありません。</div>')+
+      (hidN.length ? '<div class="muted" style="font-size:11px;margin:12px 0 6px">消した名前(押すと戻ります)</div>'+
+          '<div class="row" style="gap:6px;flex-wrap:wrap">'+hidN.map(nm=>'<button class="chip" data-ml="nmshow" data-v="'+esc(nm)+'">'+esc(nm)+' ↩</button>').join("")+'</div>' : '')+
+      '</div>';
+  }
   return h+'</div>';
+}
+/* v6.33: 名前を消す一覧の操作。消した名前を、いま席に選んでいたら外す(消したのに座ったままにしない) */
+function mjlNameTap(a, v){
+  const nm=String(v==null?"":v).trim();
+  if(a==="nmedit"){ UI.mjlNameEdit=!UI.mjlNameEdit; render(); return; }
+  if(!nm) return;
+  if(a==="nmhide"){
+    mjlHideName(nm);
+    const d=UI.mjlSetup; if(d && Array.isArray(d.pick)) d.pick=d.pick.map(x=>x===nm ? null : x);
+    save(); render(); toast("「"+nm+"」を名前のボタンから消しました");
+    return;
+  }
+  if(a==="nmshow"){ mjlShowName(nm); save(); render(); toast("「"+nm+"」を戻しました"); return; }
 }
 /* 席を聞くカードの操作。押すたびに全部の席が決まったか見て、決まればそのまま席を決める */
 function mjlSetupTap(a, v){
@@ -5774,7 +5815,7 @@ function mjlSetupTap(a, v){
       const nm0=prompt(MJL_SEATS[i]+"席に座っている人の名前", (d.pick[i] && d.pick[i]!=="?") ? d.pick[i] : "");
       if(nm0===null) return; const nm=String(nm0).trim(); if(!nm) return;
       if(nm==="自分"){ toast("自分は「自分の席」で選びます"); return; }
-      val=nm;
+      val=nm; mjlShowName(nm);   /* v6.33: 消した名前でも、打って入れたら名前のボタンに戻す */
     }
     if(a!=="suname" && d.pick[i]===val) d.pick[i]=null;   /* もう一度押したら外す */
     else {
