@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.33 (localStorage保存・完全オフライン)
+   Tally 6.34 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1059,7 +1059,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.33";
+const APP_VERSION = "6.34";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2423,7 +2423,7 @@ function bindMjLog(){
       }
       if(a==="undo"){ mjlUndo(); return; }   /* v6.31 */
       if(a==="sume"||a==="supick"||a==="sux"||a==="suname"){ mjlSetupTap(a, v); return; }   /* v6.32: 新しい卓の席を聞く */
-      if(a==="nmedit"||a==="nmhide"||a==="nmshow"){ mjlNameTap(a, v); return; }   /* v6.33: 名前のボタンから消す・戻す */
+      if(a==="nmedit"||a==="nmhide"||a==="nmshow"||a==="nmmerge"||a==="nminto"||a==="nmintonew"){ mjlNameTap(a, v); return; }   /* v6.33: 名前のボタンから消す・戻す。v6.34: まとめる */
       /* v5.78: 差し馬(sa)と馬身(um)は別々に選ぶ */
       if(a==="sa"||a==="um"){ const m0=Object.assign({}, S.mjLog[a]||{}); if(m0[v]) delete m0[v]; else m0[v]=true; S.mjLog[a]=m0; save(); render(); return; }
       if(a==="rank"){ f.rank=num(v); render(); return; }
@@ -5715,7 +5715,7 @@ function mjlNeedSetup(){ return !mjLogRows().length && !(S.mjLog||{}).seatOk; }
 /* 画面の状態(押しかけ・開閉・席を聞く下書き)を新しい卓の形に戻す。リセット・締めた後・席を決めた時 */
 function mjlUiFresh(){
   UI.mjlForm={rank:0, uma:0}; UI.mjlJust=null; UI.mjlSetup=null; UI.mjlHistAll=false; UI.mjlVsOpen=false;
-  UI.mjlMemOpen=null; UI.mjlSeatEd=null; UI.mjlMoving=false; UI.mjlNewName=""; UI.mjlNameEdit=false;
+  UI.mjlMemOpen=null; UI.mjlSeatEd=null; UI.mjlMoving=false; UI.mjlNewName=""; UI.mjlNameEdit=false; UI.mjlMergeFrom=null;
 }
 /* v6.33【名前のボタンから消す】(ユーザー: 名前の予想をツル・チョロで統一したいので、さん付けの名前を消したい。ほかにも名前を消す機能がほしい)。
    名前のボタンは**前の記録から作っている**(前の卓の人・麻雀の記録の同卓者)ので、消すのは**ボタンに出さない名前の一覧**(S.mjLog.hideNames)。
@@ -5739,7 +5739,7 @@ function mjlSetupCands(all){
 }
 const MJL_SETUP_INFO="卓の座順を A・B・C(4麻なら D)として、<b>自分の席</b>と、ほかの席に座っている人を選びます。<b>全部の席が決まると、そのまま着順を押す画面になります</b>。<br><br>"+
   "名前のボタンは、前の卓の人と、最近の麻雀の記録で一緒に打った人です。<b>知らない人</b>は X・Y などの仮の名前で始め、名前が分かったら座席の名前を押して直せます(それまでの記録もその名前になります)。<br><br>"+
-  "<b>名前を消す</b>: 要らない名前(「ツルさん」と「ツル」のような重なり)を、名前のボタンに出さないようにします。前の麻雀の記録の同卓者は書き換えません。消した名前は、同じ所の「消した名前」を押すと戻ります(名前を入れるで打ち直した時も戻ります)。<br><br>"+
+  "<b>名前を整理</b>: 「ツルさん」と「ツル」のような重なりを直します。<br>・<b>まとめる</b>: 前の記録の名前も書き換えて1つにします(麻雀の記録の同卓者・スコア表の名前・パチスロの相方)。同じ記録に両方の名前がある所は、別の人かもしれないので書き換えません。まとめる前の状態は、バックアップの「自動スナップショット」に残します。<br>・<b>消す</b>: 名前のボタンに出さないだけで、前の記録はそのままです。消した名前は「戻す」で戻ります(名前を入れるで打ち直した時も戻ります)。<br><br>"+
   "決めた後に変える時は、座席の「交代」と「自分の席」で。リセットした後と卓を締めた後は、次の卓でまたここから聞きます。";
 function viewMjlSetup(){
   const d=mjlSetupDraft(), n=d.pick.length, me=d.pick.indexOf("me"), cands=mjlSetupCands();
@@ -5766,30 +5766,114 @@ function viewMjlSetup(){
       '<button class="btn" style="font-size:13px;padding:9px 12px" data-ml="suname" data-v="'+i+'">名前を入れる</button>'+
       '</div></div>';
   });
-  /* v6.33: 名前のボタンから消す。普段は右下の小さな文字だけ、押すと一覧(消す)と、消した名前(押すと戻る)を出す */
+  /* v6.33: 名前のボタンから消す。v6.34: **まとめる**(前の記録の名前も書き換える)を足して「名前の整理」に。
+     普段は右下の小さな文字だけ、押すと一覧。名前ごとに「まとめる」「消す」(消した名前は「まとめる」「戻す」) */
   const allN=mjlSetupCands(true), hidN=((S.mjLog||{}).hideNames||[]);
   if(!UI.mjlNameEdit){
-    if(allN.length || hidN.length) h+='<div style="text-align:right;margin-top:8px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-ml="nmedit">名前を消す</button></div>';
+    if(allN.length || hidN.length) h+='<div style="text-align:right;margin-top:8px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-ml="nmedit">名前を整理</button></div>';
   } else {
+    const mf=UI.mjlMergeFrom, nb='style="font-size:12px;padding:5px 12px"';
+    const row=(nm, hidden)=>{
+      let r='<div style="padding:7px 0;border-top:1px solid var(--line)">'+
+        '<div class="row between" style="align-items:center;gap:6px">'+
+        '<span class="ellip" style="font-size:14px;min-width:0'+(hidden?';color:var(--muted)':'')+'">'+esc(nm)+(hidden?' <span style="font-size:11px">(消した)</span>':'')+'</span>'+
+        '<span class="row" style="gap:6px;flex-shrink:0">'+
+        '<button class="btn'+(mf===nm?' sel':'')+'" '+nb+' data-ml="nmmerge" data-v="'+esc(nm)+'">まとめる</button>'+
+        (hidden ? '<button class="btn" '+nb+' data-ml="nmshow" data-v="'+esc(nm)+'">戻す</button>'
+                : '<button class="btn" style="font-size:12px;padding:5px 12px;color:var(--red);border-color:var(--red)" data-ml="nmhide" data-v="'+esc(nm)+'">消す</button>')+
+        '</span></div>';
+      if(mf===nm){
+        /* まとめ先: 「ツルさん」なら「ツル」を先頭に光らせる(無ければ「ツル」を作る形で出す)。ほかは名前のボタンに出ている名前 */
+        const base=nm.replace(/\s*さん$/,"").trim();
+        let tg=allN.filter(x=>x!==nm);
+        if(base && base!==nm){ tg=[base].concat(tg.filter(x=>x!==base)); }
+        r+='<div style="padding:8px 0 2px">'+
+          '<div class="muted" style="font-size:11px;margin-bottom:6px">「'+esc(nm)+'」を、どの名前にまとめますか?(前の記録の名前も書き換えます)</div>'+
+          '<div class="row" style="gap:6px;flex-wrap:wrap">'+
+          tg.map(x=>'<button class="btn'+(x===base?' selt':'')+'" style="font-size:13px;padding:7px 12px" data-ml="nminto" data-v="'+esc(x)+'">'+esc(x)+'</button>').join("")+
+          '<button class="btn" style="font-size:12px;padding:7px 12px" data-ml="nmintonew">名前を入れる</button>'+
+          '<button class="btn" style="font-size:12px;padding:7px 10px" data-ml="nmmerge" data-v="'+esc(nm)+'">やめる</button>'+
+          '</div></div>';
+      }
+      return r+'</div>';
+    };
     h+='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">'+
       '<div class="row between" style="align-items:center;margin-bottom:4px">'+
-      '<span style="font-size:13px;font-weight:700">名前のボタンから消す</span>'+
+      '<span style="font-size:13px;font-weight:700">名前の整理</span>'+
       '<button class="btn" style="font-size:12px;padding:5px 14px" data-ml="nmedit">閉じる</button></div>'+
-      '<div class="muted" style="font-size:11px;line-height:1.6;margin-bottom:4px">前の麻雀の記録は書き換えません。ボタンに出なくなるだけです。</div>'+
-      (allN.length ? allN.map(nm=>'<div class="row between" style="align-items:center;padding:7px 0;border-top:1px solid var(--line)">'+
-          '<span class="ellip" style="font-size:14px;min-width:0">'+esc(nm)+'</span>'+
-          '<button class="btn" style="font-size:12px;padding:5px 14px;flex-shrink:0;color:var(--red);border-color:var(--red)" data-ml="nmhide" data-v="'+esc(nm)+'">消す</button></div>').join("")
-        : '<div class="muted" style="font-size:12px;padding:6px 0">名前のボタンに出ている名前はありません。</div>')+
-      (hidN.length ? '<div class="muted" style="font-size:11px;margin:12px 0 6px">消した名前(押すと戻ります)</div>'+
-          '<div class="row" style="gap:6px;flex-wrap:wrap">'+hidN.map(nm=>'<button class="chip" data-ml="nmshow" data-v="'+esc(nm)+'">'+esc(nm)+' ↩</button>').join("")+'</div>' : '')+
+      '<div class="muted" style="font-size:11px;line-height:1.6;margin-bottom:4px"><b>まとめる</b>: 前の記録の名前も書き換えて1つにします。<b>消す</b>: ボタンに出さないだけ(前の記録はそのまま)。</div>'+
+      (allN.length ? allN.map(nm=>row(nm,false)).join("") : '<div class="muted" style="font-size:12px;padding:6px 0">名前のボタンに出ている名前はありません。</div>')+
+      hidN.map(nm=>row(nm,true)).join("")+
       '</div>';
   }
   return h+'</div>';
 }
+/* v6.34【名前をまとめる】(ユーザー: 過去データも統一出来るならしたい)。「ツルさん」を「ツル」へ、のように**前の記録の名前も書き換えて**1つにする。
+   書き換えるのは名前が**完全に同じ**所: 麻雀の記録の同卓者・スコア表の名前・パチスロの相方(同じ人が出てくる所)。
+   **1つの記録に両方の名前がある所は書き換えない**(同じ記録の2人は別の人かもしれない。まとめると1人に潰れる)——その名前はボタンには出さない。
+   席を聞く前の、名前のボタン用に残っている前の卓の人も直す(0半荘の時だけ。打っている卓の人は id で記録とつながっているので触らない) */
+function mjlMergePlan(from, to){
+  const has=(arr,nm)=>(arr||[]).some(x=>String(x==null?"":x).trim()===nm);
+  const c={mj:0, tbl:0, slot:0, clash:0};
+  (S.mjSessions||[]).forEach(m=>{ if(!has(m.players,from)) return; if(has(m.players,to)) c.clash++; else c.mj++; });
+  (S.mjTables||[]).forEach(t=>{ if(!has(t.players,from)) return; if(has(t.players,to)) c.clash++; else c.tbl++; });
+  (S.sessions||[]).forEach(s=>{ if(String(s.partnerName||"").trim()===from) c.slot++; });
+  return c;
+}
+function mjlMergeName(from, to){
+  from=String(from==null?"":from).trim(); to=String(to==null?"":to).trim();
+  if(!from || !to || from===to) return null;
+  const c=mjlMergePlan(from, to), same=x=>String(x==null?"":x).trim()===from;
+  const has=(arr,nm)=>(arr||[]).some(x=>String(x==null?"":x).trim()===nm);
+  (S.mjSessions||[]).forEach(m=>{ if(has(m.players,from) && !has(m.players,to)) m.players=m.players.map(x=>same(x) ? to : x); });
+  (S.mjTables||[]).forEach(t=>{ if(Array.isArray(t.players) && has(t.players,from) && !has(t.players,to)) t.players=t.players.map(x=>same(x) ? to : x); });
+  (S.sessions||[]).forEach(s=>{ if(same(s.partnerName)) s.partnerName=to; });
+  if(S.mjLog && !mjLogRows().length){ const P=mjlPeople(), P2={}; Object.keys(P).forEach(k=>{ P2[k]=same(P[k]) ? to : P[k]; }); S.mjLog.people=P2; }
+  mjlShowName(to);
+  if(c.clash) mjlHideName(from); else mjlShowName(from);   /* 残った所(両方がある記録)の「ツルさん」はボタンに出さない */
+  return c;
+}
+/* まとめる前に、何をいくつ書き換えるかを見せて確かめる。前の記録を書き換える時は、その前の状態を自動スナップショットに残す
+   (続けていくつもまとめる時は、最初の1回だけ。3世代しか持たないので、日次や同期前の控えを押し出さないように) */
+function mjlMergeConfirm(from, to){
+  from=String(from==null?"":from).trim(); to=String(to==null?"":to).trim();
+  if(!from || !to) return;
+  if(from===to){ toast("同じ名前です"); return; }
+  if(to==="自分" || mjlIsX(to)){ toast("「"+to+"」にはまとめられません"); return; }
+  const c=mjlMergePlan(from, to), lines=[];
+  if(c.mj) lines.push("・麻雀の記録の同卓者 "+c.mj+"件");
+  if(c.tbl) lines.push("・スコア表の名前 "+c.tbl+"件");
+  if(c.slot) lines.push("・パチスロの相方 "+c.slot+"件");
+  const msg="「"+from+"」を「"+to+"」にまとめます。\n\n"+
+    (lines.length ? "書き換えるもの:\n"+lines.join("\n") : "前の記録に「"+from+"」はありません(名前のボタンだけ直します)。")+
+    (c.clash ? "\n\n同じ記録に「"+from+"」と「"+to+"」の両方がある "+c.clash+"件は、別の人かもしれないので書き換えません(名前のボタンには出しません)。" : "")+
+    (lines.length ? "\n\nまとめる前の状態は、バックアップの「自動スナップショット」に残します。" : "")+
+    "\n\nよろしいですか?";
+  if(!confirm(msg)) return;
+  if(lines.length){ const sn=loadSnaps(); if(!(sn[0] && sn[0].label==="名前をまとめる前" && Date.now()-num(sn[0].ts)<30*60000)) takeSnap("名前をまとめる前"); }
+  mjlMergeName(from, to);
+  /* 席を聞いている途中で選んでいた名前も直す(まとめ先がほかの席にいれば、その席は外す) */
+  const d=UI.mjlSetup;
+  if(d && Array.isArray(d.pick)){ const at=d.pick.indexOf(from); if(at>=0){ d.pick=d.pick.map((x,k)=> k!==at && x===to ? null : x); d.pick[at]=to; } }
+  UI.mjlMergeFrom=null;
+  save(); render();
+  const n=c.mj+c.tbl+c.slot;
+  toast("「"+from+"」を「"+to+"」にまとめました"+(n ? "(記録"+n+"件)" : ""));
+}
 /* v6.33: 名前を消す一覧の操作。消した名前を、いま席に選んでいたら外す(消したのに座ったままにしない) */
 function mjlNameTap(a, v){
   const nm=String(v==null?"":v).trim();
-  if(a==="nmedit"){ UI.mjlNameEdit=!UI.mjlNameEdit; render(); return; }
+  if(a==="nmedit"){ UI.mjlNameEdit=!UI.mjlNameEdit; UI.mjlMergeFrom=null; render(); return; }
+  /* v6.34: まとめる(まとめ先を選ぶ行を開く/閉じる)・まとめ先を押す・まとめ先の名前を打つ */
+  if(a==="nmmerge"){ UI.mjlMergeFrom=(UI.mjlMergeFrom===nm ? null : (nm||null)); render(); return; }
+  if(a==="nminto"){ if(UI.mjlMergeFrom) mjlMergeConfirm(UI.mjlMergeFrom, nm); return; }
+  if(a==="nmintonew"){
+    const from=UI.mjlMergeFrom; if(!from) return;
+    const nm0=prompt("「"+from+"」をまとめる名前", from.replace(/\s*さん$/,"").trim());
+    if(nm0===null) return;
+    mjlMergeConfirm(from, String(nm0).trim());
+    return;
+  }
   if(!nm) return;
   if(a==="nmhide"){
     mjlHideName(nm);
@@ -11635,7 +11719,7 @@ function snapListHtml(){
   let h = '<div class="card" style="padding:2px 14px;margin-bottom:4px">'+
     '<div class="row" style="align-items:center;gap:8px;padding:9px 0">'+
     '<div style="flex:1;font-size:12px">'+sn.length+'世代保持中 <span class="muted" style="font-size:11px">・最新 '+fmt(sn[0].ts)+'</span>'+
-      infoBtn("データ全体の控え(スナップショット)です。1日1回の起動時と、復元やクラウド同期でデータを上書きする直前に、この端末の中へ自動で保存されます。<br><br>上書きで困ったことが起きても、「表示」から一覧を開いて前の状態に戻せます。")+'</div>'+
+      infoBtn("データ全体の控え(スナップショット)です。1日1回の起動時と、復元やクラウド同期でデータを上書きする直前(と、半荘の記録で名前をまとめる直前)に、この端末の中へ自動で保存されます。<br><br>上書きで困ったことが起きても、「表示」から一覧を開いて前の状態に戻せます。")+'</div>'+
     '<button class="btn" style="padding:7px 12px;font-size:12px;color:var(--text)" data-a="snaptoggle">'+(UI.snapOpen?"閉じる":"表示")+'</button></div>';
   if(UI.snapOpen){
     h += sn.map((s,i)=>{
