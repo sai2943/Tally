@@ -270,7 +270,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.34 (localStorage保存・完全オフライン)
+   Tally 6.35 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1059,7 +1059,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.34";
+const APP_VERSION = "6.35";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -9508,7 +9508,7 @@ function normDate(v){
   return m ? (m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0")) : "";
 }
 function parseReceipt(txt){
-  const out={date:"",store:"",wallet:"",category:"",type:"",total:"",box:"",items:[],blocks:0,totalNum:null};   /* v5.98: #box */
+  const out={date:"",store:"",wallet:"",category:"",type:"",total:"",box:"",balance:"",items:[],blocks:0,totalNum:null};   /* v5.98: #box。v6.35: #balance(Suicaなどの残高 `日付 金額`) */
   /* v4.67: **コードフェンスがあれば中だけを読む**。
      ショートカットで自動化すると**モデルの出力が丸ごとクリップボードに入る**ため、
      前後の散文が混ざる。「合計 5,432円」のような行は品目として拾えてしまうので、
@@ -9640,13 +9640,57 @@ function receiptOrderDup(r, T){
   });
   return Object.keys(by).some(d=>by[d].some(e=>num(e.amount)===T) || by[d].reduce((a,e)=>a+num(e.amount),0)===T);
 }
-function receiptNewRows(r, rows){
-  const st=String(r.store||"").trim(), typ=(r.type==="income"?"income":"expense"), have={};
-  const key=(d,it,am)=>d+"|"+String(it||"").trim()+"|"+num(am);
-  (S.entries||[]).forEach(e=>{ if(e.type!==typ || String(e.store||"").trim()!==st) return; const k=key(e.date, e.item, e.amount); have[k]=(have[k]||0)+1; });
-  const out=[]; let dup=0;
-  rows.forEach(x=>{ const k=key(x.date, x.item, x.amount); if(have[k]>0){ have[k]--; dup++; } else out.push(x); });
-  return {rows:out, dup:dup};
+/* v6.35【記録済みの見分けを3段に】(ユーザー: Suicaの未記入分をまとめて画像で読み込ませたい。既に記帳済みの内容は除外したい)。
+   v6.28は「同じ日・同じ店・同じ品目・同じ額」だけで見ていたので、**レシートから付けた買い物**(店名・品目がある)と
+   Suicaの履歴の「物販 ¥398」、駅名の書き方が違う乗車などは記録済みと分からず、二重に入っていた。
+   Suicaの履歴は**カードから実際に引かれた額**なので、同じ財布・同じ日・同じ額の記録があれば、それが付けた記録。
+   ①同じ日・同じ店・同じ品目・同じ額(財布は問わない。今までの形)
+   ②同じ財布・同じ日・同じ額で、乗り物どうし・買い物どうし(乗車と買い物が同じ額でも取り違えにくく)
+   ③同じ財布・同じ日・同じ額なら何でも
+   **記録1件は1行にしか当てない**(数で見る。同じ区間を1日2回乗って1回だけ付けていたら、1回分は新しい)。
+   全部のブロックで①を済ませてから②③へ(ゆるい当て方が、ほかのブロックのきっちり当たる記録を先に取らないように) */
+function receiptDedupe(blocks){
+  const isTr=s=>TRANS_MODES.indexOf(String(s||"").trim())>=0;
+  const pool={expense:[], income:[]};
+  (S.entries||[]).forEach(e=>{ if((e.type==="expense"||e.type==="income") && e.date) pool[e.type].push({e:e, used:false}); });
+  const L=(blocks||[]).map(b=>{
+    const st=String(b.r.store||"").trim();
+    return {st:st, typ:(b.r.type==="income"?"income":"expense"), wal:String(receiptSrc(b.r.wallet).wal||""), tr:isTr(st),
+      rows:(b.rows||[]).map(x=>({x:x, dup:false}))};
+  });
+  const sameDA=(x,e)=>e.date===x.date && num(e.amount)===num(x.amount);
+  const run=(entOk, same)=>L.forEach(B=>B.rows.forEach(R=>{
+    if(R.dup) return;
+    const hit=pool[B.typ].find(P=>!P.used && entOk(B,P.e) && same(R.x,P.e));
+    if(hit){ hit.used=true; R.dup=true; R.e=hit.e; }
+  }));
+  run((B,e)=>String(e.store||"").trim()===B.st, (x,e)=>sameDA(x,e) && String(e.item||"").trim()===String(x.item||"").trim());
+  run((B,e)=>!!B.wal && eWal(e)===B.wal && isTr(e.store)===B.tr, sameDA);
+  run((B,e)=>!!B.wal && eWal(e)===B.wal, sameDA);
+  /* ①は財布を問わないので、**ほかの財布で付けた同じ乗車・買い物**も記録済みとみなす(もう一度入れると支出が二重になる)。
+     その代わり、財布が違うことを知らせる(Suicaで払ったのなら財布を直せば、Suicaの残高も合う) */
+  return L.map(B=>({rows:B.rows.filter(R=>!R.dup).map(R=>R.x), dup:B.rows.filter(R=>R.dup).length,
+    otherWal:B.wal ? B.rows.filter(R=>R.dup && R.e && eWal(R.e)!==B.wal).map(R=>R.e) : []}));
+}
+function receiptNewRows(r, rows){ return receiptDedupe([{r:r, rows:rows}])[0]; }
+/* v6.35【残高で確かめる】履歴に写っている一番新しい残高(`#balance 日付 金額`)と、取り込んだ後のTallyの財布の残高(その日の終わり)を比べる。
+   合えば、その日までの記録漏れは無い(チャージも含めて)。合わなければ、ずれの額を出す(どこがずれたかは所持金の照合で) */
+function receiptBalanceClaim(list){
+  let best=null;
+  (list||[]).forEach(x=>{
+    const r=x.r, m=/^(\d{4}-\d{1,2}-\d{1,2})\s+[¥￥]?\s*(-?[\d,]+)\s*円?$/.exec(String(r.balance||"").trim());
+    const wal=receiptSrc(r.wallet).wal;
+    if(!m || !wal) return;
+    const d=normDate(m[1]); if(!d) return;
+    const c={date:d, amt:num(String(m[2]).replace(/,/g,"")), wal:String(wal)};
+    if(!best || c.date>best.date) best=c;
+  });
+  return best;
+}
+function receiptBalanceText(c, add){   /* add = これから足す分(保存前の見込み)。保存した後は 0 */
+  const tally=walletBalance(c.date, c.wal)+(add||0), d=Math.abs(tally-c.amt), md=c.date.slice(5).replace("-","/"), yen=v=>"¥"+Math.round(v).toLocaleString("ja-JP");
+  return d===0 ? walName(c.wal)+"の残高("+md+"): 履歴 "+yen(c.amt)+"・Tally "+yen(tally)+" で合っています"
+    : walName(c.wal)+"の残高("+md+")が "+yen(d)+" 合いません(履歴 "+yen(c.amt)+"・Tally "+yen(tally)+")。チャージ・この履歴より前の記録漏れ・二重の記録が無いか、所持金の照合で確かめてください";
 }
 /* v6.28: **まとめて取り込む**(Amazonの注文をGmailからまとめて・1枚の写真に複数のレシート・履歴の複数ブロック)。
    list = [{r: parseReceipt の結果, open: 途中で切れたブロックか}]。**確認は1回**で、記録済みは飛ばす。
@@ -9654,6 +9698,10 @@ function receiptNewRows(r, rows){
 function receiptImportMany(list, extra){
   const md=d=>String(d||"").slice(5).replace("-","/");
   const plans=[], lines=[], skipped=[], notes=[], taken={};
+  /* v6.35: 日付つきの履歴は、全部のブロックをまとめて記録済みと見比べる(1件の記録を2つのブロックで二重に当てない) */
+  const datedL=(list||[]).filter(x=>!x.open && x.r.items.some(it=>it.date));
+  const dd=receiptDedupe(datedL.map(x=>({r:x.r, rows:x.r.items.filter(it=>it.date)})));
+  const ddOf=new Map(datedL.map((x,i)=>[x, dd[i]]));
   (list||[]).forEach(x=>{
     const r=x.r, lab=String(r.store||"").trim() || "(店名なし)";
     const dated=r.items.some(it=>it.date);
@@ -9662,11 +9710,17 @@ function receiptImportMany(list, extra){
       /* v6.23(レビュー): 日付の無い行は保存できない → 確認とメモで言う(黙って落とさない) */
       const nd=r.items.filter(it=>!it.date);
       if(nd.length) notes.push("⚠ "+lab+": 日付の無い行が"+nd.length+"件あります(保存しません)\n"+nd.map(it=>(String(it.item||"").replace(/^[|｜]\s*/,"")||"(品目なし)")+" ¥"+num(it.amount).toLocaleString("ja-JP")).join("\n"));
-      const nr=receiptNewRows(r, r.items.filter(it=>it.date));
+      const nr=ddOf.get(x);
       if(nr.dup) skipped.push(lab+" の履歴 "+nr.dup+"件");
+      if(nr.otherWal.length){ const w=walName(receiptSrc(r.wallet).wal);
+        notes.push("⚠ ほかの財布で付けた記録を、記録済みとみなしました("+w+"で払ったのなら、記録の財布を"+w+"に直してください):\n"+
+          nr.otherWal.map(e=>md(e.date)+" "+[String(e.store||"").trim(), String(e.item||"").trim()].filter(Boolean).join(" ")+" ¥"+num(e.amount).toLocaleString("ja-JP")+"("+walName(eWal(e))+")").join("\n")); }
       if(!nr.rows.length) return;
       const p=receiptPlan(r, nr.rows); plans.push(p);
       lines.push(md(p.days[0])+(p.days.length>1?"〜"+md(p.days[p.days.length-1]):"")+" "+lab+" "+p.rows.length+"件 ¥"+p.total.toLocaleString("ja-JP")+"("+p.src+"・"+p.cat+")"+(p.linkText?" ※"+p.linkText:""));
+      /* v6.35: 履歴は**1行ずつ**見せる(どの乗車・買い物が新しく入るのかを保存の前に確かめられるように)。多すぎる時は30行まで */
+      p.rows.slice(0,30).forEach(it=>lines.push("　"+md(it.date)+" "+(String(it.item||"").trim()||"(品目なし)")+" ¥"+num(it.amount).toLocaleString("ja-JP")));
+      if(p.rows.length>30) lines.push("　ほか"+(p.rows.length-30)+"件");
     } else {
       if(!/^\d{4}-\d{2}-\d{2}$/.test(String(r.date||""))){ notes.push("⚠ 日付の無いレシート("+lab+")は取り込んでいません。1枚ずつ読み直してください"); return; }
       const rows=r.items.map(it=>Object.assign({}, it, {date:r.date}));
@@ -9679,13 +9733,21 @@ function receiptImportMany(list, extra){
       const nt=receiptNote(r); if(nt) notes.push(md(r.date)+" "+lab+": "+nt.replace(/^⚠ /,"⚠ "));
     }
   });
-  if(!plans.length) return {saved:0, allDup:!!skipped.length, notes:notes, skipped:skipped};
+  /* v6.35: 残高が写っていれば、取り込んだ後の残高が合うかを、保存の前に見せる(保存した後もメモに残す) */
+  const bc=receiptBalanceClaim(list);
+  const balAfter=()=>bc ? receiptBalanceText(bc, 0) : "";
+  if(!plans.length) return {saved:0, allDup:!!skipped.length, notes:notes, skipped:skipped, balance:balAfter()};
   const n=plans.reduce((a,p)=>a+p.rows.length,0);
+  let balPre="";
+  if(bc){
+    const add=plans.filter(p=>String(p.wal)===bc.wal && !p.bk).reduce((a,p)=>a+p.rows.filter(it=>it.date<=bc.date).reduce((b,it)=>b+(p.typ==="income"?1:-1)*num(it.amount),0),0);
+    balPre="残高の確かめ(取り込んだ後): "+receiptBalanceText(bc, add);
+  }
   const text=[extra ? "Claudeのメモ:\n"+extra : "", notes.join("\n\n"), n+"件を取り込みます\n\n"+lines.join("\n"),
-    skipped.length ? "記録済みなので飛ばします("+skipped.length+"件):\n"+skipped.join("\n") : ""].filter(Boolean).join("\n\n")+"\n\nよろしいですか?";
+    skipped.length ? "記録済みなので飛ばします("+skipped.length+"件):\n"+skipped.join("\n") : "", balPre].filter(Boolean).join("\n\n")+"\n\nよろしいですか?";
   if(!confirm(text)) return {saved:0, declined:true, notes:notes, skipped:skipped};
   let saved=0; plans.forEach(p=>{ saved+=p.commit(); }); save();
-  return {saved:saved, notes:notes, skipped:skipped};
+  return {saved:saved, notes:notes, skipped:skipped, balance:balAfter()};
 }
 /* コードブロックごとに分ける。v6.28: **フェンスが無い時も、品目の行の後にヘッダ(#date など)が来たら、そこから次のブロック**
    (チャットの返事を、フェンス無しの文字でコピーした時。以前は後のヘッダが前の注文に被さって1件に混ざっていた) */
@@ -9725,7 +9787,7 @@ function receiptPasteText(raw, f){
     toast("取り込んで保存しました"+(res.skipped.length ? "(記録済みの"+res.skipped.length+"件は飛ばしました)" : ""));
     return true;
   }
-  if(res.allDup){ alert("記録済みなので、取り込むものがありません\n\n"+res.skipped.join("\n")); return true; }
+  if(res.allDup){ alert("記録済みなので、取り込むものがありません\n\n"+res.skipped.join("\n")+(res.balance ? "\n\n"+res.balance : "")); return true; }
   if(!res.declined && res.notes.length){ alert(res.notes.join("\n\n")); return true; }
   toast("取り込みをやめました");
   return true;
@@ -9753,7 +9815,7 @@ function applyReceipt(txt){
   }
   if(r.items.some(x=>x.date)){   /* v6.28: 履歴はまとめて取り込む形に(記録済みの乗車を飛ばす) */
     const res=receiptImportMany([{r:r}], "");
-    if(res.allDup) alert("記録済みなので、取り込むものがありません\n\n"+res.skipped.join("\n"));
+    if(res.allDup) alert("記録済みなので、取り込むものがありません\n\n"+res.skipped.join("\n")+(res.balance ? "\n\n"+res.balance : ""));
     return res.saved ? -1 : 0;
   }
   if(/^\d{4}-\d{2}-\d{2}$/.test(r.date)) f.date=r.date;
@@ -9782,6 +9844,7 @@ function applyReceipt(txt){
    **キーはこの端末の localStorage だけ**に置く(Sに入れない=同期・バックアップ・スナップショットに乗らない)。
    費用は Maxプランの APIクレジット(月$100・繰り越し無し)で賄う想定。1枚 数円 */
 const RCPT_URL="https://api.anthropic.com/v1/messages";
+const RCPT_MAXF=10, RCPT_MAXB=24*1024*1024;   /* v6.35: 1回に読む写真・PDFの数と、送る中身(base64)の合計の上限 */
 const RCPT_KEY_LS="tally:claudeKey", RCPT_MODEL_LS="tally:claudeModel";
 /* 画像の上限は「Claude 4.7 以降」の高解像度(長辺 2,576px・4,784トークン)。超えるとAPI側で縮められるので、
    こちらで先に合わせて送る量を減らす(レシートの文字が潰れない範囲で一番大きく) */
@@ -9860,6 +9923,10 @@ fence,
 "- 日付が読めない行は書かない(メモに「10/2? 宮城野通駅→連坊駅 210円の日付が読めません」のように書く)",
 "- 店・財布・分類はブロックで共通なので、路線(地下鉄・バスなど)や分類が変わる所でブロックを分ける",
 "- チャージは書かない(財布どうしの移動で、支出ではない)。利用だけを書く",
+"- **記録済みかどうかは考えない**。写っている利用は全部書く(Tallyが記録と見比べて、記録済みの行を飛ばす)",
+"- スクリーンショットが何枚かあって、**同じ取引が2枚に写っている時は1回だけ**書く(日付・駅・金額・残高が同じなら同じ取引)。同じ日に同じ区間を2回乗ったのは2行",
+"- 物販(駅の店・自販機・コンビニなどでの支払い)は、乗車とは別のブロックにする。#store は写っている店名(無ければ「物販」)、品目は空にする(`2026-08-02 |  | 398`)",
+"- 残高が写っていれば、**一番新しい残高**を、どれか1つのブロックに `#balance 日付 金額` で1回だけ書く(例: `#balance 2026-08-03 1234`)。利用履歴の行の残額ならその行の日付、カードの画面に出ている今の残高なら今日の日付。写っていなければ書かない",
 "",
 "### ネット注文の領収書(Amazonなど)",
 "- #store は注文したサイト(Amazon など)。マーケットプレイスの出品者名にしない",
@@ -9993,7 +10060,8 @@ function rcptApply(txt, f, stop){
   }
   /* v6.28: それ以外(履歴・1枚の写真に複数のレシート・注文の一覧)は、**まとめて1回の確認で保存**し、記録済みは飛ばす */
   const res=receiptImportMany(rs, notes.join("\n\n"));
-  const keep=notes.concat(res.notes||[], (res.skipped||[]).length ? ["記録済みなので飛ばしました: "+res.skipped.join("、")] : []).filter(Boolean);
+  const keep=notes.concat(res.notes||[], (res.skipped||[]).length ? ["記録済みなので飛ばしました: "+res.skipped.join("、")] : [],
+    res.balance ? [res.balance] : []).filter(Boolean);   /* v6.35: 残高が合うか(保存した後・全部記録済みだった時) */
   /* 保存した後もメモがあれば記録の画面に残して見せる(確認の画面は閉じると消えるため。読めなかった行をその場で足せる) */
   if(keep.length){ f.rcptNote=keep.join("\n\n"); return {form:true, saved:res.saved, kept:true}; }
   return {form:false, saved:res.saved};
@@ -10010,10 +10078,10 @@ function rcptKeepBank(f){
   f.wal=B.wal; f.type=B.type; f.bkSrc="";
   if((f.type==="income" ? INCOME_CATS : EXPENSE_CATS).indexOf(f.category)<0) f.category=B.category;
 }
-function rcptBegin(f){
+function rcptBegin(f, n){
   if(!f.rcptBase) f.rcptBase={date:f.date, store:String(f.store||""), type:f.type, category:f.category, wal:f.wal};
   f.rcptNote="";
-  const t={form:f, model:rcptModel().name, ctl:(typeof AbortController==="function") ? new AbortController() : null};
+  const t={form:f, model:rcptModel().name, n:num(n)||1, ctl:(typeof AbortController==="function") ? new AbortController() : null};
   UI.rcptBusy=t; render(); return t;
 }
 /* この画面の読み取りを止める(戻る・振替に切り替えた時も)。止めたら true */
@@ -10028,7 +10096,8 @@ async function rcptSend(t, imgs){
     "財布は「"+walName(f.wal)+"」(この明細の口座)で決まっているので、#wallet は書かないでください。");
   const body=rcptBody(imgs.concat([{type:"text", text:ask.join("\n")}]));
   let timer=0, res=null, js=null, err=null;
-  if(t.ctl) timer=setTimeout(()=>{ t.timeout=true; t.ctl.abort(); }, 180000);   /* Opusで写真5枚でも収まる長さ。いつでも「やめる」で止められる */
+  /* Opusで写真5枚でも収まる長さ(180秒)。v6.35: 10枚まで読むので、枚数に合わせて最長300秒。いつでも「やめる」で止められる */
+  if(t.ctl) timer=setTimeout(()=>{ t.timeout=true; t.ctl.abort(); }, Math.min(300000, Math.max(180000, 120000+18000*imgs.length)));
   try{ res=await fetch(RCPT_URL, rcptInit(body, rcptKey(), t.ctl)); try{ js=await res.json(); }catch(e){ js=null; } }
   catch(e){ err=e; }
   if(timer) clearTimeout(timer);
@@ -10080,13 +10149,21 @@ async function rcptFromFiles(files){
   const f=UI.entryForm; if(!f || !files || !files.length) return;
   if(!rcptKey()){ alert("APIキーが未設定です。\n管理 → レシートの読み取り で設定してください。"); return; }
   if(navigator.onLine===false){ alert("オフラインです。電波のある所で、もう一度。"); return; }
-  const t=rcptBegin(f), m=rcptModel();
-  if(files.length>5) toast("写真・PDFは5つまでです。最初の5つを読みます");
+  /* v6.35: **10個まで**(5個から増やした。Suicaの利用履歴は1枚に7〜9行なので、ひと月分のスクリーンショットを1回で)。
+     送る中身は合わせて24MBまで(APIの1回の上限は32MB。PDFが大きい時に超えないように) */
+  const t=rcptBegin(f, Math.min(files.length, RCPT_MAXF)), m=rcptModel();
+  if(files.length>RCPT_MAXF) toast("写真・PDFは"+RCPT_MAXF+"個までです。最初の"+RCPT_MAXF+"個を読みます");
   /* v6.23(レビュー): **1枚ずつ**縮める(iPhoneで5枚を同時に開くとメモリが足りずページごと落ちることがある) */
-  const imgs=[];
-  try{ for(const fl of files.slice(0,5)){ imgs.push(await (rcptIsPdf(fl) ? rcptPdf(fl) : rcptImage(fl, m))); if(UI.rcptBusy!==t) return; } }
+  const imgs=[]; let bytes=0, cut=0;
+  try{ for(const fl of files.slice(0,RCPT_MAXF)){
+    const x=await (rcptIsPdf(fl) ? rcptPdf(fl) : rcptImage(fl, m)); if(UI.rcptBusy!==t) return;
+    const sz=String((x.source && x.source.data) || "").length;
+    if(imgs.length && bytes+sz>RCPT_MAXB){ cut++; continue; }
+    bytes+=sz; imgs.push(x);
+  } }
   catch(e){ if(UI.rcptBusy===t){ UI.rcptBusy=null; render(); alert(/PDFが大きすぎます/.test(String(e && e.message)) ? e.message+"。" : "画像やPDFを開けませんでした(この端末では開けない形式かもしれません)。"); } return; }
   if(UI.rcptBusy!==t) return;
+  if(cut) toast("大きすぎるので、最初の"+imgs.length+"個だけ読みます(残りはもう一度)");
   /* 縮めている間に画面を離れていたら送らない(費用がかかるだけ) */
   if(UI.screen!=="entry" || UI.entryForm!==f){ UI.rcptBusy=null; return; }
   await rcptSend(t, imgs);
@@ -10096,6 +10173,7 @@ function viewRcptSet(){
   const k=rcptKey(), m=rcptModel(), T=UI.rcptTest;
   const info="写真やPDFを選ぶと、Tallyが画像をClaude(AnthropicのAPI)に送って読み取り、記録の画面を埋めます。保存の前に中身を見て直せます。読めなかった所は、画面の「Claudeのメモ」に出ます。<br><br>"+
     "<b>スクリーンショット</b>: 撮った後の「完了」→「コピーして削除」→ 記録の画面の「レシートを取り込む」でも読めます(写真に残りません)。iPhoneはWebアプリを共有シートに出せないので、この形で代えています。<br><br>"+
+    "<b>Suicaの付け漏れ</b>: Walletのカードの画面(またはモバイルSuicaの利用履歴)をスクロールしながらスクリーンショットを撮り、「写真・PDFから読む」でまとめて選びます(1回に10枚まで)。<b>記録済みの乗車・買い物は飛ばして</b>、未記入の分だけを1回の確認で保存します。同じ財布・同じ日・同じ額の記録があれば記録済みとみなすので、レシートから付けた買い物も二重になりません。重なった期間をもう一度読んでも増えません。残高が写っていれば、取り込んだ後のSuicaの残高が合うかも、保存の前に出します。<br><br>"+
     "<b>はじめに一度だけ</b><br>① claude.ai の設定 → 請求(Billing)の「API credits」で、Claude Console の組織をつなぐ(Maxプランは毎月$100分。翌月には繰り越さない)<br>"+
     "② Console(platform.claude.com)の API keys で「Create key」。Workspace は Tally(作っていなければ Default)、Linked account は自分、有効期限(Expiration)は Never を選んで作り、出たキーをすぐコピーする(この時しか表示されない)<br>③ ここに貼って保存する<br><br>"+
     "<b>キーの置き場所</b>: この端末の中だけ。同期・バックアップには入りません(別の端末では、そこでもう一度貼ります)。<br><br>"+
@@ -10369,7 +10447,7 @@ function viewEntry(){
     const rBusyHtml = '<div class="card" style="margin-bottom:12px;padding:10px 12px"><div class="row between" style="align-items:center;gap:8px">'+
       '<span style="font-size:12px">Claudeが読んでいます('+esc(rBusy?UI.rcptBusy.model:"")+')…</span>'+
       '<button class="btn" style="flex:none;font-size:11px;padding:6px 14px" data-a="rcptstop">やめる</button></div>'+
-      '<div class="muted" style="font-size:11px;margin-top:4px">10〜30秒ほど。終わるとこの画面が埋まります</div></div>';
+      '<div class="muted" style="font-size:11px;margin-top:4px">'+((rBusy && UI.rcptBusy.n>3) ? UI.rcptBusy.n+"枚なので1〜2分ほど" : "10〜30秒ほど")+'。終わるとこの画面が埋まります</div></div>';
     const rTwo = '<div class="row" style="gap:8px;margin-bottom:12px">'+
       '<label class="btn" style="flex:1;padding:9px 0;font-size:12px;text-align:center;cursor:pointer;display:block;position:relative;color:var(--teal);font-weight:700">写真・PDFから読む'+
       '<input type="file" id="e-photo" accept="image/*,application/pdf,.pdf" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none"></label>'+
