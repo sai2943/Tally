@@ -272,7 +272,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.39 (localStorage保存・完全オフライン)
+   Tally 6.40 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1061,7 +1061,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.39";
+const APP_VERSION = "6.40";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3640,8 +3640,18 @@ function mjAgg(list, mk){
        込 = 抜 − ゲーム代 + バック − 経費 は、金額の卓・素点の卓のどちらでも mjFinal/mjRaw の定義どおりに成り立つ */
     back:L.reduce((a,s)=>a+mjFeeBack(s),0),
     exp:L.reduce((a,s)=>a+mjExpTotal(s),0),
-    ext:L.reduce((a,s)=>a+mjExtraTotal(s),0)};
+    ext:L.reduce((a,s)=>a+mjExtraTotal(s),0),
+    /* v6.40: **卓の外を 馬身・差し馬 に分ける**(ユーザー: 卓の外は明確に馬身、差し馬と分けましょう)。行の名前で見分ける(`mjExtKind`)。
+       チップの円はセットの内訳に出す(フリーはスコアに含めたまま) */
+    umaX:L.reduce((a,s)=>a+mjExtSum(s,"uma"),0),
+    sashiX:L.reduce((a,s)=>a+mjExtSum(s,"sashi"),0),
+    otherX:L.reduce((a,s)=>a+mjExtSum(s,"other"),0),
+    chipY:L.reduce((a,s)=>a+mjChipYen(s),0)};
 }
+/* v6.40: 卓の外の行の種類。半荘の記録から締めた行は「馬身 ツル +2」「差し馬 ツル −1」、手で足す行は「馬身」(押すだけの行)か自由な名前。
+   「差し馬」を先に見る(「差し馬」の中に「馬身」は無いが、念のため順番を決めておく)。どちらでもなければ その他 */
+const mjExtKind = x => { const n=String((x&&x.name)||""); return n.indexOf("差し馬")>=0 ? "sashi" : n.indexOf("馬身")>=0 ? "uma" : "other"; };
+const mjExtSum = (m, kind) => ((m&&m.extras)||[]).reduce((a,x)=>a+(mjExtKind(x)===kind ? num(x.amount) : 0),0);
 /* v6.37: 平均の内訳を1円に丸めても、**足すと上の行(丸めた合計)にぴったり合う**ように配る(最大剰余)。
    tot は合計を丸めた値(一覧の「平均収支」と同じ数)。各行は元の値から1円未満しか動かない */
 function mjRoundParts(vals, tot){
@@ -3651,11 +3661,11 @@ function mjRoundParts(vals, tot){
   return out;
 }
 const MJ_AGG_INFO="1半荘あたりの平均です。<b>下の行を足すと、平均収支(ゲーム代込)になります。</b><br>"+
-  "ゲーム代抜(卓での勝ち負け + 卓の外) + ゲーム代(店に払った額 + バック + 経費)<br><br>"+
+  "ゲーム代抜(スコア + 馬身 + 差し馬) + ゲーム代(店に払った額 + バック + 経費)<br><br>"+
   "<b>経費(飲食・交通など)もゲーム代の一部</b>として数えます。<br><br>"+
-  "半荘の記録で締めた卓の収支は、<b>店での精算(実際に動いたお金)</b>から出しています。チップを付けていなくても、その分は「卓での勝ち負け」に入っているので、<b>付け忘れても収支はずれません</b>。<br><br>"+
-  "卓の外は、差し馬・馬身など店の精算とは別にやり取りしたお金です。<br><br>"+
-  "平均チップは<b>セットだけ</b>に出します(スコア表で全部記録できるため)。フリーはチップを全部は付けきれないので出しません。";
+  "<b>スコア</b>は、卓での勝ち負けのうち、下に分けて出した分(馬身・差し馬、セットのチップ)を除いた残りです。半荘の記録で締めた卓は<b>店での精算(実際に動いたお金)</b>から出しているので、チップや飛びを付けていなくても、その分はスコアに入っていて<b>収支はずれません</b>。<br><br>"+
+  "馬身・差し馬は、店の精算とは別に相手とやり取りしたお金です。どちらでもない卓の外のお金は「卓の外(その他)」に出します。<br><br>"+
+  "チップは<b>セットだけ</b>分けて出します(スコア表で全部記録できるため。かっこの中は1半荘あたりの枚数)。フリーはチップを全部は付けきれないので、スコアに含めています。";
 /* v6.39: G(組)を渡す——チップの行はセットの組だけ */
 function mjAggHtml(A, G){
   const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
@@ -3675,28 +3685,37 @@ function mjAggHtml(A, G){
         '<div style="height:100%;width:'+pct+'%;background:'+cols[i]+';border-radius:4px"></div></div></div>';
     }).join("")+'</div>'+
     '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">'+
-    mjMoneyHtml(A)+
+    mjMoneyHtml(A, G)+
     /* v5.64: 素点の分かる卓が1つも無いなら**行ごと出さない**(0ptは事実ではない)。
        一部だけ分かるときは**母数がHと違う**ことを添える——黙って出すと全体の平均に見える */
     (A.scoreH>0
       ? mjStatRow("平均スコア"+(A.scoreH<A.H?"(素点の分かる"+A.scoreH+"半荘)":""), (A.score/A.scoreH), false, true, "pt")
       : '')+
-    /* v6.39: チップは**セットの組だけ**・全部の半荘で割る(セットの0枚は本当の0枚)。1枚も無ければ出さない */
-    ((G && G.category!=="free" && A.chipAny)
-      ? mjStatRow("平均チップ", (A.chips/A.H), false, true, "枚")
-      : '')+
+    /* v6.40: セットのチップは、お金の内訳の「チップ(+0.3枚)」の行へ移した(枚数と円を1行で) */
     '</div>';
 }
 /* v6.37: お金の行。**上の行 = 下の行の和**(各ブロックも 見出し = 字下げの行の和)。0の内訳は出さない */
-function mjMoneyHtml(A){
+function mjMoneyHtml(A, G){
   const H=A.H, tot=Math.round(A.final/H);
-  const [shop, ext, fee, back, exp]=mjRoundParts([(A.raw-A.ext)/H, A.ext/H, -A.fee/H, A.back/H, -A.exp/H], tot);
+  /* v6.39: チップは**セットの組だけ**(セットの0枚は本当の0枚なので全部の半荘で割る。1枚も無いルールなら出さない)。フリーはスコアに含める */
+  const chipOn=!!(G && G.category!=="free" && A.chipAny), chipY=chipOn ? A.chipY : 0;
+  const [score, chip, uma, sashi, other, fee, back, exp]=mjRoundParts(
+    [(A.raw-A.ext-chipY)/H, chipY/H, A.umaX/H, A.sashiX/H, A.otherX/H, -A.fee/H, A.back/H, -A.exp/H], tot);
   const sub=(l,v)=>'<div class="row between" style="font-size:11px;margin:2px 0;padding-left:14px"><span class="muted">'+l+'</span><span class="mono '+clsPM(v)+'">'+signYen(v)+'</span></div>';
   let h='<div class="row between" style="font-size:13px;margin:5px 0 8px;align-items:center"><span style="font-weight:700">平均収支(ゲーム代込)'+infoBtn(MJ_AGG_INFO)+'</span>'+
     '<span class="mono '+clsPM(tot)+'" style="font-weight:700">'+signYen(tot)+'</span></div>';
-  h+=mjStatRow("平均収支(ゲーム代抜)", shop+ext, true);
-  /* v6.39: 「店での勝ち負け」→「卓での勝ち負け」(セットは店を問わないので、どちらにも合う名前) */
-  if(A.ext) h+=sub("卓での勝ち負け", shop)+sub("卓の外(馬身・差し馬など)", ext);
+  h+=mjStatRow("平均収支(ゲーム代抜)", score+chip+uma+sashi+other, true);
+  /* v6.40: 「卓での勝ち負け」→「**スコア**」、卓の外は「**馬身**」「**差し馬**」に分ける(ユーザー: 折角データが取れているので分ける)。
+     どちらでもない卓の外(古い記録の「バック」など)は「卓の外(その他)」。分けるものが1つも無ければ内訳は出さない */
+  if(chipOn || A.umaX || A.sashiX || A.otherX){
+    /* 枚数は1半荘あたりで小さいので小数2桁(1桁だと +0.04枚 が「+0枚」なのに円は +¥7 と出て食い違って見える) */
+    const cn=Math.round(A.chips/H*100)/100;
+    h+=sub("スコア", score)+
+      (chipOn ? sub("チップ("+(cn>=0?"+":"")+String(cn)+"枚)", chip) : '')+
+      (A.umaX ? sub("馬身", uma) : '')+
+      (A.sashiX ? sub("差し馬", sashi) : '')+
+      (A.otherX ? sub("卓の外(その他)", other) : '');
+  }
   /* v6.39: **経費もゲーム代の一部**(ユーザー: 経費もゲーム代の一環として入れましょう)。v6.37は別の行「平均経費」だった */
   h+=mjStatRow("平均ゲーム代", fee+back+exp, true);
   if(A.back||A.exp) h+=sub("店に払った額", fee)+(A.back ? sub("バック", back) : '')+(A.exp ? sub("経費", exp) : '');
