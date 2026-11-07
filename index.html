@@ -272,7 +272,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.38 (localStorage保存・完全オフライン)
+   Tally 6.39 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1061,7 +1061,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.38";
+const APP_VERSION = "6.39";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3605,13 +3605,9 @@ function mjShopGroups(){
       o.list.push(s); o.rules.add(G.key);
     });
   });
-  const seatsOf={};
-  Object.values(by).forEach(o=>{ (seatsOf[o.shop]=seatsOf[o.shop]||new Set()).add(o.seats); });
-  return Object.values(by).filter(o=>o.rules.size>=2).map(o=>{
-    const both=seatsOf[o.shop].size>1;
-    return {key:"shop|"+o.shop+"|"+o.seats, category:"free", shop:o.shop, rule:"", isShop:true, seats:o.seats,
-      store:(both ? (o.seats===3?"3麻 ":"4麻 ") : "")+"ルール"+o.rules.size+"つの合計", list:o.list};
-  }).sort((a,b)=>a.seats-b.seats);
+  /* v6.39: 名前は**「3麻合計」「4麻合計」で統一**(ユーザー)。v6.38は「ルール2つの合計」と、両方ある店だけ「3麻 ルール2つの合計」で揃っていなかった */
+  return Object.values(by).filter(o=>o.rules.size>=2).map(o=>({key:"shop|"+o.shop+"|"+o.seats, category:"free", shop:o.shop, rule:"", isShop:true, seats:o.seats,
+      store:(o.seats===3?"3麻":"4麻")+"合計", list:o.list})).sort((a,b)=>a.seats-b.seats);
 }
 /* 詳細・月送り・書き換えが開いている組を引く(ルールの組 or 店全体) */
 function mjStatGroup(key){
@@ -3636,9 +3632,9 @@ function mjAgg(list, mk){
     score:L.filter(mjScoreIsPt).reduce((a,s)=>a+fnum(s.score),0),
     scoreH:L.filter(mjScoreIsPt).reduce((a,s)=>a+mjHanchan(s),0),
     chips:L.reduce((a,s)=>a+fnum(s.chips),0),
-    /* v6.37: **チップは付けた卓の半荘だけで割る**(ユーザー: チップは取れていない)。付けていない卓の「0枚」は事実ではない——
-       v5.64のスコアと同じ形。0枚の卓は「付けていない」と見分けられないので数えない(1日で差し引き0枚はまれ) */
-    chipH:L.filter(s=>fnum(s.chips)!==0).reduce((a,s)=>a+mjHanchan(s),0),
+    /* v6.39: チップは**セットだけ**に出す(ユーザー: セットは完璧にチップのデータが取れている・フリーは取り切るのが不可能なので記載しなくて良い)。
+       セットの0枚は本当の0枚なので全部の半荘で割る。1枚も無いルール(チップ無し)なら行を出さない。v6.37の「付けた卓だけで割る」はやめた */
+    chipAny:L.some(s=>fnum(s.chips)!==0),
     /* v6.37: **足すと平均収支(ゲーム代込)になる内訳**。v6.36までは バック・経費の行が無く、
        「ゲーム代抜 +196 + ゲーム代 −387 = −191 なのに 込は −46」と合わなかった(差はバック)。
        込 = 抜 − ゲーム代 + バック − 経費 は、金額の卓・素点の卓のどちらでも mjFinal/mjRaw の定義どおりに成り立つ */
@@ -3655,11 +3651,13 @@ function mjRoundParts(vals, tot){
   return out;
 }
 const MJ_AGG_INFO="1半荘あたりの平均です。<b>下の行を足すと、平均収支(ゲーム代込)になります。</b><br>"+
-  "ゲーム代抜(店での勝ち負け + 卓の外) + ゲーム代(払った額 + バック) + 経費<br><br>"+
-  "半荘の記録で締めた卓の収支は、<b>店での精算(実際に動いたお金)</b>から出しています。チップを付けていなくても、その分は「店での勝ち負け」に入っているので、<b>付け忘れても収支はずれません</b>。<br><br>"+
+  "ゲーム代抜(卓での勝ち負け + 卓の外) + ゲーム代(店に払った額 + バック + 経費)<br><br>"+
+  "<b>経費(飲食・交通など)もゲーム代の一部</b>として数えます。<br><br>"+
+  "半荘の記録で締めた卓の収支は、<b>店での精算(実際に動いたお金)</b>から出しています。チップを付けていなくても、その分は「卓での勝ち負け」に入っているので、<b>付け忘れても収支はずれません</b>。<br><br>"+
   "卓の外は、差し馬・馬身など店の精算とは別にやり取りしたお金です。<br><br>"+
-  "平均チップは、チップを付けた卓の半荘だけで割ります。付けていない卓の0枚まで数えると、平均が薄まって嘘になるためです(1枚も付けていなければ出しません)。";
-function mjAggHtml(A){
+  "平均チップは<b>セットだけ</b>に出します(スコア表で全部記録できるため)。フリーはチップを全部は付けきれないので出しません。";
+/* v6.39: G(組)を渡す——チップの行はセットの組だけ */
+function mjAggHtml(A, G){
   const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
   const rankCol = r2<line ? "teal" : (r2>line ? "red" : "amber");
   const cols = A.rc===3 ? ["var(--teal)","var(--amber)","var(--red)"]
@@ -3683,9 +3681,9 @@ function mjAggHtml(A){
     (A.scoreH>0
       ? mjStatRow("平均スコア"+(A.scoreH<A.H?"(素点の分かる"+A.scoreH+"半荘)":""), (A.score/A.scoreH), false, true, "pt")
       : '')+
-    /* v6.37: チップも同じ形(付けた卓だけ・1枚も無ければ出さない) */
-    (A.chipH>0
-      ? mjStatRow("平均チップ"+(A.chipH<A.H?"(付けた"+A.chipH+"半荘)":""), (A.chips/A.chipH), false, true, "枚")
+    /* v6.39: チップは**セットの組だけ**・全部の半荘で割る(セットの0枚は本当の0枚)。1枚も無ければ出さない */
+    ((G && G.category!=="free" && A.chipAny)
+      ? mjStatRow("平均チップ", (A.chips/A.H), false, true, "枚")
       : '')+
     '</div>';
 }
@@ -3697,10 +3695,11 @@ function mjMoneyHtml(A){
   let h='<div class="row between" style="font-size:13px;margin:5px 0 8px;align-items:center"><span style="font-weight:700">平均収支(ゲーム代込)'+infoBtn(MJ_AGG_INFO)+'</span>'+
     '<span class="mono '+clsPM(tot)+'" style="font-weight:700">'+signYen(tot)+'</span></div>';
   h+=mjStatRow("平均収支(ゲーム代抜)", shop+ext, true);
-  if(A.ext) h+=sub("店での勝ち負け", shop)+sub("卓の外(馬身・差し馬など)", ext);
-  h+=mjStatRow("平均ゲーム代", fee+back, true);
-  if(A.back) h+=sub("払った額", fee)+sub("バック", back);
-  if(A.exp) h+=mjStatRow("平均経費", exp, true);
+  /* v6.39: 「店での勝ち負け」→「卓での勝ち負け」(セットは店を問わないので、どちらにも合う名前) */
+  if(A.ext) h+=sub("卓での勝ち負け", shop)+sub("卓の外(馬身・差し馬など)", ext);
+  /* v6.39: **経費もゲーム代の一部**(ユーザー: 経費もゲーム代の一環として入れましょう)。v6.37は別の行「平均経費」だった */
+  h+=mjStatRow("平均ゲーム代", fee+back+exp, true);
+  if(A.back||A.exp) h+=sub("店に払った額", fee)+(A.back ? sub("バック", back) : '')+(A.exp ? sub("経費", exp) : '');
   return h;
 }
 function mjStatRow(label, val, isYen, raw, unit){
@@ -3771,20 +3770,20 @@ function viewMjStatsPage(){
 function viewMjStatDetail(){
   const G=mjStatGroup(UI.mjStatKey);   /* v6.38: 店全体の組も開く */
   let h='<div class="hdr"><button class="navbtn" data-a="mjstlist">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700" class="ellip">'+(G?esc(G.isShop?G.shop+" ・ 店全体":(G.shop?G.shop+" ・ "+G.store:G.store)):"成績")+'</div><div style="width:44px"></div></div>';
+    '<div style="font-size:14px;font-weight:700" class="ellip">'+(G?esc(G.shop?G.shop+" ・ "+G.store:G.store):"成績")+'</div><div style="width:44px"></div></div>';   /* v6.39: 店全体も「店名 ・ 3麻合計」 */
   if(!G) return h+'<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">この記録は見つかりません。</div>';
   const catC=G.category==="free"?"var(--red)":"var(--amber)";
   h+='<div class="row" style="align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap">'+
     '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(G.category==="free"?"フリー":"セット")+'</span>'+
     /* 店全体は、どのルールを合わせたかを添える */
     (G.isShop ? '<span class="tag" style="border:1px solid var(--teal);color:var(--teal)">店全体</span>'+
-      '<span class="muted" style="font-size:11px">'+esc(G.store)+'(' +esc([...new Set(G.list.map(s=>String(s.store||"").trim()||"(ルール名なし)"))].join("・"))+')</span>' : '')+
+      '<span class="muted" style="font-size:11px">'+esc([...new Set(G.list.map(s=>String(s.store||"").trim()||"(ルール名なし)"))].join("・"))+' を合わせた成績</span>' : '')+
     '</div>';
   const all=mjAgg(G.list);
   h+=band("累計");
   h+='<div class="card" style="margin-bottom:14px">'+
     '<div class="muted" style="font-size:11px;margin-bottom:8px">'+all.H+'半荘 / '+all.days+'日</div>'+
-    mjAggHtml(all)+'</div>';
+    mjAggHtml(all, G)+'</div>';
   /* 月別。記録のある月だけを行き来する(空月を延々めくらせない) */
   const months=[...new Set(G.list.map(s=>String(s.date||"").slice(0,7)))].filter(Boolean).sort();
   const cur=UI.mjStatMonth && months.indexOf(UI.mjStatMonth)>=0 ? UI.mjStatMonth : months[months.length-1];
@@ -3797,7 +3796,7 @@ function viewMjStatDetail(){
   const A=mjAgg(G.list, cur);
   h+= A ? '<div class="card" style="margin-bottom:8px">'+
         '<div class="muted" style="font-size:11px;margin-bottom:8px">'+A.H+'半荘 / '+A.days+'日</div>'+
-        mjAggHtml(A)+'</div>'
+        mjAggHtml(A, G)+'</div>'
       : '<div class="muted" style="text-align:center;padding:18px 0;font-size:12px">この月の記録はありません。</div>';
   /* v6.02: **この組の記録の店名・ルール名をまとめて書き換える**(店名の欄ができる前の「DUO虹」を 店名DUO・ルール名虹 に分けるため)。
      v6.38: セットは店を問わないのでルール名だけ。店全体はルールがいくつもあるので出さない(書き換えはルールの組から) */
