@@ -284,7 +284,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.41 (localStorage保存・完全オフライン)
+   Tally 6.42 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1073,7 +1073,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.41";
+const APP_VERSION = "6.42";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5297,9 +5297,34 @@ function viewAssets(){
      **情報量の多い順であり、使う頻度の順でもある**——軍資金は構造上どうしても薄く、
      投資は2027年開始まで使わない。上から順に見て、下ほど「今は見なくていい」になる */
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="bank">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+bBal.toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
+    '<div class="row between" style="align-items:baseline"><span style="font-size:13px;font-weight:700">軍資金</span><span><span class="mono '+(bBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">'+(bBal<0?"−":"")+'¥'+Math.abs(bBal).toLocaleString("ja-JP")+'</span> <span class="muted">›</span></span></div>'+
     /* v4.27: バーと「残りわずか」を撤去。目安を超えた時だけ回収を促す一行を出す */
-    (bBal>ceil?'<div class="amber" style="font-size:11px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'')+'</div>';
+    (bBal>ceil?'<div class="amber" style="font-size:11px;margin-top:4px;font-weight:700">振替目安を超えています +¥'+(bBal-ceil).toLocaleString("ja-JP")+'</div>':'');
+  /* v6.42: **軍資金も所持金と同じ形の内訳**(ユーザー: 軍資金も所持金と同じように内訳を出して欲しい)。構成比の帯 + 置き場ごとの残高と割合。
+     置き場が1つなら出さない(合計と同じ数が並ぶだけ・v4.57の置き場の画面と同じ)。
+     **マイナスの置き場は「借り」**(v4.57: 貯玉も借金も置き場で、符号が違うだけ)。割合を合計に対して出すと、借りがある時に
+     預けが100%を超えて読めない——**帯と割合はプラスの置き場の合計に対して**出し(帯が100%で閉じる)、借りは帯に入れず、
+     割合の欄に赤で「借り」。借りが無ければ所持金とまったく同じ(合計に対する割合) */
+  {
+    const bp=bankPots(), BCOL=["var(--teal)","var(--amber)","#7FB3D5","#B39DDB","#80CBC4","#E8A0A0"];
+    if(bp.length>1){
+      const vals=bp.map(p=>bankBalance(p.id)), pos=vals.reduce((a,v)=>a+Math.max(0,v),0);
+      h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:11px">'+
+        '<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--surface2);margin-bottom:9px">'+
+        bp.map((p,i)=>{ const pc=pos>0?Math.max(0,vals[i]/pos*100):0;
+          return pc>0?'<div style="width:'+pc+'%;background:'+BCOL[i%BCOL.length]+'"></div>':''; }).join("")+'</div>'+
+        bp.map((p,i)=>{ const v=vals[i], debt=v<0;
+          return '<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
+            '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;box-sizing:border-box;'+
+              (debt?'border:1px solid var(--red)':'background:'+BCOL[i%BCOL.length])+'"></span>'+   /* 借りは帯に無いので枠だけ */
+            '<span class="muted">'+esc(p.name)+'</span></span>'+
+            '<span><span class="mono '+(debt?"red":"muted")+'">'+(debt?"−":"")+'¥'+Math.abs(v).toLocaleString("ja-JP")+'</span>'+
+            '<span class="mono '+(debt?"red":"muted")+'" style="display:inline-block;width:38px;text-align:right">'+
+            (debt ? '借り' : (pos>0?Math.round(v/pos*100):0)+'%')+'</span></span></div>'; }).join("")+
+        '</div>';
+    }
+  }
+  h+='</div>';
   /* v4.69: **銘柄数と「今月の買付 N/M銘柄」を撤去**(ユーザー指摘)。
      オルカン1本の方針(IPS)では**銘柄数は常に1になる数字**で、見ても行動が変わらない。
      ヘッダの小さいサブラベル「積立額」も外した——所持金・貯金・軍資金はどれもラベル1語で、
