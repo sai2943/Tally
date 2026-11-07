@@ -178,6 +178,18 @@
   .mjl-tbl tr.ed td{background:rgba(242,179,61,.12);}
   .mjl-tbl td.oya{box-shadow:inset 0 0 0 1px rgba(242,179,61,.55); border-radius:6px;}   /* v6.36: その半荘の親の席 */
   .mjl-tbl td.oya .oyl{font-family:inherit; font-size:9px; font-weight:700; color:var(--amber); margin-right:2px; vertical-align:1px;}
+  /* v6.41: 店・ルール別 成績の収支(名前 | 1半荘平均 | 合計 の3列。列の幅を揃えて縦に読めるように) */
+  .mjm-row{display:grid; grid-template-columns:minmax(0,1fr) 64px 88px; column-gap:6px; align-items:baseline; font-size:12px; margin:5px 0;}
+  .mjm-row > .mono{text-align:right; white-space:nowrap;}
+  .mjm-row.head{font-size:10px; margin:0 0 4px;}
+  .mjm-row.head > span{text-align:right;}
+  .mjm-row.top{font-size:13px; margin:2px 0 8px; align-items:center;}
+  .mjm-row.top .mjm-l{font-weight:700;}
+  .mjm-row.top > .mono{font-weight:700;}
+  .mjm-row.sub{font-size:11px; margin:2px 0;}
+  .mjm-row.sub .mjm-l{padding-left:14px;}
+  .mjm-l{min-width:0;}
+  .mjm-n{display:block; font-size:10px; color:var(--muted);}
   .mjl-tbl tr.more td{font-family:inherit; font-size:11px; color:var(--muted); text-align:left; padding:7px 8px; cursor:pointer;}   /* v6.17: 畳んだ前の半荘 */
   .ibtn{display:inline-flex; align-items:center; justify-content:center; padding:6px; margin:-6px -6px -6px 0;
     background:none; border:0; cursor:pointer; flex-shrink:0; vertical-align:middle;}
@@ -272,7 +284,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.40 (localStorage保存・完全オフライン)
+   Tally 6.41 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1061,7 +1073,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.40";
+const APP_VERSION = "6.41";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3660,7 +3672,7 @@ function mjRoundParts(vals, tot){
   vals.map((v,i)=>[v-Math.floor(v),i]).sort((a,b)=>b[0]-a[0]).forEach(([,i])=>{ if(rest>0){ out[i]++; rest--; } });
   return out;
 }
-const MJ_AGG_INFO="1半荘あたりの平均です。<b>下の行を足すと、平均収支(ゲーム代込)になります。</b><br>"+
+const MJ_AGG_INFO="左の列は<b>1半荘あたりの平均</b>、右の列は<b>合計</b>(この期間に積み上げた金額)です。どちらの列も<b>下の行を足すと、上の行(収支(ゲーム代込))になります。</b><br>"+
   "ゲーム代抜(スコア + 馬身 + 差し馬) + ゲーム代(店に払った額 + バック + 経費)<br><br>"+
   "<b>経費(飲食・交通など)もゲーム代の一部</b>として数えます。<br><br>"+
   "<b>スコア</b>は、卓での勝ち負けのうち、下に分けて出した分(馬身・差し馬、セットのチップ)を除いた残りです。半荘の記録で締めた卓は<b>店での精算(実際に動いたお金)</b>から出しているので、チップや飛びを付けていなくても、その分はスコアに入っていて<b>収支はずれません</b>。<br><br>"+
@@ -3695,30 +3707,38 @@ function mjAggHtml(A, G){
     '</div>';
 }
 /* v6.37: お金の行。**上の行 = 下の行の和**(各ブロックも 見出し = 字下げの行の和)。0の内訳は出さない */
+/* v6.41: **平均と合計(積み上げ)の2列**(ユーザー: 平均以外に純粋な積み上げ金額も分かると嬉しい)。
+   見出しの行に「1半荘平均」「合計」。項目の名前から「平均」を外した(列の見出しが言う)。
+   合計は円の和そのまま(どの項目も整数の円)で、**合計の列も 上の行 = 下の行の和** がそのまま成り立つ。平均の列は v6.37 の最大剰余で合わせる */
 function mjMoneyHtml(A, G){
   const H=A.H, tot=Math.round(A.final/H);
   /* v6.39: チップは**セットの組だけ**(セットの0枚は本当の0枚なので全部の半荘で割る。1枚も無いルールなら出さない)。フリーはスコアに含める */
   const chipOn=!!(G && G.category!=="free" && A.chipAny), chipY=chipOn ? A.chipY : 0;
+  /* 合計(円)。score は残り(抜 − 分けて出した分) */
+  const T={score:A.raw-A.ext-chipY, chip:chipY, uma:A.umaX, sashi:A.sashiX, other:A.otherX, fee:-A.fee, back:A.back, exp:-A.exp};
   const [score, chip, uma, sashi, other, fee, back, exp]=mjRoundParts(
-    [(A.raw-A.ext-chipY)/H, chipY/H, A.umaX/H, A.sashiX/H, A.otherX/H, -A.fee/H, A.back/H, -A.exp/H], tot);
-  const sub=(l,v)=>'<div class="row between" style="font-size:11px;margin:2px 0;padding-left:14px"><span class="muted">'+l+'</span><span class="mono '+clsPM(v)+'">'+signYen(v)+'</span></div>';
-  let h='<div class="row between" style="font-size:13px;margin:5px 0 8px;align-items:center"><span style="font-weight:700">平均収支(ゲーム代込)'+infoBtn(MJ_AGG_INFO)+'</span>'+
-    '<span class="mono '+clsPM(tot)+'" style="font-weight:700">'+signYen(tot)+'</span></div>';
-  h+=mjStatRow("平均収支(ゲーム代抜)", score+chip+uma+sashi+other, true);
+    [T.score/H, T.chip/H, T.uma/H, T.sashi/H, T.other/H, T.fee/H, T.back/H, T.exp/H], tot);
+  const v=(x)=>'<span class="mono '+clsPM(x)+'">'+signYen(x)+'</span>';
+  const row=(cls, label, avg, sum)=>'<div class="mjm-row '+cls+'"><span class="mjm-l">'+label+'</span>'+v(avg)+v(sum)+'</div>';
+  let h='<div class="mjm-row head"><span></span><span class="muted">1半荘平均</span><span class="muted">合計</span></div>'+
+    row("top", '収支(ゲーム代込)'+infoBtn(MJ_AGG_INFO), tot, A.final);
+  h+=row("", '<span class="muted">収支(ゲーム代抜)</span>', score+chip+uma+sashi+other, A.raw);
   /* v6.40: 「卓での勝ち負け」→「**スコア**」、卓の外は「**馬身**」「**差し馬**」に分ける(ユーザー: 折角データが取れているので分ける)。
      どちらでもない卓の外(古い記録の「バック」など)は「卓の外(その他)」。分けるものが1つも無ければ内訳は出さない */
   if(chipOn || A.umaX || A.sashiX || A.otherX){
-    /* 枚数は1半荘あたりで小さいので小数2桁(1桁だと +0.04枚 が「+0枚」なのに円は +¥7 と出て食い違って見える) */
-    const cn=Math.round(A.chips/H*100)/100;
-    h+=sub("スコア", score)+
-      (chipOn ? sub("チップ("+(cn>=0?"+":"")+String(cn)+"枚)", chip) : '')+
-      (A.umaX ? sub("馬身", uma) : '')+
-      (A.sashiX ? sub("差し馬", sashi) : '')+
-      (A.otherX ? sub("卓の外(その他)", other) : '');
+    /* 枚数: 合計と1半荘あたり(1半荘は小さいので小数2桁。1桁だと +0.04枚 が「+0枚」なのに円は +¥7 と出て食い違って見える) */
+    const cn=Math.round(A.chips/H*100)/100, sg=x=>(x>=0?"+":"")+x;
+    h+=row("sub", '<span class="muted">スコア</span>', score, T.score)+
+      (chipOn ? row("sub", '<span class="muted">チップ</span><span class="mjm-n">計'+sg(fmtPt(A.chips))+'枚・1半荘 '+sg(String(cn))+'枚</span>', chip, T.chip) : '')+
+      (A.umaX ? row("sub", '<span class="muted">馬身</span>', uma, T.uma) : '')+
+      (A.sashiX ? row("sub", '<span class="muted">差し馬</span>', sashi, T.sashi) : '')+
+      (A.otherX ? row("sub", '<span class="muted">卓の外(その他)</span>', other, T.other) : '');
   }
   /* v6.39: **経費もゲーム代の一部**(ユーザー: 経費もゲーム代の一環として入れましょう)。v6.37は別の行「平均経費」だった */
-  h+=mjStatRow("平均ゲーム代", fee+back+exp, true);
-  if(A.back||A.exp) h+=sub("店に払った額", fee)+(A.back ? sub("バック", back) : '')+(A.exp ? sub("経費", exp) : '');
+  h+=row("", '<span class="muted">ゲーム代</span>', fee+back+exp, T.fee+T.back+T.exp);
+  if(A.back||A.exp) h+=row("sub", '<span class="muted">店に払った額</span>', fee, T.fee)+
+    (A.back ? row("sub", '<span class="muted">バック</span>', back, T.back) : '')+
+    (A.exp ? row("sub", '<span class="muted">経費</span>', exp, T.exp) : '');
   return h;
 }
 function mjStatRow(label, val, isYen, raw, unit){
@@ -3759,7 +3779,10 @@ function viewMjStatsPage(){
       '<div class="row" style="align-items:center;gap:6px;min-width:0">'+
       '<span class="tag" style="border:1px solid '+catC+';color:'+catC+';flex-shrink:0">'+(G.isShop?"店全体":(G.category==="free"?"フリー":"セット"))+'</span>'+
       '<span class="wrapname" style="font-weight:700;font-size:13px">'+esc(G.store)+'</span></div>'+   /* v6.03: 長いルール名も切らない */
-      '<span style="font-size:18px;color:var(--muted);flex-shrink:0">›</span></div>'+
+      /* v6.41: この組の収支の合計(積み上げ)も右上に(店の見出しの金額と同じ形) */
+      '<span class="row" style="align-items:center;gap:6px;flex-shrink:0"><span class="muted" style="font-size:10px">合計</span>'+
+        '<span class="mono '+clsPM(A.final)+'" style="font-size:12px;font-weight:700">'+signYen(A.final)+'</span>'+
+        '<span style="font-size:18px;color:var(--muted)">›</span></span></div>'+
       '<div class="row between" style="margin-top:8px;font-size:11px">'+
       '<span class="muted">'+A.H+'半荘 / '+A.days+'日</span>'+
       '<span><span class="muted">平均着順 </span><span class="mono '+rankCol+'" style="font-weight:700">'+A.avgRank.toFixed(2)+'</span>'+
