@@ -176,6 +176,8 @@
   .mjl-tbl td.x{width:26px; color:var(--red);}
   .mjl-tbl tr.nm td{font-family:inherit; font-size:11px; color:var(--muted); background:var(--surface2); padding:5px 2px;}
   .mjl-tbl tr.ed td{background:rgba(242,179,61,.12);}
+  .mjl-tbl td.oya{box-shadow:inset 0 0 0 1px rgba(242,179,61,.55); border-radius:6px;}   /* v6.36: その半荘の親の席 */
+  .mjl-tbl td.oya .oyl{font-family:inherit; font-size:9px; font-weight:700; color:var(--amber); margin-right:2px; vertical-align:1px;}
   .mjl-tbl tr.more td{font-family:inherit; font-size:11px; color:var(--muted); text-align:left; padding:7px 8px; cursor:pointer;}   /* v6.17: 畳んだ前の半荘 */
   .ibtn{display:inline-flex; align-items:center; justify-content:center; padding:6px; margin:-6px -6px -6px 0;
     background:none; border:0; cursor:pointer; flex-shrink:0; vertical-align:middle;}
@@ -270,7 +272,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.35 (localStorage保存・完全オフライン)
+   Tally 6.36 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1059,7 +1061,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.35";
+const APP_VERSION = "6.36";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2122,6 +2124,8 @@ function viewMjLog(){
     ((f.st || f.parts || (!_ed && mjlFull()))
       ? (()=>{ const parts=(f.st || (f.parts ? ['me'].concat(f.parts) : mjlSeat())), ord=f.order||[];   /* v5.79: 席順で並べる */
           return '<div class="fxl">着順(1着から順に名前を押す)'+(_ed?'':infoBtn(MJL_ORD_INFO))+'</div>'+
+            /* v6.36: この半荘の親(起家)。新しい半荘を入れる時だけ(直している時・席の無い古い形では出さない) */
+            ((_ed || f.st || f.parts) ? '' : mjlOyaLineHtml())+
             '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:6px">'+
             parts.map((pid,pi)=>{ const k=ord.indexOf(pid);
               const lt=(f.st||!f.parts) ? '<span class="mono muted" style="font-size:11px;font-weight:400">'+MJL_SEATS[pi]+'</span> ' : '';
@@ -2273,7 +2277,8 @@ function viewMjLog(){
           if(pid==null) return '<td data-ml="edit" data-v="'+i+'"></td>';
           const rk=num(r.ranks&&r.ranks[pid]);
           const col= rk===1 ? RK[0] : (rk===st.length ? RK[RK.length-1] : (RK[rk-1]||"var(--text)"));
-          return '<td data-ml="edit" data-v="'+i+'" style="color:'+col+(pid==="me"?';font-weight:700':'')+'">'+(rk||'')+'</td>'; }).join("")+
+          const oy=(r.oya!=null && num(r.oya)===k);   /* v6.36: その半荘の親の席に「親」(並びが斜めに続かない所が、親が飛んだ所) */
+          return '<td data-ml="edit" data-v="'+i+'"'+(oy?' class="oya"':'')+' style="color:'+col+(pid==="me"?';font-weight:700':'')+'">'+(oy?'<span class="oyl">親</span>':'')+(rk||'')+'</td>'; }).join("")+
         '<td class="x" data-ml="del" data-v="'+i+'">✕</td></tr>';
     });
     /* 見出し: 半荘数と着順の回数(v6.16までは一番上の集計カードにあった) */
@@ -2341,6 +2346,7 @@ function bindMjLog(){
            v6.31までは「メンバーは残す」で、前の卓の人が座ったまま残っていた。人の名前は消さずに、席を聞く時の名前のボタンに使う
            (ここで mjlPrune すると、座っていない人として全部消えてしまう)。席を決めた時に人の一覧は作り直す */
         delete S.mjLog.seat; delete S.mjLog.seatOk;
+        delete S.mjLog.oyaNext; delete S.mjLog.oyaReset;   /* v6.36: 親も次の卓で選び直す */
         mjlUiFresh();
         save(); render(); toast("リセットしました"); return;
       }
@@ -2403,6 +2409,7 @@ function bindMjLog(){
         const st=[]; for(let i=0;i<n;i++) st.push(i===k ? "me" : mjlNewX());
         S.mjLog.seat=st; UI.mjlMoving=false; UI.mjlSeatEd=null; UI.mjlMemOpen=true;
         S.mjLog.pendEv="卓移動";   /* v5.82: 次の半荘に「卓移動」を付ける(一番強い) */
+        delete S.mjLog.oyaNext; S.mjLog.oyaReset=true; UI.mjlOyaEd=false;   /* v6.36: 新しい卓の親は分からない → 選び直す */
         save(); render(); toast("卓を移りました(自分は"+MJL_SEATS[k]+"席)"); return;
       }
 
@@ -2422,6 +2429,8 @@ function bindMjLog(){
         render(); return;
       }
       if(a==="undo"){ mjlUndo(); return; }   /* v6.31 */
+      if(a==="oyaed"){ UI.mjlOyaEd=!UI.mjlOyaEd; render(); return; }   /* v6.36: 親を直す(席のボタンを出す/閉じる) */
+      if(a==="oyapick"){ mjlOyaPick(v); return; }
       if(a==="sume"||a==="supick"||a==="sux"||a==="suname"){ mjlSetupTap(a, v); return; }   /* v6.32: 新しい卓の席を聞く */
       if(a==="nmedit"||a==="nmhide"||a==="nmshow"||a==="nmmerge"||a==="nminto"||a==="nmintonew"){ mjlNameTap(a, v); return; }   /* v6.33: 名前のボタンから消す・戻す。v6.34: まとめる */
       /* v5.78: 差し馬(sa)と馬身(um)は別々に選ぶ */
@@ -5592,9 +5601,10 @@ function mjlStatusHtml(now){
   let h, warn='';
   if(j && t && num(j.t)===t && now-t<MJL_UNDO_MS && !(f.order||[]).length){
     const rk=last.ranks||{me:last.rank}, ord=Object.keys(rk).sort((a,b)=>num(rk[a])-num(rk[b]));
+    const oyId=(last.oya!=null && last.st) ? last.st[num(last.oya)] : null;   /* v6.36: 今記録した半荘の親(違っていたら付け忘れ。取り消して先に足せる) */
     h='<div class="row between" style="align-items:center;gap:8px">'+
       '<span style="font-size:12px;line-height:1.5;min-width:0"><span class="teal" style="font-weight:700">✓ '+rows.length+'半荘目</span> '+
-      ord.map(p=>'<span style="white-space:nowrap">'+esc(rk[p]+'着 '+mjlName(p))+'</span>').join('・')+'</span>'+   /* 名前の途中で折り返さない */
+      ord.map(p=>'<span style="white-space:nowrap">'+esc(rk[p]+'着 '+mjlName(p))+(p===oyId ? '<span class="amber" style="font-size:10px;font-weight:700;margin-left:2px">(親)</span>' : '')+'</span>').join('・')+'</span>'+   /* 名前の途中で折り返さない */
       '<button class="btn" style="font-size:11px;padding:5px 12px;flex-shrink:0" data-ml="undo">取り消す</button></div>';
     if(before) warn='前の記録から'+mjlAgo(before.gap)+'空いていました'+usTxt(before.usual)+'。付け忘れはありませんか?';
   } else {
@@ -5640,7 +5650,7 @@ function mjlCommit(){
   if(f.editIdx!=null && rows0[f.editIdx]){
     /* v5.82: 直しても、その半荘の前に起きた出来事の印は残す。v6.31: 記録した時刻も残す(直すたびに間隔が狂わないように) */
     const old=rows0[f.editIdx];
-    S.mjLog.rows=rows0.map((x,k)=> k===num(f.editIdx) ? Object.assign(row,{at:old.at||row.at}, old.ev?{ev:old.ev}:{}, old.t?{t:old.t}:{}) : x);
+    S.mjLog.rows=rows0.map((x,k)=> k===num(f.editIdx) ? Object.assign(row,{at:old.at||row.at}, old.ev?{ev:old.ev}:{}, old.t?{t:old.t}:{}, old.oya!=null?{oya:old.oya}:{}) : x);   /* v6.36: 親も残す */
     UI.mjlForm={rank:0, uma:0}; UI.mjlJust=null;
     save(); render(); toast((num(f.editIdx)+1)+"半荘目を直しました");
     return true;
@@ -5662,6 +5672,8 @@ function mjlCommit(){
   /* v5.82: **実際に行った操作を印として付ける**(ユーザー指摘: 卓移動と交代を区別して出して欲しい)。
      v5.80は席の並びの変化から推測していたので、ツルさんと一緒に卓を移った時(=1人は同じ)を「交代」と誤表示した */
   if(S.mjLog.pendEv){ row.ev=S.mjLog.pendEv; delete S.mjLog.pendEv; }
+  /* v6.36: その半荘の親の席(全員の着順で入れる時だけ。席の並びがある形)。直した親は1回使ったら外す */
+  { const oy=row.st ? mjlOyaNext() : null; if(oy!=null) row.oya=oy; delete S.mjLog.oyaNext; delete S.mjLog.oyaReset; UI.mjlOyaEd=false; }
   S.mjLog.rows=rows0.concat([row]);
   S.mjLog.seatOk=true;   /* v6.32: 記録したら席は決まっている(取り消して0半荘に戻っても、席を聞き直さない) */
   /* **次の半荘へすぐ入れる**ように選択を外す。取り消すための印と、この半荘の前の空き(長ければ付け忘れを聞く) */
@@ -5681,8 +5693,64 @@ function mjlUndo(){
   if(Date.now()-num(j.t) > MJL_UNDO_MS+60000){ render(); toast("記録から2分を過ぎたので、表の行の✕で消してください"); return false; }
   S.mjLog.rows=rows.slice(0,-1);
   if(last.ev && (MJL_EV_RANK[last.ev]||0)>(MJL_EV_RANK[S.mjLog.pendEv]||0)) S.mjLog.pendEv=last.ev;
+  if(last.oya!=null) S.mjLog.oyaNext=num(last.oya);   /* v6.36: 取り消した半荘の親に戻す(押し直すとまたその親で付く) */
+  else { const pv=rows[rows.length-2]; if(pv && pv.oya!=null) S.mjLog.oyaReset=true; }   /* 親の無い半荘の前に親があった = 卓移動の後で選んでいなかった。選び直す形に戻す */
   UI.mjlForm={rank:0, uma:0};
   save(); render(); toast(rows.length+"半荘目を取り消しました");
+  return true;
+}
+/* v6.36【親(起家)が移る】(ユーザー: 誰が親でスタートか設定して、以下親は移っていく感じにしたい。それを設定すれば何処が抜けてるか分かりやすくなる。
+   親は A→B→C→A の順番で移る)。
+   ・最初の半荘で親の席を選ぶと、記録するたびに次の席へ移る(4麻は A→B→C→D→A)。各行に**その半荘の親の席(oya)**を残す
+   ・着順の上に「N半荘目の親 B ツル」——お店の起家と見比べて、違えば付け忘れ。表には各半荘の親の席に「親」
+   ・「直す」で本当の親を選ぶと、予定の親との差から**どの親の半荘が抜けたか**を言う(付け忘れなら先にその半荘を記録すれば、親は自動で合う)
+   次の半荘の親 = 直した親(oyaNext・1回だけ) → なければ最後の行の親の次。卓移動の後は分からない(oyaReset)ので選び直す */
+function mjlOyaNext(){
+  const L=S.mjLog||{}, n=mjLogConf().seats;
+  if(L.oyaNext!=null && L.oyaNext!=="") return ((num(L.oyaNext)%n)+n)%n;
+  if(L.oyaReset) return null;
+  const rows=mjLogRows(), last=rows[rows.length-1];
+  return (last && last.oya!=null) ? (num(last.oya)+1)%n : null;
+}
+const MJL_OYA_INFO="この半荘の<b>起家(最初の親)</b>の席です。最初の半荘で選ぶと、記録するたびに A→B→C→A(4麻は A→B→C→D→A)の順に移ります。<br><br>"+
+  "<b>お店の起家と違ったら</b>、半荘が抜けている(付け忘れ)かもしれません。「直す」で本当の親を選ぶと、どの親の半荘が抜けたかを教えます。付け忘れなら、先にその半荘を記録すれば、親は自動で合います。<br><br>"+
+  "記録した直後の行にも、その半荘の親に「(親)」と出ます。違っていたら「取り消す」で戻して、抜けた半荘を先に記録してください。<br><br>"+
+  "下の表では、各半荘の親の席に「親」と出ます。並びが斜めに続いていない所が、親が飛んだ所です。<br><br>卓移動した時は、新しい卓の親を選び直します。";
+/* 着順の上の1行。決まっていなければ席のボタン(最初の親を選ぶ)、決まっていれば「N半荘目の親 B ツル」と「直す」 */
+function mjlOyaLineHtml(){
+  const st=mjlSeat(), n=st.length, nx=mjlOyaNext(), no=mjLogRows().length+1, ed=!!UI.mjlOyaEd;
+  const pick=(sel)=>st.map((_,k)=>'<button class="btn'+(sel===k?' sel':'')+'" style="font-size:13px;padding:6px 12px;font-weight:700" data-ml="oyapick" data-v="'+k+'">'+MJL_SEATS[k]+'</button>').join("");
+  let h='<div class="row between" style="align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap">'+
+    '<span style="font-size:12px" class="muted">'+no+'半荘目の親'+infoBtn(MJL_OYA_INFO)+'</span>';
+  if(nx==null || ed){
+    h+='<span class="row" style="gap:6px;align-items:center">'+pick(ed ? nx : null)+(ed ? '<button class="btn" style="font-size:11px;padding:6px 10px" data-ml="oyaed">やめる</button>' : '')+'</span>';
+  } else {
+    h+='<span class="row" style="gap:8px;align-items:center">'+
+      '<span style="font-size:15px;font-weight:700"><span class="mono amber">'+MJL_SEATS[nx]+'</span> '+esc(st[nx]==="me" ? "自分" : mjlName(st[nx]))+'</span>'+
+      '<button class="btn" style="font-size:11px;padding:4px 10px" data-ml="oyaed">直す</button></span>';
+  }
+  h+='</div>';
+  if(nx==null && !ed) h+='<div class="muted" style="font-size:11px;margin:-6px 0 10px">'+(no===1 ? '最初の半荘の親の席を選ぶと、次からは自動で移ります' : 'この半荘の親の席を選ぶと、次からは自動で移ります')+'</div>';
+  return h;
+}
+/* 親を選ぶ・直す。予定の親と違えば、その差の分の半荘が抜けていないか聞く(OK = 抜けていない・ここから選んだ親で移る) */
+function mjlOyaPick(k){
+  const n=mjlSeat().length; k=num(k); if(k<0||k>=n) return false;
+  const nx=mjlOyaNext(), st=mjlSeat(), who=i=>MJL_SEATS[i]+"("+(st[i]==="me" ? "自分" : mjlName(st[i]))+")";
+  if(nx!=null && k===nx){ UI.mjlOyaEd=false; render(); return true; }
+  if(nx!=null){
+    const gap=((k-nx)%n+n)%n, miss=[]; for(let i=0;i<gap;i++) miss.push("親"+MJL_SEATS[(nx+i)%n]);
+    const nxt=[]; for(let i=0;i<n;i++) nxt.push(MJL_SEATS[(k+i)%n]);
+    /* 1つ戻った(差が 人数−1)時は、付け忘れより**1つ多く記録した**(同じ半荘を2回)ことが多い。3麻なら「2つ抜け」と「1つ多い」は同じ差になる */
+    const back=(gap===n-1);
+    if(!confirm("親を "+who(k)+" にしますか?\n\n予定は "+who(nx)+" でした。"+miss.join("・")+" の半荘("+gap+"つ)を付け忘れ"+(back ? "たか、1つ多く記録していませんか(同じ半荘を2回など)?" : "ていませんか?")+"\n\n"+
+      "付け忘れなら「キャンセル」を押して、先にその半荘を記録してください(記録すると親は自動で移ります)。\n"+
+      (back ? "多く記録したなら「キャンセル」を押して、表のその行を✕で消してください。\nどちらでもないなら" : "抜けていないなら")+"「OK」(ここから "+nxt.concat([MJL_SEATS[k]]).join("→")+" と移ります)。")){
+      UI.mjlOyaEd=false; render(); return false;
+    }
+  }
+  S.mjLog.oyaNext=k; delete S.mjLog.oyaReset; UI.mjlOyaEd=false;
+  save(); render(); toast(mjLogRows().length+1+"半荘目の親を "+who(k)+" にしました");
   return true;
 }
 /* 新しい記録の画面の、何も触っていない形(起動時に開く形と同じ) */
@@ -5715,7 +5783,7 @@ function mjlNeedSetup(){ return !mjLogRows().length && !(S.mjLog||{}).seatOk; }
 /* 画面の状態(押しかけ・開閉・席を聞く下書き)を新しい卓の形に戻す。リセット・締めた後・席を決めた時 */
 function mjlUiFresh(){
   UI.mjlForm={rank:0, uma:0}; UI.mjlJust=null; UI.mjlSetup=null; UI.mjlHistAll=false; UI.mjlVsOpen=false;
-  UI.mjlMemOpen=null; UI.mjlSeatEd=null; UI.mjlMoving=false; UI.mjlNewName=""; UI.mjlNameEdit=false; UI.mjlMergeFrom=null;
+  UI.mjlMemOpen=null; UI.mjlSeatEd=null; UI.mjlMoving=false; UI.mjlNewName=""; UI.mjlNameEdit=false; UI.mjlMergeFrom=null; UI.mjlOyaEd=false;
 }
 /* v6.33【名前のボタンから消す】(ユーザー: 名前の予想をツル・チョロで統一したいので、さん付けの名前を消したい。ほかにも名前を消す機能がほしい)。
    名前のボタンは**前の記録から作っている**(前の卓の人・麻雀の記録の同卓者)ので、消すのは**ボタンに出さない名前の一覧**(S.mjLog.hideNames)。
@@ -9007,6 +9075,7 @@ function saveMj(){
        v5.77の「メンバーは残す(同じ面子なら入れ直さない)」はやめた。同じ面子なら、席を聞く画面の名前のボタン
        (この卓の同卓者は締めた記録の players に入る)を押すだけで済む */
     delete keep.seat; delete keep.seatOk;
+    delete keep.oyaNext; delete keep.oyaReset;   /* v6.36: 親も次の卓で選び直す */
     S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
     mjlPrune();   /* 座っている人も記録も無いので、人の一覧は空になる(仮称も残らない) */
     mjlUiFresh();
