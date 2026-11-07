@@ -272,7 +272,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.36 (localStorage保存・完全オフライン)
+   Tally 6.37 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1061,7 +1061,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.36";
+const APP_VERSION = "6.37";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2481,7 +2481,10 @@ function bindMjLog(){
           calc:"score", inAmt:"", outAmt:"",
           startAt:"", endAt:"",
           /* **スコア分をそのまま円で**(レート1)。素点は持っていないので金額を直接載せる */
-          score:String(t.score), scoreRate:"1",
+          /* v6.37【不具合】**飛びの額もスコアに入れる**。スコア分は精算から飛びを引いた残りで、締めた記録には飛びの欄が無いので、
+             v6.36までは飛びを押した卓の収支から飛びの額が抜けていた(半荘の記録の最終収支 +2,900 → 締めた記録 +2,400)。
+             飛びは店の精算の中なので、スコアと同じ「店での勝ち負け」に入れる */
+          score:String(t.score+t.tobiY), scoreRate:"1",
           chips:String(t.chip), chipRate:String(c.chipUnit),
           ranks:[rc[0]||"", rc[1]||"", rc[2]||"", rc[3]||""],
           /* **ゲーム代とトップ賞は既存の器にそのまま入れる**——半荘数と1着回数から
@@ -2501,6 +2504,7 @@ function bindMjLog(){
           extras: t.outs.filter(x=>x.yen).map(x=>({id:uid(), name:x.kind+(x.who?" "+x.who:"")+" "+(x.n>=0?"+":"−")+Math.abs(x.n), who:x.who||"", amount:String(x.yen)})),
           memo:"半荘の記録から: "+t.n+"半荘 "+rc.join("-")+
                " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+(t.drink?" ドリンク代"+signYen(t.drink):"")+
+               (t.tobiY?" / 飛び"+(t.tobi>=0?"+":"−")+Math.abs(t.tobi)+"("+signYen(t.tobiY)+"・スコアに含む)":"")+
                " / 店での精算"+signYen(t.settle),
           bwal:String(S.mjLog.bwal||(bankPots()[0]||{}).id||"")
         };
@@ -3597,8 +3601,30 @@ function mjAgg(list, mk){
        母数をHのままにすると、素点不明の卓のぶん平均が薄まって別の嘘になる */
     score:L.filter(mjScoreIsPt).reduce((a,s)=>a+fnum(s.score),0),
     scoreH:L.filter(mjScoreIsPt).reduce((a,s)=>a+mjHanchan(s),0),
-    chips:L.reduce((a,s)=>a+fnum(s.chips),0)};
+    chips:L.reduce((a,s)=>a+fnum(s.chips),0),
+    /* v6.37: **チップは付けた卓の半荘だけで割る**(ユーザー: チップは取れていない)。付けていない卓の「0枚」は事実ではない——
+       v5.64のスコアと同じ形。0枚の卓は「付けていない」と見分けられないので数えない(1日で差し引き0枚はまれ) */
+    chipH:L.filter(s=>fnum(s.chips)!==0).reduce((a,s)=>a+mjHanchan(s),0),
+    /* v6.37: **足すと平均収支(ゲーム代込)になる内訳**。v6.36までは バック・経費の行が無く、
+       「ゲーム代抜 +196 + ゲーム代 −387 = −191 なのに 込は −46」と合わなかった(差はバック)。
+       込 = 抜 − ゲーム代 + バック − 経費 は、金額の卓・素点の卓のどちらでも mjFinal/mjRaw の定義どおりに成り立つ */
+    back:L.reduce((a,s)=>a+mjFeeBack(s),0),
+    exp:L.reduce((a,s)=>a+mjExpTotal(s),0),
+    ext:L.reduce((a,s)=>a+mjExtraTotal(s),0)};
 }
+/* v6.37: 平均の内訳を1円に丸めても、**足すと上の行(丸めた合計)にぴったり合う**ように配る(最大剰余)。
+   tot は合計を丸めた値(一覧の「平均収支」と同じ数)。各行は元の値から1円未満しか動かない */
+function mjRoundParts(vals, tot){
+  const out=vals.map(v=>Math.floor(v));
+  let rest=tot-out.reduce((a,v)=>a+v,0);
+  vals.map((v,i)=>[v-Math.floor(v),i]).sort((a,b)=>b[0]-a[0]).forEach(([,i])=>{ if(rest>0){ out[i]++; rest--; } });
+  return out;
+}
+const MJ_AGG_INFO="1半荘あたりの平均です。<b>下の行を足すと、平均収支(ゲーム代込)になります。</b><br>"+
+  "ゲーム代抜(店での勝ち負け + 卓の外) + ゲーム代(払った額 + バック) + 経費<br><br>"+
+  "半荘の記録で締めた卓の収支は、<b>店での精算(実際に動いたお金)</b>から出しています。チップを付けていなくても、その分は「店での勝ち負け」に入っているので、<b>付け忘れても収支はずれません</b>。<br><br>"+
+  "卓の外は、差し馬・馬身など店の精算とは別にやり取りしたお金です。<br><br>"+
+  "平均チップは、チップを付けた卓の半荘だけで割ります。付けていない卓の0枚まで数えると、平均が薄まって嘘になるためです(1枚も付けていなければ出しません)。";
 function mjAggHtml(A){
   const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
   const rankCol = r2<line ? "teal" : (r2>line ? "red" : "amber");
@@ -3617,16 +3643,31 @@ function mjAggHtml(A){
         '<div style="height:100%;width:'+pct+'%;background:'+cols[i]+';border-radius:4px"></div></div></div>';
     }).join("")+'</div>'+
     '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">'+
-    mjStatRow("平均収支(ゲーム代込)", Math.round(A.final/A.H), true)+
-    mjStatRow("平均収支(ゲーム代抜)", Math.round(A.raw/A.H), true)+
-    mjStatRow("平均ゲーム代", -Math.round(A.fee/A.H), true)+
+    mjMoneyHtml(A)+
     /* v5.64: 素点の分かる卓が1つも無いなら**行ごと出さない**(0ptは事実ではない)。
        一部だけ分かるときは**母数がHと違う**ことを添える——黙って出すと全体の平均に見える */
     (A.scoreH>0
       ? mjStatRow("平均スコア"+(A.scoreH<A.H?"(素点の分かる"+A.scoreH+"半荘)":""), (A.score/A.scoreH), false, true, "pt")
       : '')+
-    mjStatRow("平均チップ", (A.chips/A.H), false, true, "枚")+
+    /* v6.37: チップも同じ形(付けた卓だけ・1枚も無ければ出さない) */
+    (A.chipH>0
+      ? mjStatRow("平均チップ"+(A.chipH<A.H?"(付けた"+A.chipH+"半荘)":""), (A.chips/A.chipH), false, true, "枚")
+      : '')+
     '</div>';
+}
+/* v6.37: お金の行。**上の行 = 下の行の和**(各ブロックも 見出し = 字下げの行の和)。0の内訳は出さない */
+function mjMoneyHtml(A){
+  const H=A.H, tot=Math.round(A.final/H);
+  const [shop, ext, fee, back, exp]=mjRoundParts([(A.raw-A.ext)/H, A.ext/H, -A.fee/H, A.back/H, -A.exp/H], tot);
+  const sub=(l,v)=>'<div class="row between" style="font-size:11px;margin:2px 0;padding-left:14px"><span class="muted">'+l+'</span><span class="mono '+clsPM(v)+'">'+signYen(v)+'</span></div>';
+  let h='<div class="row between" style="font-size:13px;margin:5px 0 8px;align-items:center"><span style="font-weight:700">平均収支(ゲーム代込)'+infoBtn(MJ_AGG_INFO)+'</span>'+
+    '<span class="mono '+clsPM(tot)+'" style="font-weight:700">'+signYen(tot)+'</span></div>';
+  h+=mjStatRow("平均収支(ゲーム代抜)", shop+ext, true);
+  if(A.ext) h+=sub("店での勝ち負け", shop)+sub("卓の外(馬身・差し馬など)", ext);
+  h+=mjStatRow("平均ゲーム代", fee+back, true);
+  if(A.back) h+=sub("払った額", fee)+sub("バック", back);
+  if(A.exp) h+=mjStatRow("平均経費", exp, true);
+  return h;
 }
 function mjStatRow(label, val, isYen, raw, unit){
   let disp;
