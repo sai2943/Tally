@@ -286,7 +286,9 @@
      暗い画面だけ(スコア表の白基調 sheet-light は対象外)。最後に置いて、上の素の定義を上書きする */
   body:not(.sheet-light) .card{
     position:relative;
-    background:linear-gradient(180deg, #183D3A 0%, #12302E 42%, #102B29 100%);
+    /* v6.45: **角丸 12→18px・板を一段明るく**(背景との差を広げて浮かせる。v6.44 は #183D3A→#12302E→#102B29) */
+    border-radius:18px;
+    background:linear-gradient(180deg, #1C4440 0%, #153734 45%, #12302E 100%);
     border:1px solid transparent;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 14px 30px -16px rgba(0,0,0,.85), 0 2px 8px -3px rgba(0,0,0,.45);
   }
@@ -304,7 +306,23 @@
     border-top-color:rgba(185,245,235,.26) !important;
     background-image:linear-gradient(180deg, rgba(255,255,255,.025), rgba(0,0,0,.05)) !important;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.035), 0 10px 22px -14px rgba(0,0,0,.8);
+    border-radius:14px !important;   /* v6.45: カードの角丸に合わせて一段大きく(10→14) */
   }
+  /* v6.45: **線を減らす**(ユーザー了承: 一番効く手)。カードの中の区切り線(style で直に書いた border-top)と、見出しの横の線を消し、
+     **余白で区切る**。Claude/Remo らしさの大半は「線が少ない」ことから来ている。
+     ・**残す線**: 引き算・足し算の**結果の上の線**(class="sumline"——照合の「一致/差」・半荘の記録の「最終収支」・貯金の「投資スタート」・
+       「実質の負担」・スロットの「台収支」)。会計の約束で「上を足し引きした結果」を示すので、消すと意味が変わる
+     ・表の罫線(半荘の記録の表など、class で引いた線)・縦の仕切り(width:1px の div)・予算の「食費」の左の縦線(階層)はそのまま
+     ・カードの外の一覧の箱(稼働の履歴など)の行の線は残す(iPhoneの一覧と同じく、押せる行の区切り) */
+  body:not(.sheet-light) .card [style*="border-top:1px solid var(--line)"]:not(.sumline){border-top-color:transparent !important;}
+  body:not(.sheet-light) .band .rule{visibility:hidden;}
+  /* v6.45: **選んでいるタブを、一段へこんだ内側の板で示す**(Remo・iOS 26 のタブと同じ考え)。色(amber)だけでなく形でも分かる。
+     バーの内側に5pxの余白を取り、板の角丸はバーの角丸(20px)−5px で同心にする。アイコンと文字は板の上に出す */
+  body:not(.sheet-light) .tabs{padding:5px;}
+  body:not(.sheet-light) .tabs button{position:relative; border-radius:15px;}
+  body:not(.sheet-light) .tabs button > *{position:relative; z-index:1;}
+  body:not(.sheet-light) .tabs button.on::before{content:""; position:absolute; inset:0; border-radius:15px; pointer-events:none;
+    background:rgba(0,0,0,.26); box-shadow:inset 0 1px 3px rgba(0,0,0,.5), inset 0 -1px 0 rgba(255,255,255,.06);}
   /* 浮いている部品: 半透明 + 背景ぼかし + 縁の光 + 影 */
   body:not(.sheet-light) .tabs, body:not(.sheet-light) .subnav{
     background:linear-gradient(180deg, rgba(40,88,83,.58), rgba(18,48,46,.58));
@@ -332,7 +350,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.44 (localStorage保存・完全オフライン)
+   Tally 6.45 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1121,7 +1139,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.44";
+const APP_VERSION = "6.45";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1693,7 +1711,7 @@ function viewBankMatch(){
     const ok=R.diff===0;
     h+='<div class="row between" style="font-size:12px;margin-top:10px"><span class="muted">銀行の残高('+md(R.to)+')</span><span class="mono">'+yen(R.bankClose)+'</span></div>'+
       '<div class="row between" style="font-size:12px;margin-top:2px"><span class="muted">Tallyの残高('+md(R.to)+')</span><span class="mono">'+yen(R.tallyClose)+'</span></div>'+
-      '<div class="row between" style="align-items:baseline;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">'+
+      '<div class="row between sumline" style="align-items:baseline;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">'+
       '<span style="font-size:13px;font-weight:700">'+(ok?'一致':'差')+
         infoBtn("<b>差</b> = 銀行の残高 − Tallyの残高(読み込んだ明細の最後の日の時点)。<br><br>差は次の3つを足したものです。<br>"+
           "・<b>銀行にだけある</b>: 銀行の明細にあって、Tallyに見つからない取引(記帳漏れなど)<br>"+
@@ -5696,7 +5714,7 @@ function mjlBreakdownHtml(){
     t.outs.forEach(x=>{ if(x.yen) h+=sub(x.kind+(x.who?" "+esc(x.who):"")+" "+(x.n>=0?"+":"−")+Math.abs(x.n), x.yen); });
     if(t.back) h+=sub("ゲーム代バック "+t.n+"半荘", t.back);
   }
-  h+='<div class="row between" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
+  h+='<div class="row between sumline" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
     '<span style="font-size:13px;font-weight:700">最終収支</span>'+
     '<span class="mono '+clsPM(t.net)+'" style="font-weight:700;font-size:20px">'+signYen(t.net)+'</span></div>';
   return h+'</div>';
@@ -7062,7 +7080,7 @@ function viewInvest(){
         '<span class="mono muted" style="font-size:11px">¥'+p.target.toLocaleString("ja-JP")+'</span></div>'+
         '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:'+p.pct+'%;background:'+(p.done?'var(--teal)':'var(--amber)')+'"></div></div>';
     });
-    h+='<div class="row between" style="font-size:12px;padding-top:7px;border-top:1px solid var(--line)">'+
+    h+='<div class="row between sumline" style="font-size:12px;padding-top:7px;border-top:1px solid var(--line)">'+
       '<span><span style="color:var(--muted)">○</span> 投資スタート</span>'+
       '<span class="mono" style="font-weight:700">あと ¥'+toStart.toLocaleString("ja-JP")+'</span></div>'+
     '</div>';
@@ -8231,7 +8249,7 @@ function viewPotUse(){
   h+='<div class="card" style="margin-bottom:12px">'+
     line("使った合計 <span class=\"muted\" style=\"font-size:11px\">"+use.length+"件</span>", "¥"+usum.toLocaleString("ja-JP"))+
     (bsum ? line("一部負担で戻った", "−¥"+bsum.toLocaleString("ja-JP")) : '')+
-    '<div style="border-top:1px solid var(--line);margin-top:4px"></div>'+
+    '<div class="sumline" style="border-top:1px solid var(--line);margin-top:4px"></div>'+
     line("実質の負担", "¥"+(usum-bsum).toLocaleString("ja-JP"), true)+'</div>';
   /* 分類ごと(2つ以上ある時だけ) */
   const byCat={}; use.forEach(e=>{ byCat[e.category]=(byCat[e.category]||0)+num(e.amount); });
@@ -11388,7 +11406,7 @@ function viewSlotMachine(m, s){
 
   /* 台収支 */
   if(machHasData(m)){
-    h += '<div class="row between" style="align-items:baseline;border-top:1px solid var(--line);padding-top:8px">'+
+    h += '<div class="row between sumline" style="align-items:baseline;border-top:1px solid var(--line);padding-top:8px">'+
       '<span style="font-size:11px;font-weight:700">台収支</span>'+
       '<span class="mono '+clsPM(yenv)+'" style="font-size:16px;font-weight:700">'+signYen(yenv)+'</span></div>'+
       (num(s.exchange)<=0?'<div class="red" style="font-size:11px;margin-top:4px">交換枚数を入力すると円換算されます</div>':'');
