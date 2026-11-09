@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#0B1F1E">
+<meta name="theme-color" content="#0E1111">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 <link rel="manifest" href="manifest.webmanifest?v=2">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
@@ -13,8 +13,17 @@
 <title>Tally</title>
 <style>
   :root{
-    --bg:#0B1F1E; --surface:#12302E; --surface2:#1A3E3B; --line:#24504C;
-    --amber:#F2B33D; --teal:#2DD4BF; --red:#E57373; --text:#F2F7F6; --muted:#C3D6D3; --blue:#5FA8E8;
+    --bg:#0E1111; --surface:#171C1C; --surface2:#202727; --line:#313A3A;
+    --amber:#F2B33D; --teal:#2DD4BF; --red:#E57373; --text:#F3F6F6; --muted:#C0C8C8; --blue:#5FA8E8;
+    /* v6.50: **地の色を青緑から灰色へ**(青緑をほんのひとさじ: 色相180°・彩度8〜10%)。ユーザー:「アプリの中身の色のトーンを変えても良いかもね。
+       アイコンはもう変えない。多くの企業に習うのが無難かなって。最適解の一つなんだろうな」→ 今/案A(これ)/案B(iPhone標準の黒)を見て案A。
+       理由は好みではなく**色に仕事をさせる**ため: Tally の色は意味を持つ(teal=良い・資産、amber=注意・選択、red=超過・マイナス)のに、
+       地も板も青緑だと「良い」の teal が地に溶ける(資産タブの総資産が典型)。板の上端で測ると teal 5.78→7.75・amber 5.79→7.76・
+       red 3.61→**4.83**(小さい赤字が AA を超える。v6.48 で残した課題が赤を変えずに消えた)。白 9.95→13.28・灰色 7.12→8.48。
+       **強調色(teal/amber/red/blue)と白基調(sheet-light)は変えていない**。teal はブランドの色として数字・達成・スイッチに残り、
+       アイコン(青緑)とのつながりは切れない。背景は真っ黒にしない(Remo/Claude も濃い灰色。真っ黒に白字は夜に目に刺さる)。
+       直に書いていた青緑(板のグラデ・縁の光・ガラス・上下のぼかし・状態バーの色・ⓘの窓・知らせ・管理の線とスイッチ)も同時に灰色へ。
+       manifest.webmanifest の色(起動の一瞬の地の色)は #0B1F1E のまま(index.html の外。次に触る時に合わせる) */
     /* v6.48: **文字をもう一段濃く**(#E8F0EF→#F2F7F6 / #A3BEBA→#C3D6D3)。ユーザー: 予算が代表的だが、全体的な文字の薄さが気になってきた。
        「なってきた」の原因は v6.45 で**板を明るくした**こと(カードの上端 #1C4440)。灰色の文字のコントラストが
        板の上端で 7.15→5.45 に落ちていた(本文の白も 12.19→9.30)。灰色を上端で 7.12・中ほどで 8.53 に戻し、白も 9.95 に。
@@ -49,7 +58,7 @@
      コンテンツはタブピルに激突せず溶けて消える。透明側はbg同色のalpha0(Safariのtransparent=黒混ざり回避)。
      navbarはmain画面(常にダーク)でのみ表示されるため色は固定値でよい */
   #navbar::before{content:""; position:absolute; left:0; right:0; top:-24px; height:24px;
-    background:linear-gradient(rgba(11,31,30,0), var(--bg)); pointer-events:none;}
+    background:linear-gradient(rgba(14,17,17,0), var(--bg)); pointer-events:none;}
   /* v4.78: **上端のフェード帯**(下のv3.28と対称)。
      `viewport-fit=cover` + `black-translucent` なので**Webビューはステータスバーの下まで伸びている**。
      #appは画面最上部から始まるスクロール領域で、padding-topが初期位置を押し下げているだけなので、
@@ -63,7 +72,7 @@
      加えて mjsheet は sheet-light(白基調)で --bg が変わるため、帯の透明側の色が合わない */
   body::before{content:""; position:fixed; left:0; right:0; top:0; z-index:50;
     height:calc(env(safe-area-inset-top, 0px) + 10px);
-    background:linear-gradient(var(--bg) env(safe-area-inset-top, 0px), rgba(11,31,30,0));
+    background:linear-gradient(var(--bg) env(safe-area-inset-top, 0px), rgba(14,17,17,0));
     pointer-events:none;}
   body.nopad-top::before{ display:none; }
   /* v4.73→v4.74: **等幅へ戻した**(ユーザー判断)。SF Pro Textに替えると小サイズは読みやすくなったが、
@@ -293,7 +302,8 @@
     position:relative;
     /* v6.45: **角丸 12→18px・板を一段明るく**(背景との差を広げて浮かせる。v6.44 は #183D3A→#12302E→#102B29) */
     border-radius:18px;
-    background:linear-gradient(180deg, #1C4440 0%, #153734 45%, #12302E 100%);
+    /* v6.50: 灰色の板(#1C4440→#153734→#12302E から)。地 #0E1111 との差は v6.45 と同じくらいに保つ */
+    background:linear-gradient(180deg, #242B2B 0%, #1D2323 45%, #1A1F1F 100%);
     border:1px solid transparent;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 14px 30px -16px rgba(0,0,0,.85), 0 2px 8px -3px rgba(0,0,0,.45);
   }
@@ -301,14 +311,14 @@
      カードに overflow:hidden や position を直に持つものは無い(v6.44で確認)ので、疑似要素の輪は切れない */
   body:not(.sheet-light) .card:not([style*="border-color"])::before{
     content:""; position:absolute; inset:-1px; border-radius:inherit; padding:1px; pointer-events:none;
-    background:linear-gradient(180deg, rgba(185,245,235,.36) 0%, rgba(185,245,235,.13) 30%, rgba(185,245,235,.07) 70%, rgba(185,245,235,.11) 100%);
+    background:linear-gradient(180deg, rgba(255,255,255,.22) 0%, rgba(255,255,255,.08) 30%, rgba(255,255,255,.045) 70%, rgba(255,255,255,.07) 100%);   /* v6.50: 縁の光は白(青緑の光から) */
     -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite:xor; mask-composite:exclude;
   }
   /* カードと同じ見た目を style で直に書いている箱(明細の日付の束・固定費の行など)も、同じ光と影に。
      style 側の border が優先されるので、上の縁だけ !important で明るくする(疑似要素は overflow:hidden の箱で切れるので使わない) */
   body:not(.sheet-light) [style*="background:var(--surface);border:1px solid var(--line)"]{
-    border-top-color:rgba(185,245,235,.26) !important;
+    border-top-color:rgba(255,255,255,.17) !important;
     background-image:linear-gradient(180deg, rgba(255,255,255,.025), rgba(0,0,0,.05)) !important;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.035), 0 10px 22px -14px rgba(0,0,0,.8);
     border-radius:14px !important;   /* v6.45: カードの角丸に合わせて一段大きく(10→14) */
@@ -330,26 +340,26 @@
     background:rgba(0,0,0,.26); box-shadow:inset 0 1px 3px rgba(0,0,0,.5), inset 0 -1px 0 rgba(255,255,255,.06);}
   /* 浮いている部品: 半透明 + 背景ぼかし + 縁の光 + 影 */
   body:not(.sheet-light) .tabs, body:not(.sheet-light) .subnav{
-    background:linear-gradient(180deg, rgba(40,88,83,.58), rgba(18,48,46,.58));
+    background:linear-gradient(180deg, rgba(46,56,56,.6), rgba(23,28,28,.6));
     -webkit-backdrop-filter:blur(22px) saturate(170%); backdrop-filter:blur(22px) saturate(170%);
-    border:1px solid rgba(185,245,235,.17);
+    border:1px solid rgba(255,255,255,.12);
     box-shadow:inset 0 1px 0 rgba(255,255,255,.11), 0 16px 36px -12px rgba(0,0,0,.8);
   }
   /* 右上の丸: 縁の色は同期の状態(teal/赤/amber)を表すので触らない。中身と影だけ */
   body:not(.sheet-light) .syncbtn{
-    background:linear-gradient(180deg, rgba(40,88,83,.5), rgba(18,48,46,.5));
+    background:linear-gradient(180deg, rgba(46,56,56,.55), rgba(23,28,28,.55));
     -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
     box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 6px 16px -6px rgba(0,0,0,.7);
   }
-  .toast{background:rgba(26,62,59,.72); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); box-shadow:0 10px 26px -10px rgba(0,0,0,.7);}
+  .toast{background:rgba(32,39,39,.78); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); box-shadow:0 10px 26px -10px rgba(0,0,0,.7);}
   .ipop-bg{-webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);}
-  body:not(.sheet-light) .ipop{background:linear-gradient(180deg,#1A423E,#12302E); border-color:rgba(185,245,235,.2);
+  body:not(.sheet-light) .ipop{background:linear-gradient(180deg,#242B2B,#171C1C); border-color:rgba(255,255,255,.14);
     box-shadow:inset 0 1px 0 rgba(255,255,255,.07), 0 28px 60px -14px rgba(0,0,0,.85);}
   /* v6.48: 管理タブの一覧(節ごとに1枚の板)。行の間は板の中の細い線(左は行の余白ぶん空ける=Remo/Claudeと同じ)。
      板の余白は行が持つ(押せる範囲を行いっぱいに)。v6.45 の「カードの中の線を消す」規則は border-top の線が対象なので、これは別物 */
   .card.glist{padding:0;}
   .gl-row{display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:50px; padding:12px 16px; cursor:pointer; position:relative;}
-  .gl-row + .gl-row::after{content:""; position:absolute; top:0; left:16px; right:0; height:1px; background:rgba(232,240,239,.08); pointer-events:none;}
+  .gl-row + .gl-row::after{content:""; position:absolute; top:0; left:16px; right:0; height:1px; background:rgba(255,255,255,.08); pointer-events:none;}
   .gl-main{min-width:0;}
   .gl-t{font-size:15px; font-weight:400; color:var(--text); line-height:1.4;}
   .gl-s{font-size:12px; color:var(--muted); margin-top:2px;}
@@ -358,7 +368,7 @@
   .gl-chev{display:block; flex:none; color:var(--muted); opacity:.75;}   /* v6.49: 字の「›」ではなく線で描いた矢印 */
   /* v6.49: 管理タブの見出しは設定画面の作法(灰色の字だけ・棒と字間なし)。左端は行の字と同じ(カードの縁1px + 行の余白16px) */
   .gl-h{font-size:13px; font-weight:600; color:var(--muted); margin:20px 0 8px 17px;}
-  .gl-sw{flex:none; position:relative; width:46px; height:28px; border-radius:14px; background:rgba(232,240,239,.18); transition:background .2s;}
+  .gl-sw{flex:none; position:relative; width:46px; height:28px; border-radius:14px; background:rgba(255,255,255,.18); transition:background .2s;}
   .gl-sw > span{position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:11px; background:#F2F7F6;
     box-shadow:0 1px 3px rgba(0,0,0,.4); transition:transform .2s;}
   .gl-sw.on{background:var(--teal);}
@@ -373,7 +383,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.49 (localStorage保存・完全オフライン)
+   Tally 6.50 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1162,7 +1172,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.49";
+const APP_VERSION = "6.50";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
