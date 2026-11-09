@@ -274,6 +274,54 @@
   #app .pr-mid .pr-sum td, #app .pr-mid .pr-sum th{ font-size:13.5px; padding:6px 2px; }
   .pr-sum .pr-final td{ font-weight:700; border-top:2px solid #333 !important; font-size:12px; }
   .pr-foot{ font-size:11px; color:#666 !important; margin-top:6px; }
+  /* v6.44: **枠の素材感**(ユーザー: 全体的に枠が薄い。Claude や Nature Remo のアプリの枠の透明感が絶妙)。
+     「薄い」の正体は線の太さではなく**光と奥行きが無い**こと——背景より少し明るい板に、同じ明るさの線を四辺に引いただけで、
+     光源が無く、全部が同じ高さにある。足したのは3つ:
+       ① **縁の光**: 上の縁が明るく、下へ薄れる1pxの縁(上から光が当たって見える=板に厚みが出る)
+       ② ごく薄い上下のグラデ(上が少し明るい)
+       ③ 下に落ちる柔らかい影(背景から浮く)
+     **ガラス(半透明 + 背景ぼかし)は浮いている部品だけ**(下のタブ・戻るの棒・右上の丸・知らせ・ⓘの窓)。
+     本文のカードは平らな背景の上にあり、ぼかしても透けて見えるものが無い上に、スクロールが重くなり電池を食うので使わない。
+     本物の透明感(本文がタブの下を通ってぼける)は、タブを本文に重ねる配置替えが要るので見送り(iPhoneの画面下まわりは v3.28/v4.41 で直してきた所)。
+     暗い画面だけ(スコア表の白基調 sheet-light は対象外)。最後に置いて、上の素の定義を上書きする */
+  body:not(.sheet-light) .card{
+    position:relative;
+    background:linear-gradient(180deg, #183D3A 0%, #12302E 42%, #102B29 100%);
+    border:1px solid transparent;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 14px 30px -16px rgba(0,0,0,.85), 0 2px 8px -3px rgba(0,0,0,.45);
+  }
+  /* 縁の光: グラデを1pxの輪だけ残すマスク。**色付きの縁(style で border-color を持つ強調カード)には重ねない**——白っぽく濁って色が弱まるため。
+     カードに overflow:hidden や position を直に持つものは無い(v6.44で確認)ので、疑似要素の輪は切れない */
+  body:not(.sheet-light) .card:not([style*="border-color"])::before{
+    content:""; position:absolute; inset:-1px; border-radius:inherit; padding:1px; pointer-events:none;
+    background:linear-gradient(180deg, rgba(185,245,235,.36) 0%, rgba(185,245,235,.13) 30%, rgba(185,245,235,.07) 70%, rgba(185,245,235,.11) 100%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+  }
+  /* カードと同じ見た目を style で直に書いている箱(明細の日付の束・固定費の行など)も、同じ光と影に。
+     style 側の border が優先されるので、上の縁だけ !important で明るくする(疑似要素は overflow:hidden の箱で切れるので使わない) */
+  body:not(.sheet-light) [style*="background:var(--surface);border:1px solid var(--line)"]{
+    border-top-color:rgba(185,245,235,.26) !important;
+    background-image:linear-gradient(180deg, rgba(255,255,255,.025), rgba(0,0,0,.05)) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.035), 0 10px 22px -14px rgba(0,0,0,.8);
+  }
+  /* 浮いている部品: 半透明 + 背景ぼかし + 縁の光 + 影 */
+  body:not(.sheet-light) .tabs, body:not(.sheet-light) .subnav{
+    background:linear-gradient(180deg, rgba(40,88,83,.58), rgba(18,48,46,.58));
+    -webkit-backdrop-filter:blur(22px) saturate(170%); backdrop-filter:blur(22px) saturate(170%);
+    border:1px solid rgba(185,245,235,.17);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.11), 0 16px 36px -12px rgba(0,0,0,.8);
+  }
+  /* 右上の丸: 縁の色は同期の状態(teal/赤/amber)を表すので触らない。中身と影だけ */
+  body:not(.sheet-light) .syncbtn{
+    background:linear-gradient(180deg, rgba(40,88,83,.5), rgba(18,48,46,.5));
+    -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 6px 16px -6px rgba(0,0,0,.7);
+  }
+  .toast{background:rgba(26,62,59,.72); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); box-shadow:0 10px 26px -10px rgba(0,0,0,.7);}
+  .ipop-bg{-webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);}
+  body:not(.sheet-light) .ipop{background:linear-gradient(180deg,#1A423E,#12302E); border-color:rgba(185,245,235,.2);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.07), 0 28px 60px -14px rgba(0,0,0,.85);}
 </style>
 </head>
 <body>
@@ -284,7 +332,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.43 (localStorage保存・完全オフライン)
+   Tally 6.44 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1073,7 +1121,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.43";
+const APP_VERSION = "6.44";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
