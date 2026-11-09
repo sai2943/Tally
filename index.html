@@ -350,7 +350,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.46 (localStorage保存・完全オフライン)
+   Tally 6.47 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1139,7 +1139,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.46";
+const APP_VERSION = "6.47";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3526,20 +3526,31 @@ function viewLedger(){
       /* v6.46: **線ではなく「組」で区切る**(ユーザー: 残高の中だけ境界線が無くて違和感、でも線を足すのは違う気もする)。
          v6.45で行の線を消したら、所持金の財布4つと貯金の箱2つが**同じ間隔の6行**になり、どこからが貯金か分からなくなった。
          違和感の正体は線の有無ではなく**まとまりが見えない**こと。見出しに1行で並べていた「所持金 ¥X / 貯金 ¥Y」を
-         **組ごとの見出し(名前と合計・太字)**に分け、その下に中身を字下げで並べ、組と組の間に余白を取る。
-         中身の金額は見出しより細く(太さで 合計 > 内訳 の上下が見える)。見出しを押すと、それぞれの画面(所持金/貯金)へ */
+         **組ごとの見出し(名前と合計・太字)**に分け、その下に中身を並べる。見出しを押すと、それぞれの画面(所持金/貯金)へ。
+         v6.47: **強弱と左右2列**(ユーザー:「さっきよりは良いけど まだ微妙、グラフとか入れたら良いのかな？」→ 試作を見て案B)。
+         「微妙」の正体は**目が止まる場所が無い**こと——合計と中身がほぼ同じ白・同じ太さで、白い数字が8行並んだ表に見えた
+         (すぐ上の予算カードは大きい色付きの数字と帯で強弱がある)。**グラフは足さない**: ここは突合の欄で割合は使わない(v5.19)うえ、
+         構成比の帯は資産タブの所持金カードに既にある(同じものを2か所に置かない)。
+         ・中身(財布・箱)の金額は**灰色の細字**(12px)に下げ、合計を15pxの太字に。まず合計、ズレたら中身、の順に目が動く。
+         ・所持金と貯金を**左右2列**に。合計2つが1行で同時に読め、縦が約4割短くなって明細が上がる(日課: 合計→合わなければ中身→明細)。
+           片方の組しか無い時は1列。幅375で「7桁の箱+6文字の名前」なら名前が…で切れる(402では切れない)。
+         ・中身の金額の後ろに**見えない「›」**を置く。見出しの合計と桁の右端が、余白の数字合わせではなく**同じ文字の幅**で揃う。
+         ・見出しの合計が横に収まらない時は、名前の下の行へ折り返す(カードの外へはみ出さない)。
+         ・**分けていない時(財布1つ/箱1つ)は中身を出さない**: 見出しと同じ名前・同じ額がもう1行並ぶだけ
+           (v6.46で作った穴。資産タブの所持金・軍資金と同じ規則)。箱が2つ以上なら、残高のある箱が1つでもその名前は出す */
       const _grp=(lab, tot, act, list)=>
-        '<div class="row between" style="align-items:baseline;cursor:pointer;padding:2px 0 4px" data-a="'+act+'">'+
-          '<span style="font-size:12px;font-weight:700">'+lab+'</span>'+
-          '<span><span class="mono '+(tot<0?'red':'')+'" style="font-size:14px;font-weight:700">'+yen(tot)+'</span>'+
+        '<div class="row between" style="align-items:baseline;flex-wrap:wrap;column-gap:8px;cursor:pointer;padding:2px 0 4px" data-a="'+act+'">'+
+          '<span style="font-size:13px;font-weight:700;white-space:nowrap">'+lab+'</span>'+
+          '<span style="white-space:nowrap;margin-left:auto"><span class="mono '+(tot<0?'red':'')+'" style="font-size:15px;font-weight:700">'+yen(tot)+'</span>'+
           '<span class="muted" style="font-size:11px"> ›</span></span></div>'+
-        list.map(r=>'<div class="row between" style="align-items:baseline;font-size:12px;padding:4px 0 4px 12px">'+
+        list.map(r=>'<div class="row between" style="align-items:baseline;font-size:12px;padding:3px 0">'+
           '<span class="ellip muted" style="min-width:0">'+esc(r.name)+'</span>'+
-          '<span class="mono '+(r.v<0?'red':'')+'" style="font-size:13px;font-weight:500;margin-right:12px">'+yen(r.v)+'</span></div>').join("");
+          '<span style="white-space:nowrap"><span class="mono '+(r.v<0?'red':'muted')+'" style="font-size:12px">'+yen(r.v)+'</span>'+
+          '<span style="font-size:11px;visibility:hidden"> ›</span></span></div>').join("");
       const _wr=_rows.filter(r=>r.a==="wallet"), _sr=_rows.filter(r=>r.a==="savings");
-      h += '<div class="card" style="margin-bottom:14px">'+
-        (_wr.length ? _grp("所持金", walletBalance(), "wallet", _wr) : '')+
-        (_sr.length ? '<div style="height:'+(_wr.length?14:0)+'px"></div>'+_grp("貯金", savingsBalance(), "savings", _sr) : '')+
+      h += '<div class="card" style="margin-bottom:14px;display:grid;grid-template-columns:'+(_wr.length&&_sr.length?'1fr 1fr':'1fr')+';column-gap:18px">'+
+        (_wr.length ? '<div style="min-width:0">'+_grp("所持金", walletBalance(), "wallet", _wp.length>1?_wr:[])+'</div>' : '')+
+        (_sr.length ? '<div style="min-width:0">'+_grp("貯金", savingsBalance(), "savings", _sp.length>1?_sr:[])+'</div>' : '')+
         '</div>';
     }
   }
