@@ -354,8 +354,10 @@
   .gl-t{font-size:15px; font-weight:400; color:var(--text); line-height:1.4;}
   .gl-s{font-size:12px; color:var(--muted); margin-top:2px;}
   .gl-r{display:flex; align-items:center; gap:6px; flex:none;}
-  .gl-val{font-size:14px; color:var(--muted);}
-  .gl-chev{font-size:18px; color:var(--muted); flex:none; line-height:1;}
+  .gl-val{font-size:15px; color:var(--muted);}
+  .gl-chev{display:block; flex:none; color:var(--muted); opacity:.75;}   /* v6.49: 字の「›」ではなく線で描いた矢印 */
+  /* v6.49: 管理タブの見出しは設定画面の作法(灰色の字だけ・棒と字間なし)。左端は行の字と同じ(カードの縁1px + 行の余白16px) */
+  .gl-h{font-size:13px; font-weight:600; color:var(--muted); margin:20px 0 8px 17px;}
   .gl-sw{flex:none; position:relative; width:46px; height:28px; border-radius:14px; background:rgba(232,240,239,.18); transition:background .2s;}
   .gl-sw > span{position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:11px; background:#F2F7F6;
     box-shadow:0 1px 3px rgba(0,0,0,.4); transition:transform .2s;}
@@ -371,7 +373,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.48 (localStorage保存・完全オフライン)
+   Tally 6.49 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1160,7 +1162,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.48";
+const APP_VERSION = "6.49";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4029,14 +4031,24 @@ function viewTool(){
      画面が「縁の繰り返し」になっていた。名前も全部太字(600と700が混在)で、ON/OFFだけが琥珀の枠のボタン。
      Remo / Claude は**節ごとに1枚の板**に行を並べ、行の間は板の中の細い線(左を空ける)、名前は普通の太さ、状態は灰色の字。
      → 家計簿・麻雀・パチスロ・データを各1枚に(板の縁は14→4組)。名前は15pxの普通の太さ、補足は12pxの灰色、
-     漏れ係数の値も灰色の字、ON/OFFは切り替えスイッチ(入=teal)。**押した先(data-a / data-v)は今までと同じ** */
+     漏れ係数の値も灰色の字、ON/OFFは切り替えスイッチ(入=teal)。**押した先(data-a / data-v)は今までと同じ**。
+     v6.49: **見出しを設定画面の作法に**(ユーザー: うるさくは無くなったが、絶妙にダサく感じる。何でだろ)。
+     一覧は iPhone の設定画面の作法になったのに、見出しだけ「左に琥珀の縦棒+字間を空けた字」(日本のブログの見出しの形)のままで、
+     **1画面に作法が2つ**混ざっていた。しかも左端が3本(棒とカードの縁 16px・見出しの字 28px・行の字 33px)で、
+     見出しの字と行の字が**5pxだけ**ずれていた——「ほぼ揃っていて少しずれている」は、はっきりずらすより雑に見える。
+     → 見出しは灰色13pxの字だけ(棒も字間もなし)にして、**行の字と同じ 33px に揃える**(.gl-h)。棒は他のタブでは区切りの目印として効いているので残す。
+     あわせて: 右端の矢印は字(引用符の「›」)だったので小さく低く太い→**線で描いた矢印**(iPhone と同じ細く縦長の形)。
+     漏れ係数の値と件数は等幅の字をやめる(「直近」と「6%」の間が妙に空いていた)。
+     「レシートの読み取り(Claude)」のカッコ書きは補足の行へ(「Claude Opus 5.5」)——中の画面の見出しも案内文も「レシートの読み取り」 */
   /* 押した先は**属性の字のまま**渡す(data-a="fixed")。関数の引数に名前だけ渡すと、
      「出力した data-a にハンドラがあるか」を字で探す検査(tests/actions_test.js)から見えなくなる */
+  const _chev='<svg class="gl-chev" width="8" height="13" viewBox="0 0 8 13" aria-hidden="true"><path d="M1.5 1.5 6.5 6.5 1.5 11.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const _row=(attrs, label, o)=>{ o=o||{};
     return '<div class="gl-row" '+attrs+'>'+
       '<div class="gl-main"><div class="gl-t">'+label+'</div>'+
-      (o.sub?'<div class="gl-s'+(o.mono?' mono':'')+'">'+o.sub+'</div>':'')+'</div>'+
-      (o.right!=null ? o.right : '<span class="gl-chev">›</span>')+'</div>'; };
+      (o.sub?'<div class="gl-s">'+o.sub+'</div>':'')+'</div>'+
+      (o.right!=null ? o.right : _chev)+'</div>'; };
+  const _head=t=>'<div class="gl-h">'+t+'</div>';
   const _list=rows=>'<div class="card glist">'+rows.join("")+'</div>';
   const lm=leakMonths().map(leakAgg);
   let leakTxt="測定待ち";
@@ -4044,32 +4056,32 @@ function viewTool(){
     const dI=lm[li].salary-lm[li+1].salary, dE=lm[li].spend-lm[li+1].spend;
     if(lm[li].salary>0&&lm[li+1].salary>0&&dI>=30000){ leakTxt="直近 "+Math.round(dE/dI*100)+"%"; break; }
   }
-  let h = band("家計簿");
+  let h = _head("家計簿");
   h += _list([
     _row('data-a="fixed"', "固定費"),
     /* v5.50: **予算の設定に管理タブから入れる**(ユーザー指摘: どこから期間を変えるの)。
        v5.49まで入口は「予算カード→内訳→予算変更」だけで、**期間を変えたいときに辿り着けない** */
     _row('data-a="setbudget"', "予算の設定", {sub: cycleStartDay() ? '期間: 給料日('+cycleStartDay()+'日)から' : '期間: 暦月'}),
     _row('data-a="wishlist"', "ほしい物"),
-    _row('data-a="leak"', "漏れ係数", {right:'<span class="gl-r"><span class="gl-val mono">'+leakTxt+'</span><span class="gl-chev">›</span></span>'}),
+    _row('data-a="leak"', "漏れ係数", {right:'<span class="gl-r"><span class="gl-val">'+leakTxt+'</span>'+_chev+'</span>'}),
     _row('data-a="togglelaunchadd"', "起動時に記帳画面を開く",
       {right:'<span class="gl-sw'+(S.openAddOnLaunch?' on':'')+'" role="switch" aria-checked="'+(S.openAddOnLaunch?'true':'false')+'"><span></span></span>'}),
     /* v6.23: レシートの読み取り(Claude API)の設定。状態(未設定/モデル)を小さく出す */
-    _row('data-a="rcptset"', "レシートの読み取り(Claude)", {sub: rcptKey() ? esc(rcptModel().name) : '未設定'}),
+    _row('data-a="rcptset"', "レシートの読み取り", {sub: rcptKey() ? 'Claude '+esc(rcptModel().name) : 'Claude ・ 未設定'}),
   ]);
-  h += band("麻雀");
+  h += _head("麻雀");
   h += _list([
     /* v5.25: 説明の語は落とし、**件数だけ残す**——件数は情報だが「半荘ごとのスコアを記録・集計」は名前で分かる */
-    _row('data-a="mjtlist"', "スコア表", {sub: (S.mjTables||[]).length ? (S.mjTables||[]).length+'件' : '', mono:true}),
+    _row('data-a="mjtlist"', "スコア表", {sub: (S.mjTables||[]).length ? (S.mjTables||[]).length+'件' : ''}),
     _row('data-a="mjstats"', "店・ルール別 成績"),
   ]);
-  h += band("パチスロ");
+  h += _head("パチスロ");
   h += _list([
     _row('data-a="opentool" data-v="bordertool"', "回転数・ボーダー試算"),
     _row('data-a="mdb"', "機種データ"),
     _row('data-a="stores"', "店舗データ"),
   ]);
-  h += band("データ");
+  h += _head("データ");
   h += _list([
     _row('data-a="backup"', "バックアップ・同期"),
     _row('data-a="monthly"', "月別の収支"),
