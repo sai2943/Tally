@@ -383,7 +383,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.52 (localStorage保存・完全オフライン)
+   Tally 6.53 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1172,7 +1172,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.52";
+const APP_VERSION = "6.53";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3679,7 +3679,7 @@ function gameExpFold(d, list, first){
       '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">経費</span>'+
       '<span class="muted" style="font-size:12px">'+list.length+'件</span></div>'+
     '<div class="mono red" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(-tot)+'</div></div>'+
-    (open ? list.map(gameRowExp).join("") : '');
+    (open ? list.map(e=>gameRowExp(e, false, false)).join("") : '');
 }
 /* v5.72: **遊技の経費の行**(ユーザー判断: 明細には出さずセッション欄にだけ出す)。
    家計簿の分類(麻雀・パチスロ)で入れた経費を、その日の稼働と並べて見せる。
@@ -3687,15 +3687,20 @@ function gameExpFold(d, list, first){
    タップで記録の編集へ(直す場所はここ)。どこから出たかを1行で添える——
    所持金から払ったのか軍資金から出したのかで、減った場所が違うため。
    v6.52: 畳んだ1行(gameExpFold)を開いた中身として出す。札は畳んだ行が持つので、ここは名前・どこから・金額だけ。
-   字下げ(左30px)で、畳んだ行の「経費」の札の下に並んでいるのが分かるようにする */
-function gameRowExp(e){
+   字下げ(左30px)で、畳んだ行の「経費」の札の下に並んでいるのが分かるようにする。
+   v6.53: **経費だけの日**は、日の行(▸ 日付 N件 合計)を開いた中にもう1段「▸ 経費 N件 合計」を挟むと
+   同じ件数・同じ金額の行が2本並ぶだけ(v5.58 と同じ理由)。なので経費だけの日は畳まずに並べ、行ごとに灰の札を付ける(standalone)。
+   first: その日の箱の最初の行(上の線なし) */
+function gameRowExp(e, standalone, first){
   /* v5.73: タグは「経費」1つ(区分をやめたので、麻雀/パチスロのタグと二重に言わない) */
   const from = (e.gtTx!=null) ? (walletPots().find(w=>String(w.id)===String(e.wal))||{name:"所持金"}).name+"から"
                               : (bankPots().length>1 ? "軍資金:"+bankName(eBWal(e))+"から" : "軍資金から");
   const nmParts = [e.store||"", (e.item!=null?e.item:"")].filter(x=>String(x).trim());   /* v6.03: 店と品目を別の塊に */
-  return '<div class="row" style="padding:7px 14px 8px 30px;cursor:pointer;border-top:1px solid var(--line)" data-a="eedit" data-v="'+e.id+'">'+
+  return '<div class="row" style="padding:'+(standalone?'9px 14px':'7px 14px 8px 30px')+';cursor:pointer;'+(first?'':'border-top:1px solid var(--line)')+'" data-a="eedit" data-v="'+e.id+'">'+
     '<div style="flex:1;min-width:0">'+
-    '<div class="wrapname" style="font-size:12px">'+(nmParts.length?wsegHtml(nmParts):"経費")+'</div>'+
+    '<div class="wrapname" style="font-size:12px">'+
+      (standalone?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);margin-right:6px">経費</span>':'')+
+      (nmParts.length?wsegHtml(nmParts):"経費")+'</div>'+
     '<div class="ellip" style="font-size:11px;color:var(--muted);margin-top:1px">'+esc(from)+'</div>'+
     '</div>'+
     '<div class="mono red" style="font-size:13px;flex-shrink:0;margin-left:8px">'+signYen(-num(e.amount))+'</div></div>';
@@ -3714,15 +3719,30 @@ function viewGameSessions(){
   if(!rows.length) return h+'<div style="text-align:center;padding:20px 0;font-size:13px" class="muted">この月の記録はありません。</div>';
   const byDate={};
   rows.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r); });
+  /* v6.53: **日ごとに畳む**(ユーザー: 家計簿の明細のスクショを添えて「むしろこれを目指しますか」)。
+     明細(v3.46 日別・v5.18)と同じ形: 日の行「▸ 10/11 (日) 4件  −¥69,940」、押すとその日の稼働と経費が開く。
+     既定は**今日だけ開く**(明細と同じ——その日に入れた記録をすぐ確かめられる)。開閉は UI.gdOpen[日付](明細の UI.dayOpen とは別)。
+     **日の合計は、開いた中身の行の金額をそのまま足したもの**(稼働は行と同じ finalOwn / mjFinal、経費は num(e.amount))。
+     なので代打の報酬も入る。当月の遊技収支(上のカード)は代打を含まない設計(v3.52)なので、
+     日の合計を全部足すと「遊技収支 + 代打報酬」になる——カードに代打報酬は別の行で出ている。
+     件数は稼働と経費を合わせた行の数(明細と同じく、その日の記録の数)。
+     開いた中では、稼働の後ろに経費を「▸ 経費 N件」へ畳む(v6.52)。経費だけの日は畳まずに並べる(gameRowExp の standalone) */
+  const todayS=todayStr();
   Object.keys(byDate).sort((a,b)=>a<b?1:-1).forEach(d=>{
-    const exps=byDate[d].filter(r=>r.kind==="exp").map(r=>r.e);
-    h+='<div style="margin-bottom:12px"><div class="mono muted" style="font-size:11px;margin:0 4px 4px">'+
-      d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')</div>'+
-      '<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden">'+
-      byDate[d].filter(r=>r.kind!=="exp").map((r,i)=> r.kind==="slot" ? gameRowSlot(r.s, i===0) : gameRowMj(r.s, i===0)).join("")+
-      /* v6.52: その日の経費は最後に1行へ畳む(稼働が無い日は、畳んだ行がその日の最初の行) */
-      (exps.length ? gameExpFold(d, exps, exps.length===byDate[d].length) : '')+
-      '</div></div>';
+    const list=byDate[d], play=list.filter(r=>r.kind!=="exp"), exps=list.filter(r=>r.kind==="exp").map(r=>r.e);
+    const net=play.reduce((a,r)=>a+(r.kind==="slot"?finalOwn(r.s):mjFinal(r.s)),0) - exps.reduce((a,e)=>a+num(e.amount),0);
+    const open=(UI.gdOpen&&UI.gdOpen[d]!==undefined)?UI.gdOpen[d]:(d===todayS);
+    h+='<div style="margin-bottom:8px">'+
+      '<div class="row between" style="padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer" data-a="gdtoggle" data-v="'+d+'">'+
+      '<span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+' '+d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')'+
+      '<span style="margin-left:8px;font-size:11px">'+list.length+'件</span></span>'+
+      '<span class="mono '+clsPM(net)+'" style="font-size:13px;font-weight:700">'+signYen(net)+'</span></div>'+
+      (!open ? '' : '<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
+        play.map((r,i)=> r.kind==="slot" ? gameRowSlot(r.s, i===0) : gameRowMj(r.s, i===0)).join("")+
+        /* v6.52: 稼働のある日は、経費を最後に1行へ畳む。v6.53: 経費だけの日は畳まずに並べる */
+        (!exps.length ? '' : play.length ? gameExpFold(d, exps, false) : exps.map((e,i)=>gameRowExp(e, true, i===0)).join(""))+
+        '</div>')+
+      '</div>';
   });
   return h;
 }
@@ -9649,6 +9669,8 @@ function bindMain(){
       else if(a==="stoggle"){ UI.stOpen=UI.stOpen||{}; UI.stOpen[v]=!UI.stOpen[v]; render(); }
       /* v6.52: 遊技の一覧の経費の開閉(日ごと。鍵は日付) */
       else if(a==="gxtoggle"){ UI.gxOpen=UI.gxOpen||{}; UI.gxOpen[v]=!UI.gxOpen[v]; render(); }
+      /* v6.53: 遊技の一覧の日の開閉。既定(今日だけ開く)からの反転は、明細の dtoggle と同じ書き方 */
+      else if(a==="gdtoggle"){ const d=el.dataset.v; UI.gdOpen=UI.gdOpen||{}; const cur=(UI.gdOpen[d]!==undefined)?UI.gdOpen[d]:(d===todayStr()); UI.gdOpen[d]=!cur; render(); }
       else if(a==="eedit"){
         const e = S.entries.find(x=>String(x.id)===String(v));
         if(!e) return;
