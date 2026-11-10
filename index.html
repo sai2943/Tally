@@ -383,7 +383,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.50 (localStorage保存・完全オフライン)
+   Tally 6.51 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1172,7 +1172,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.50";
+const APP_VERSION = "6.51";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -3621,7 +3621,10 @@ function personTag(name){
    **新規作成の種別だけはボタンを2つ並べて解決**——ダイアログを挟むより速く、説明も要らない */
 function gameRowSlot(s, first){
   const fin=finalOwn(s);
-  const bc=s.mode==="nori"?"var(--amber)":s.mode==="dai"?"var(--teal)":"var(--red)";
+  /* v6.51: **遊技の種類の札は琥珀1色**(乗打=橙/代打=緑/単独=赤 をやめた)。ユーザー: 経費・セット・乗打・フリーの色が微妙。
+     札の色が遊び方の良し悪し(代打=推奨・単独=避けたい)を言っていて、同じ行の金額の色(結果)とぶつかっていた
+     (「単独(赤) +¥5,000(緑)」)。遊び方は字で分かる。色の役目は1つずつ: **琥珀=遊技の記録そのもの・灰=補足(経費・ルール・相手)・金額の色=結果** */
+  const bc="var(--amber)";
   const mnames=[...new Set((s.machines||[]).map(m=>(m.name||"").trim()).filter(Boolean))];
   const machLine=mnames.length?mnames.join("・"):((s.machines||[]).length?(s.machines||[]).length+"台":"");
   return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="sedit" data-v="'+s.id+'">'+
@@ -3639,7 +3642,7 @@ function gameRowSlot(s, first){
 }
 function gameRowMj(s, first){
   const fin=mjFinal(s), av=mjAvgRank(s);
-  const catC=s.category==="free"?"var(--red)":"var(--amber)";
+  const catC="var(--amber)";   /* v6.51: セットもフリーも琥珀(フリー=赤 をやめた。遊技の種類は琥珀1色) */
   const topPct=mjHanchan(s)>0?Math.round((mjRanks(s)[0]||0)/mjHanchan(s)*100):0;
   return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="mjedit" data-v="'+s.id+'">'+
     '<div style="flex:1;min-width:0">'+
@@ -3667,7 +3670,10 @@ function gameRowExp(e, first){
   return '<div class="row" style="padding:10px 14px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="eedit" data-v="'+e.id+'">'+
     '<div style="flex:1;min-width:0">'+
     '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
-    '<span class="tag" style="border:1px solid var(--amber);color:var(--amber)">経費</span></div>'+
+    /* v6.51: 経費の札は**灰**(琥珀から)。ユーザー案は赤だったが、経費の金額はいつも赤なので1行に赤が2つ並び、
+       経費が続く日は一番安い記録(自販機の200円)が画面で一番目立つ。赤は「マイナス・超過」の色で、分類に使うと意味が2つになる。
+       経費は稼働の補足——ルール(3麻)や相手の名前と同じ灰にして、目がまず琥珀の札(その日の遊技)と金額へ行くようにする */
+    '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">経費</span></div>'+
     '<div class="muted wrapname" style="font-size:11px">'+(nmParts.length?wsegHtml(nmParts):"経費")+'</div>'+
     '<div class="ellip" style="font-size:11px;color:var(--muted);margin-top:1px">'+esc(from)+'</div>'+
     '</div>'+
@@ -3889,7 +3895,7 @@ function viewMjStatsPage(){
   if(!gs.length) return h+'<div style="text-align:center;padding:24px 0;font-size:12px" class="muted">まだ記録がありません。</div>';
   /* 1組のカード。店全体は札を「店全体」(teal)に */
   const card=G=>{
-    const A=mjAgg(G.list), catC=G.isShop?"var(--teal)":(G.category==="free"?"var(--red)":"var(--amber)");
+    const A=mjAgg(G.list), catC=G.isShop?"var(--teal)":"var(--amber)";   /* v6.51: フリーも琥珀(一覧と同じ) */
     const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
     const rankCol=r2<line?"teal":(r2>line?"red":"amber");
     const avg=Math.round(A.final/A.H);
@@ -3933,7 +3939,7 @@ function viewMjStatDetail(){
   let h='<div class="hdr"><button class="navbtn" data-a="mjstlist">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700" class="ellip">'+(G?esc(G.shop?G.shop+" ・ "+G.store:G.store):"成績")+'</div><div style="width:44px"></div></div>';   /* v6.39: 店全体も「店名 ・ 3麻合計」 */
   if(!G) return h+'<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">この記録は見つかりません。</div>';
-  const catC=G.category==="free"?"var(--red)":"var(--amber)";
+  const catC="var(--amber)";   /* v6.51: フリーも琥珀(一覧と同じ) */
   h+='<div class="row" style="align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap">'+
     '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(G.category==="free"?"フリー":"セット")+'</span>'+
     /* 店全体は、どのルールを合わせたかを添える */
