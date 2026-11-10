@@ -75,22 +75,14 @@
     background:linear-gradient(var(--bg) env(safe-area-inset-top, 0px), rgba(14,17,17,0));
     pointer-events:none;}
   body.nopad-top::before{ display:none; }
-  /* v4.73→v4.74: **等幅へ戻した**(ユーザー判断:「戻しますか、悪くないけど文字とのバランスが悪い」)。SF Pro Textに替えると小サイズは読みやすくなったが、
-     **数字と日本語が同じ書体族になり「変動消費 ¥22,742 / ¥28,339」が一続きの文字列に見える**。
-     等幅は雰囲気の話だと思っていたが、**書体の違いが「ここから数字」という区切りとして機能していた**。
-     可読性はサイズ側(v4.74で10px→11px)で取る。
-     (v4.74 の時ここに「この行はもう触らない」と書いたのは Claude 自身の歯止めで、ユーザーの決定ではなかった——v6.55 でユーザーの「数字試してみてください」を受け、
-      この行はそのままにして、下に実機で見比べる切替を足した) */
-  .mono{font-family:ui-monospace,'SF Mono',Menlo,monospace;
-    font-variant-numeric:tabular-nums; -webkit-font-feature-settings:"tnum" 1; font-feature-settings:"tnum" 1;}
-  /* v6.55 **お試し(決まったら消す)**: 数字の書体を実機で見比べる切替。管理タブ「お試し > 数字の書体」で body に印(numsys)が付き、数字の書体だけ替わる。
-     印なし = 等幅(今まで・SF Mono) / numsys = 標準(iPhone の標準の書体 SF Pro。v4.73 と同じ)。**桁そろえ(tabular-nums)はどちらでも効く**。
-     SF Mono と SF Pro は縦の寸法が同じ書体の仲間なので、行の高さは変わらないはず(幅は、カンマや空白が細くなる分だけ詰まる)。
-     半荘の記録の表(.mjl-tbl td)は .mono ではなく直書きの等幅なので、同じく替える(桁そろえも足す)。スコア表は table に .mono が付いているので、そのまま替わる。
-     **置く場所は .mono のすぐ後ろ**: 半荘の記録の名前の行(font-family:inherit)は、同じ強さの決まりで後ろにあるので、今までどおり勝つ(名前は本文の書体のまま)。
-     **決まった後の片付けは HANDOFF の v6.55 に手順あり**(標準に決まり → 上の .mono を替えてこの決まりと切替を消す / 等幅のまま → この決まりと切替を消すだけ) */
-  body.numsys .mono, body.numsys .mjl-tbl td{
-    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,'Hiragino Sans',sans-serif;
+  /* **数字の書体は iPhone の標準の書体(SF Pro)**。桁は tabular-nums でそろえる(等幅の書体でなくても、数字の幅は全部同じになる)。
+     クラス名は .mono のまま(数百か所で使っている)。意味は「等幅」ではなく**「桁がそろう数字」**。
+     経緯: 元は等幅(SF Mono)。v4.73 で標準に替え、実機で見たユーザーが「戻しますか、悪くないけど文字とのバランスが悪い」→ v4.74 で等幅へ戻した。
+     その時 Claude が引き継ぎに「蒸し返さない」「この行はもう触らない」と書いたが、それは Claude 自身の歯止めで、ユーザーの決定ではなかった。
+     v6.55 で、実機で 等幅 ⇄ 標準 を切り替えて見比べる行を管理タブに入れ、**ユーザーが実機で見て「標準が良いですね」と決めた**(v6.56 で切替を消してこちらに一本化)。
+     等幅に戻すなら、この font-family を ui-monospace,'SF Mono',Menlo,monospace にするだけ(下の .mjl-tbl td も同じ指定にしてある)。
+     **等幅のまま残した所**: 収支サマリの書き出し欄(文章の表なので字の幅をそろえる)・ウィジェット(Scriptable に「標準の書体で数字だけ幅をそろえる」指定が無い) */
+  .mono{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,'Hiragino Sans',sans-serif;
     font-variant-numeric:tabular-nums; -webkit-font-feature-settings:"tnum" 1; font-feature-settings:"tnum" 1;}
   .muted{color:var(--muted);}
   .teal{color:var(--teal);} .red{color:var(--red);} .amber{color:var(--amber);}
@@ -204,8 +196,11 @@
   /* v5.80: 半荘の記録の表(席を列に固定し、各マスに着順)。スコア表と同じ読み方 */
   .mjl-tbl{width:100%; border-collapse:collapse; table-layout:fixed; font-size:13px;}
   .mjl-tbl th{font-size:11px; color:var(--muted); font-weight:600; padding:4px 2px 6px; text-align:center;}
+  /* v6.56: 数字の書体は .mono と同じ指定(標準の書体 + 桁そろえ)。前は直書きの等幅だった */
   .mjl-tbl td{text-align:center; padding:7px 2px; border-top:1px solid var(--line);
-    font-family:ui-monospace,'SF Mono',Menlo,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,'Hiragino Sans',sans-serif;
+    font-variant-numeric:tabular-nums; -webkit-font-feature-settings:"tnum" 1; font-feature-settings:"tnum" 1;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .mjl-tbl td.no{width:34px; color:var(--muted); font-size:11px;}
   .mjl-tbl td.x{width:26px; color:var(--red);}
   .mjl-tbl tr.nm td{font-family:inherit; font-size:11px; color:var(--muted); background:var(--surface2); padding:5px 2px;}
@@ -423,7 +418,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.55 (localStorage保存・完全オフライン)
+   Tally 6.56 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1212,7 +1207,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.55";
+const APP_VERSION = "6.56";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -4137,19 +4132,6 @@ function bindMjtList(){
   });
 }
 
-/* v6.55 **お試し(決まったら消す)**: 数字の書体を実機で見比べる切替(ユーザー:「数字試してみてください」)。
-   経緯: v4.73 で標準の書体に替え、実機で見たユーザーが「悪くないけど文字とのバランスが悪い」と言って v4.74 で等幅へ戻した。
-   その後 色を主流の中間色に寄せ(v6.50)、字も大きくなったので、今の見た目の上でもう一度見比べる。
-   **Claude の作業環境には iPhone の書体が無く、画像では判断できない**——だから実機で切り替えられる形にした。
-   **この端末の localStorage だけ**に置く(S に入れない = 同期・バックアップ・スナップショットに乗らない。見た目の好みで、しかも一時的なもの)。
-   値: 無し = 等幅(今まで) / "sys" = 標準。知らない値は等幅として扱う */
-const NUMFONT_LS="tally:numFont";
-const NUMFONTS=[{id:"", name:"等幅"}, {id:"sys", name:"標準"}];
-function numFont(){ const id=rcptLS(NUMFONT_LS); return NUMFONTS.find(f=>f.id===id) || NUMFONTS[0]; }
-/* body に印を付ける(起動時と、切り替えた時)。書体を替えるのは CSS の側(body.numsys .mono …) */
-function applyNumFont(){ try{ document.body.classList.toggle("numsys", numFont().id==="sys"); }catch(e){} }
-function numFontNext(){ const i=NUMFONTS.indexOf(numFont()); const nx=NUMFONTS[(i+1)%NUMFONTS.length]; rcptLS(NUMFONT_LS, nx.id||null); applyNumFont(); return nx; }
-
 function viewTool(){
   if(UI.screen==="mjtable") return "";  // 別画面で描画
   /* v6.48: **節ごとに1枚の板**(ユーザー: 管理の中は最初は良いと思ったが、やや煩く見えてきた。
@@ -4213,11 +4195,6 @@ function viewTool(){
     _row('data-a="backup"', "バックアップ・同期"),
     _row('data-a="monthly"', "月別の収支"),
     _row('data-a="summary"', "収支サマリを書き出す"),
-  ]);
-  /* v6.55 お試し(決まったら、この節ごと消す): 押すたびに 等幅 ⇄ 標準。補足の行の見本(¥1,234,567)は、その場で書体が替わるのを見るため */
-  h += _head("お試し");
-  h += _list([
-    _row('data-a="numfont"', "数字の書体", {sub:'押すと切り替え ・ <span class="mono">¥1,234,567</span>', right:'<span class="gl-val">'+numFont().name+'</span>'}),
   ]);
   return h;
 }
@@ -9559,7 +9536,6 @@ function bindMain(){
       else if(a==="wallet"){ UI.screen="wallet"; render(); }
       else if(a==="savings"){ UI.screen="savings"; render(); }
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
-      else if(a==="numfont"){ numFontNext(); render(); }   /* v6.55 お試し: 数字の書体を 等幅 ⇄ 標準(S は触らないので save は要らない) */
       else if(a==="rcptset"){ UI.screen="rcptset"; UI.rcptTest=null; render(); }   /* v6.23 */
       else if(a==="svdrill"){ UI.screen="svdrill"; render(); }
       else if(a==="advdrill"){ UI.advDoneOpen=false; UI.screen="advdrill"; render(); }   /* v6.15 */
@@ -12668,7 +12644,8 @@ function updVgap(){
   }catch(e){}
 }
 updVgap();
-applyNumFont();   /* v6.55 お試し: 数字の書体の印を、最初の描画より前に付ける */
+/* v6.56: お試し(v6.55 の「数字の書体」の切替)が端末に残した値の後片付け。読む所はもう無いので害は無いが、ごみを残さない。数版たったらこの1行は消してよい */
+try{ localStorage.removeItem("tally:numFont"); }catch(e){}
 /* v6.54: iPhone の Safari で :active(押した時の反応)を効かせるための空の聞き手。これが無いと押している間の見た目が変わらない */
 document.addEventListener("touchstart", function(){}, {passive:true});
 window.addEventListener("resize", updVgap);
