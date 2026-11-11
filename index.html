@@ -378,8 +378,7 @@
   .gl-main{min-width:0;}
   .gl-t{font-size:15px; font-weight:400; color:var(--text); line-height:1.4;}
   .gl-s{font-size:12px; color:var(--muted); margin-top:2px;}
-  .gl-r{display:flex; align-items:center; gap:6px; flex:none;}
-  .gl-val{font-size:15px; color:var(--muted);}
+  /* v6.57: 行の右に値を出す .gl-r / .gl-val は、使っていた「漏れ係数」の行ごと外した(他に使う行が無い) */
   /* v6.49: 字の「›」ではなく線で描いた矢印(.gl-chev)。v6.54: 見た目の決まりは .chev と1か所にまとめた(下) */
   /* v6.49: 管理タブの見出しは設定画面の作法(灰色の字だけ・棒と字間なし)。左端は行の字と同じ(カードの縁1px + 行の余白16px) */
   .gl-h{font-size:13px; font-weight:600; color:var(--muted); margin:20px 0 8px 17px;}
@@ -418,7 +417,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.56 (localStorage保存・完全オフライン)
+   Tally 6.57 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -460,6 +459,7 @@ const isAdv = e => !!e && (e.category===ADV_EXP || e.category===ADV_INC);
    貯金の箱から払った支出(旅行など)を、家族などに**一部だけ負担してもらったお金**。
    箱から出た支出は可処分の外なので、その負担分を収入(家庭内)にすると**可処分だけが膨らみ、貯金へ回す額がずれる**。
    立替精算と同じく**収支の外**(可処分・月別収支・着金判定・漏れ係数に数えない)で、所持金・明細・照合には出す。
+   (v6.57: 漏れ係数は外した。その支出の式は monthSpend に残り、投資の監査の書き出しの「月間支出」が使う——そこでも数えない)
    立替と違って**組になる相手がいない**ので、未精算(advOutstanding)には入れない。
    生活の予算で払った支出(消費など)の分担は、今まで通り家庭内(v3.32: 支出側と対称になるので収入で正しい) */
 const SHARE_INC = "一部負担";
@@ -1207,7 +1207,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.56";
+const APP_VERSION = "6.57";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1394,7 +1394,6 @@ function _renderScreen(app){
   if(UI.screen==="mahjong-edit"){ app.innerHTML = viewMj(); bindMj(); return; }
   if(UI.screen==="fixed"){ app.innerHTML = viewFixed(); bindFixed(); return; }
   if(UI.screen==="wishlist"){ app.innerHTML = viewWishlist(); bindWishlist(); return; }
-  if(UI.screen==="leak"){ app.innerHTML = viewLeak(); bindLeak(); return; }
   if(UI.screen==="invest"){ app.innerHTML = viewInvest(); bindInvest(); return; }
   if(UI.screen==="investdetail"){ app.innerHTML = viewInvestDetail(); bindInvest(); return; }
   if(UI.screen==="bank"){ app.innerHTML = viewBank(); bindBank(); return; }
@@ -3453,7 +3452,7 @@ function viewLedger(){
       h += '<div class="amber" style="font-size:11px;font-weight:700;margin-bottom:10px">'+
         '今月の積立がまだです</div>';
       /* v3.61: 滝の定数が見えないと「¥89,508残る」が実態と乖離する(先取り分は口座に残らない)。
-         secured=leakAggが既に集計している当月の貯金・投資・スイープ実績——新たな記帳負担なし。
+         当月の貯金・投資・スイープ実績は既に集計している数字(今は securedSplit。当時は漏れ係数の leakAgg——v6.57 で外した)——新たな記帳負担なし。
          v3.62: 貯金/投資の2枠に分割 */
       /* v5.11: **貯金の行は予算カードへ移った**ので、催促カードには出さない。
          同じ数字を2箇所に並べない——催促カードの役目は「やれ」とボタンを出すことで、
@@ -4159,12 +4158,9 @@ function viewTool(){
       (o.right!=null ? o.right : _chev)+'</div>'; };
   const _head=t=>'<div class="gl-h">'+t+'</div>';
   const _list=rows=>'<div class="card glist">'+rows.join("")+'</div>';
-  const lm=leakMonths().map(leakAgg);
-  let leakTxt="測定待ち";
-  for(let li=0;li<lm.length-1;li++){
-    const dI=lm[li].salary-lm[li+1].salary, dE=lm[li].spend-lm[li+1].spend;
-    if(lm[li].salary>0&&lm[li+1].salary>0&&dI>=30000){ leakTxt="直近 "+Math.round(dE/dI*100)+"%"; break; }
-  }
+  /* v6.57: **「漏れ係数」の行を外した**(ユーザー: 使ってないから消して良いです)。家計簿の板は6行→5行、管理は全部で13行。
+     行の右に値を出していたのはこの行だけだったので、そのための .gl-r / .gl-val(CSS)も一緒に外した。
+     また値を右に出す行が要る時は、v6.56 の index.html のこの行と CSS の2行を見る */
   let h = _head("家計簿");
   h += _list([
     _row('data-a="fixed"', "固定費"),
@@ -4172,7 +4168,6 @@ function viewTool(){
        v5.49まで入口は「予算カード→内訳→予算変更」だけで、**期間を変えたいときに辿り着けない** */
     _row('data-a="setbudget"', "予算の設定", {sub: cycleStartDay() ? '期間: 給料日('+cycleStartDay()+'日)から' : '期間: 暦月'}),
     _row('data-a="wishlist"', "ほしい物"),
-    _row('data-a="leak"', "漏れ係数", {right:'<span class="gl-r"><span class="gl-val">'+leakTxt+'</span>'+_chev+'</span>'}),
     _row('data-a="togglelaunchadd"', "起動時に記帳画面を開く",
       {right:'<span class="gl-sw'+(S.openAddOnLaunch?' on':'')+'" role="switch" aria-checked="'+(S.openAddOnLaunch?'true':'false')+'"><span></span></span>'}),
     /* v6.23: レシートの読み取り(Claude API)の設定。状態(未設定/モデル)を小さく出す */
@@ -5584,13 +5579,9 @@ function viewAssets(){
   return h;
 }
 
-/* ---------- 漏れ係数(補償消費の計器) ---------- */
-function leakMonths(){
-  const set={};
-  (S.entries||[]).forEach(e=>{ if(e.date&&e.date.length>=7) set[e.date.slice(0,7)]=1; });
-  return Object.keys(set).sort().reverse().slice(0,12);
-}
-/* v3.62: 先取りの月次実績を貯金/投資に分離。leakAgg.securedもこれを合算して使う(同じ数字は1箇所で計算する) */
+/* v6.57: ここにあった「漏れ係数(補償消費の計器)」(v3.22〜)は外した(ユーザー: 使ってないから消して良いです)。
+   入力を持たない導出だけの機能だったので、保存データ(S)には何も残っていない・消すものも無い。経緯は HANDOFF の v6.57 */
+/* v3.62: 先取りの月次実績を貯金/投資に分離(securedSplit)。当時は漏れ係数の「確保」もこれを合算して使っていた(同じ数字は1箇所で計算する) */
 /* v3.68: ジャンル内枠は金額("35000")と割合("35%")の両方を受ける。
    滝の反転で変動消費の枠が月ごとに動くようになったため、割合なら枠に追随する(固定額だと同じ数字が月により別の意味になる) */
 /* v3.73: 予算枠を金額と割合の両方で持てるようにする(ユーザー設計)。
@@ -6993,58 +6984,12 @@ function securedSplit(mk){
   (((S.bank||{}).txns)||[]).forEach(t=>{ if(t.type==="sweep"&&inBudget(t.date,mk)) sv+=num(t.amount); });
   return {sv:sv, iv:iv, byPot:byPot};
 }
-function leakAgg(mk){
-  const me=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk));
-  /* v5.32: グローバルの isNet を使う */
-  const salary=me.filter(e=>e.type==="income"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69 */
-  const spend=me.filter(e=>e.type==="expense"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);
-  const gnet=me.filter(isNet).reduce((a,e)=>a+(e.type==="income"?e.amount:-e.amount),0);
-  const _ss=securedSplit(mk); const secured=_ss.sv+_ss.iv;
-  return {mk:mk, salary:salary, spend:spend, gnet:gnet, secured:secured};
-}
-function viewLeak(){
-  const ms=leakMonths().map(leakAgg);
-  let h='<div class="hdr"><button class="navbtn" data-lk="back">‹ 戻る</button><div style="font-size:14px;font-weight:700">漏れ係数'+
-    infoBtn("収入が増えた時に、そのうちどれだけが支出の増加に回ったか(=漏れたか)を測る指標です。「稼いでも残らない」を、感覚ではなく数字で確かめるためのものです。<br><br>前の月より収入が3万円以上増えた月について計算します。<br>例: 収入が10万円増えて、支出が4万円増えたら<b>漏れ40%</b>。増えた収入の6割が手元に残ったことになります。低いほど良い状態です。<br><br>月ごとの行には、給与・支出・遊技の収支・先取り(給料が入った時に、先に貯金や投資へ回した額)を並べています。下の遊技の欄は、勝った月の純益のうち貯金へ移せた割合(回収率)と、生活費から軍資金へ回した額(逆流)です。")+
-    '</div><div style="width:44px"></div></div>';
-  let head='';
-  for(let i=0;i<ms.length-1;i++){
-    const cur=ms[i], prev=ms[i+1];
-    const dI=cur.salary-prev.salary, dE=cur.spend-prev.spend;
-    if(cur.salary>0&&prev.salary>0&&dI>=30000){
-      const k=Math.round(dE/dI*100);
-      head='<div class="card" style="margin-bottom:12px;text-align:center;padding:14px 16px">'+
-        '<div class="muted" style="font-size:11px">'+prev.mk.slice(5)+'月 → '+cur.mk.slice(5)+'月(増収 +¥'+dI.toLocaleString("ja-JP")+')</div>'+
-        '<div class="mono" style="font-size:30px;font-weight:700;color:'+(k>=60?"var(--red)":k>=30?"var(--amber)":"var(--teal)")+'">漏れ '+k+'%</div>'+
-        '<div class="muted" style="font-size:11px;margin-top:2px">支出の連動 '+(dE>=0?"+":"−")+'¥'+Math.abs(dE).toLocaleString("ja-JP")+' ・ 残存 '+(100-k)+'%</div></div>';
-      break;
-    }
-  }
-  h+= head || '<div class="card" style="margin-bottom:12px;text-align:center;padding:14px 16px"><div class="muted" style="font-size:12px">増収月(前月比 +3万以上)が来たら、ここに係数が出ます</div></div>';
-  h+=band("月次");
-  h+='<div class="card" style="padding:2px 16px">';
-  ms.forEach((m,i)=>{
-    h+='<div style="padding:9px 0'+(i>0?';border-top:1px solid var(--line)':'')+'">'+
-      '<div class="row between" style="font-size:12px"><span class="mono muted">'+m.mk+'</span>'+
-      '<span><span class="muted" style="font-size:11px">給与</span> <span class="mono">¥'+m.salary.toLocaleString("ja-JP")+'</span>'+
-      '  <span class="muted" style="font-size:11px">支出</span> <span class="mono">¥'+m.spend.toLocaleString("ja-JP")+'</span></span></div>'+
-      '<div class="row between" style="font-size:11px;margin-top:3px"><span><span class="muted" style="font-size:11px">遊技</span> <span class="mono '+clsPM(m.gnet)+'">'+signYen(m.gnet)+'</span></span>'+
-      '<span><span class="muted" style="font-size:11px">確保</span> <span class="mono teal">¥'+m.secured.toLocaleString("ja-JP")+'</span></span></div></div>';
-  });
-  h+='</div>';
-  const posSum=ms.reduce((a,m)=>a+(m.gnet>0?m.gnet:0),0);
-  const sweep=bankSaved();
-  const topup=(((S.bank||{}).txns)||[]).filter(t=>t.type==="topup").reduce((a,t)=>a+num(t.amount),0);
-  h+=band("遊技の漏れ(軍資金の壁)");
-  h+='<div class="card" style="font-size:12px;padding:12px 16px">'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">勝ち月の純益 合計</span><span class="mono teal">¥'+posSum.toLocaleString("ja-JP")+'</span></div>'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">貯金へ振替 累計</span><span class="mono teal">¥'+sweep.toLocaleString("ja-JP")+'</span></div>'+
-    '<div class="row between" style="margin-bottom:5px"><span class="muted">回収率</span><span class="mono" style="font-weight:700">'+(posSum>0?Math.round(sweep/posSum*100)+"%":"—")+'</span></div>'+
-    '<div class="row between"><span class="muted">軍資金へ振替(生活→遊技の逆流)</span><span class="mono '+(topup>0?"red":"muted")+'">¥'+topup.toLocaleString("ja-JP")+'</span></div></div>';
-  return h;
-}
-function bindLeak(){
-  document.querySelectorAll("[data-lk]").forEach(el=>{ el.onclick=()=>{ if(el.dataset.lk==="back"){ UI.screen="main"; render(); } }; });
+/* v6.57: **漏れ係数(v3.22〜)を外した**(ユーザー: 使ってないから消して良いです)。
+   ここにあった leakAgg(mk) は {salary, spend, gnet, secured} を返し、漏れ係数の画面(viewLeak)と管理タブの行が使っていた。
+   画面の外で使っていたのは **spend だけ**(投資の監査の書き出しの「月間支出」)なので、その式だけを**そのまま**残す。
+   = その暦月の支出のうち、遊技(isNet)と収支の外(isOffPL: 立替・一部負担)を除いた額 */
+function monthSpend(mk){
+  return (S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk)&&e.type==="expense"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);
 }
 
 /* ---------- 投資台帳(時価を追わない・シナリオ帳つき) ---------- */
@@ -7134,7 +7079,7 @@ function genInvestAudit(){
   for(let i=1;i<=3;i++){
     const d=new Date(nowD.getFullYear(), nowD.getMonth()-i, 1);
     const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
-    const sp=leakAgg(mk).spend; if(sp>0) spends.push(sp);
+    const sp=monthSpend(mk); if(sp>0) spends.push(sp);   /* v6.57: 式は前と同じ(leakAgg.spend → monthSpend) */
   }
   if(spends.length){
     const avgSp=Math.round(spends.reduce((a,b)=>a+b,0)/spends.length);
@@ -7373,7 +7318,7 @@ function bindInvest(){
 /* v4.12: **月別の増減内訳**。軍資金の残高を動かすのは5つ(遊技の勝ち負け/補充/回収/所持金へ戻し/補正)だが、
    記録セクションに出ていたのは下4つだけで、**一番大きく動かす遊技の勝ち負けが明細に存在しなかった**。
    残高が減っていても理由が読めない状態だったので、月ごとに何で動いたかを分解する。
-   「負けた月にいくら補充したか」が読める=漏れ係数の材料そのもの */
+   「負けた月にいくら補充したか」が読める=漏れ係数の材料そのもの(漏れ係数は v6.57 で外した) */
 /* v6.00【修正】(ユーザー指摘: 収支と振替額が混同している)。
    ・**遊技の判定を`isNet`に**——v5.73で遊技経費(gexp)を足した時、ここだけ`slot/mahjong`の直書きが残っていた。
      月別の遊技収支に遊技経費が入らず、**月別の合計が「遊技収支 累計」と合わなかった**(スクショで¥900のズレ)。
@@ -7631,7 +7576,7 @@ function walletForecast(){
   const now=walletBalance();
   return {now:now, futIncome:inc, futExpense:exp, end:now+inc-exp, short:Math.max(0,-(now+inc-exp))};
 }
-function bankSaved(){ return ((S.bank&&S.bank.txns)||[]).filter(t=>t.type==="sweep").reduce((a,t)=>a+num(t.amount),0); }
+/* v6.57: ここにあった bankSaved()(軍資金→貯金の振替の累計)は、使っていたのが漏れ係数の画面だけだったので一緒に外した */
 function bankBalance(bw){
   const b=S.bank||{}, tx=(b.txns||[]).filter(t=>bw==null||tBWal(t)===String(bw));
   const topup=tx.filter(t=>t.type==="topup").reduce((a,t)=>a+num(t.amount),0);
@@ -7979,7 +7924,7 @@ function bindBank(){
 /* v4.00: **貯金を複数の箱(pot)に分ける**(ユーザー設計)。実口座を分けられる(みんなの銀行)ので
    アプリ側も実態に合わせる。目的の違う金——11月の引越し資金と12月のふるさと納税——を混ぜない。
    ・箱はS.savings.pots。既定箱は"main"で、**potIdの無い既存txnは全てmain扱い**(非破壊移行)
-   ・軍資金からのスイープ(bankSaved)もmainへ入る
+   ・軍資金からのスイープ(S.bank.txns の type="sweep")もmainへ入る
    ・**梯子(引越し→生活防衛費→投資スタート)の進捗はmainの残高だけで測る**——
      ふるさと納税用に積んだ金は引越しには使えないので、梯子に算入すると
      「11月に達成と出たのに実際は足りない」という最悪の誤認が起きる
@@ -9520,7 +9465,6 @@ function bindMain(){
       else if(a==="csv") exportCsv();
       else if(a==="fixed"){ UI.screen="fixed"; UI.fixForm=null; render(); }
       else if(a==="wishlist"){ UI.screen="wishlist"; render(); }
-      else if(a==="leak"){ UI.screen="leak"; render(); }
       else if(a==="invest"){ UI.screen="invest"; render(); }
       else if(a==="bank"){ UI.screen="bank"; render(); }
       else if(a==="setpre"){ UI.screen="budget"; UI.budForm=null; render(); }
