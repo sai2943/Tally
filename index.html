@@ -417,7 +417,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.60 (localStorage保存・完全オフライン)
+   Tally 6.61 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1214,7 +1214,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.60";
+const APP_VERSION = "6.61";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -10799,24 +10799,45 @@ function amzCleanUnread(a){
   }).filter(Boolean);
 }
 /* プログラムを呼ぶ。失敗は「次に何をすればいいか」まで言う */
+/* v6.61 Google に置いたプログラムの版。これより古いと下の行に「要更新」、設定に「古い版です」 */
+const AMZ_GAS_V=3;
+/* もう取り込んだ・判断の済んだ Amazon のメール(amzTriage が飛ばすもの)。Google 側で開かないように渡す(1通開くと Gmail の読み取りを 60 使う)。
+   「いつから」より後のものだけ・新しい順に200まで(URL を長くしすぎない) */
+function amzSkipIds(from){
+  const seen=amzSeen(), out=[];
+  Object.keys(seen).forEach(id=>{ if(String(seen[id])>=from) out.push([String(seen[id]), id]); });
+  (S.entries||[]).forEach(e=>{ const m=/^amz:([A-Za-z0-9]{1,40})$/.exec(String(e.ref||"")); if(m && String(e.date||"")>=from) out.push([String(e.date), m[1]]); });
+  const ids=[], had={};
+  out.sort((a,b)=>a[0]<b[0]?1:a[0]>b[0]?-1:0).forEach(x=>{ if(!had[x[1]] && /^[A-Za-z0-9]{1,40}$/.test(x[1]) && ids.length<200){ had[x[1]]=1; ids.push(x[1]); } });
+  return ids;
+}
 async function amzFetch(url, from, ctl){
   let res=null, js=null;
-  try{ res=await fetch(url+"?from="+encodeURIComponent(from), {method:"GET", credentials:"omit", redirect:"follow", cache:"no-store", signal:(ctl ? ctl.signal : undefined)}); }
+  const skip=amzSkipIds(from);
+  try{ res=await fetch(url+"?from="+encodeURIComponent(from)+(skip.length ? "&skip="+skip.join(",") : ""), {method:"GET", credentials:"omit", redirect:"follow", cache:"no-store", signal:(ctl ? ctl.signal : undefined)}); }
   catch(e){ return {ok:false, msg:"Googleに置いたプログラムにつながりませんでした。\n電波が弱いか、公開の設定が違うかもしれません(デプロイの「アクセスできるユーザー」は「全員」)。"}; }
   if(!res.ok) return {ok:false, msg:"Googleに置いたプログラムから返事がありません("+res.status+")。\nデプロイをやり直して、URLを貼り直してください。"};
   try{ js=await res.json(); }catch(e){ js=null; }
   if(!js || typeof js!=="object") return {ok:false, msg:"プログラムの返事が読めません。\nデプロイの「アクセスできるユーザー」が「全員」になっているか確かめてください(ログインの画面が返ってきているかもしれません)。"};
   if(js.ok!==true){
     const raw=String(js.err||"");
-    /* v6.60: Gmail を読む回数の上限(2026-05 から 1人あたり 6,000単位/分。本文を開くと1通 60〜120)。英語のままだと何をすればいいか分からない */
-    if(/quota exceeded|rate ?limit|too many/i.test(raw))
+    /* v6.61: 版3のプログラムは、1回に使う量が多すぎそうな時に自分で止める(TOO_MANY) */
+    if(/^TOO_MANY/.test(raw)) return {ok:false, msg:"一度に読むメールが多すぎるので、途中でやめました。\n「いつのメールから」を近くの日付にしてください。"};
+    /* v6.60: Gmail を読む回数の上限(2026-05 から 1人あたり 6,000単位/分。本文を開くと1通 60〜120)。英語のままだと何をすればいいか分からない。
+       v6.61: どの読み方で当たったか(gmail.users.○○)を小さく添える(原因を探す手がかり) */
+    if(/quota exceeded|rate ?limit|too many/i.test(raw)){
+      const call=(/gmail\.users\.\w+\.\w+/i.exec(raw)||[])[0];
       return {ok:false, msg:"Gmailを読む回数の上限に当たりました"+(/one day|per day/i.test(raw) ? "(1日あたり)。\n明日になってから、もう一度試してください。"
-        : /per minute|rate ?limit/i.test(raw) ? "(1分あたり)。\n1分ほど待ってから、もう一度試してください。" : "。\n少し時間をおいてから、もう一度試してください。")};
+        : /per minute|rate ?limit/i.test(raw) ? "(1分あたり)。\n1分ほど待ってから、もう一度試してください。" : "。\n少し時間をおいてから、もう一度試してください。")+(call ? "\n("+call+")" : "")};
+    }
     return {ok:false, msg:"プログラムの中で失敗しました。\n"+(raw||"(理由が返ってきませんでした)").slice(0,300)};
   }
   /* v6.59: 版2のプログラムは、ソニー銀行のデビットの通知(debits)も返す。版1(debits が無い)のままでも Amazon の取り込みは動く——hasDebits で見分ける */
+  /* v6.61 版3は、通知の読み方の内訳(dstat)と、使った読み取りの量(used)も返す。数だけを受け取る */
+  const n=x=>{ const v=Number(x); return (isFinite(v) && v>=0 && v<1e7) ? Math.round(v) : 0; };
+  const st=(js.dstat && typeof js.dstat==="object") ? {n:n(js.dstat.n), tsnip:n(js.dstat.tsnip), msnip:n(js.dstat.msnip), full:n(js.dstat.full), hidden:n(js.dstat.hidden)} : null;
   return {ok:true, v:(Number(js.v)||0), mails:amzClean(js.mails), unread:amzCleanUnread(js.unread),
-    hasDebits:Array.isArray(js.debits), debits:dbtClean(js.debits), dunread:amzCleanUnread(js.dunread)};
+    hasDebits:Array.isArray(js.debits), debits:dbtClean(js.debits), dunread:amzCleanUnread(js.dunread), stat:st, used:(js.used==null ? null : n(js.used))};
 }
 /* 前から付けてあった記録の中から、このメールの分を探す。金額がぴったりの1件(日付が近い順)、無ければ、その日のAmazonの記録の合計がぴったりの日 */
 function amzMatch(m, pool, claimed){
@@ -11027,8 +11048,11 @@ async function amzTest(){
   if(timer) clearTimeout(timer);
   if(got.ok){
     const sh=got.mails.filter(m=>m.kind==="ship").length, md=String(amzFrom()).slice(5).replace("-","/");
-    UI.amzTest={ok:true, old:!got.hasDebits, msg:"つながりました。\n"+md+" からのメール: 発送 "+sh+"通・デジタル "+(got.mails.length-sh)+"通"+(got.unread.length ? "・読めない "+got.unread.length+"通" : "")+
-      (got.hasDebits ? "\nデビットの通知 "+got.debits.length+"通"+(got.dunread.length ? "・読めない "+got.dunread.length+"通" : "") : "")+
+    const st=got.stat;
+    UI.amzTest={ok:true, old:!got.hasDebits, v:got.v, msg:"つながりました。\n"+md+" からの、まだ取り込んでいないメール: 発送 "+sh+"通・デジタル "+(got.mails.length-sh)+"通"+(got.unread.length ? "・読めない "+got.unread.length+"通" : "")+
+      (got.hasDebits ? "\nデビットの通知 "+got.debits.length+"通"+(got.dunread.length ? "・読めない "+got.dunread.length+"通" : "")+
+        (st ? "(一覧で "+st.tsnip+"・1通ずつ "+st.msnip+"・本文 "+st.full+")" : "") : "")+
+      (got.used!=null ? "\nGmailの読み取り 約 "+got.used.toLocaleString("ja-JP")+"(上限は1分に 6,000)" : "")+
       "\n記録の画面から取り込めます。"};
     try{ dbtStore(got); UI.dbtAt=Date.now(); dbtMark(got); }catch(e){ console.error(e); }
   } else { UI.amzTest={ok:false, msg:got.msg}; dbtMark(got); }
@@ -11074,7 +11098,7 @@ function dbtBm(got){
     return {i:i, id:d.id, date:d.date, amt:-d.amount, bal:null, desc:"Visaデビット "+merch, merch:merch, appr:((d.appr && !/^0+$/.test(d.appr)) ? d.appr : ""), memo:""};
   });
   return {mail:true, walId:W, rows:rows, from:(rows.length && rows[0].date<from ? rows[0].date : from), to:today, src:"メール",
-    mails:(got.mails||[]), dunread:(got.dunread||[]), old:!got.hasDebits, at:Date.now()};
+    mails:(got.mails||[]), dunread:(got.dunread||[]), old:!got.hasDebits, v:(Number(got.v)||0), at:Date.now()};
 }
 function dbtHide(){ let o=null; try{ o=JSON.parse(rcptLS(DBT_HIDE_LS)||"{}"); }catch(e){ o=null; } return (o && typeof o==="object" && !Array.isArray(o)) ? o : {}; }
 function dbtHideSet(r, on){
@@ -11116,7 +11140,7 @@ function dbtAutoOn(){ return rcptLS(DBT_AUTO_LS)!=="0"; }
    ユーザー:「起動時に照合して成功してるか確認が出来ないのも問題」——板は言うことがある時しか出ないので、何も出ていない時に
    「全部記録済み」なのか「動いていない・失敗した」のかが分からなかった */
 function dbtMark(got){
-  UI.dbtLast = (got && got.ok) ? {at:Date.now(), ok:true, old:!got.hasDebits}
+  UI.dbtLast = (got && got.ok) ? {at:Date.now(), ok:true, old:(!got.hasDebits || (Number(got.v)||0) < AMZ_GAS_V)}
     : {at:Date.now(), ok:false, off:!!(got && got.off), msg:String((got && got.msg) || "")};
   dbtStatusPaint();
 }
@@ -11129,7 +11153,7 @@ function dbtStatusInner(){
   else if(!L) return "";
   else if(L.off) s="メール照合 オフライン";
   else if(!L.ok){ s='メール照合 <span class="mono">'+hm(L.at)+'</span> 失敗'; c="amber"; }
-  else if(L.old){ s="メール照合 要更新"; c="amber"; }   /* Googleに置いたプログラムが版1(デビットの通知を返さない) */
+  else if(L.old){ s="メール照合 要更新"; c="amber"; }   /* Googleに置いたプログラムが古い(版1=通知を返さない・版2=上限に当たりやすい) */
   else s='✓ メール照合 <span class="mono">'+hm(L.at)+'</span>';
   return ' ・ <span'+(c ? ' class="'+c+'"' : '')+'>'+s+'</span>';
 }
@@ -11338,6 +11362,8 @@ function amzSetHtml(){
     "③「ファイル」の「＋」→「スクリプト」で作り直す(名前は「コード」)。中の3行の雛形の下の空いた所を押し、改行してから貼って、保存する(雛形の { } の中には貼らない)<br>"+
     "④ 右上の「デプロイ」→「デプロイを管理」→ 鉛筆のマーク →「バージョン」を「新バージョン」にして「デプロイ」<br>"+
     "URLは変わらないので、貼り直しは要りません。権限の確認も、もう一度は出ません(読むだけのまま)。<br><br>"+
+    "<b>Gmailを読む量の上限</b>: Gmailには、1分に読める量の上限があります(1人 1分に 6,000。メール1通を開くと 60)。Tallyは、取り込み済みのAmazonのメールは開かず、デビットの通知はふつう一覧の書き出しだけで読むので、1回に使うのは数百ほどです。"+
+    "上限に当たった時は、下の行に「メール照合 失敗」と出ます。1分ほど待てば元に戻ります。「つながるか確かめる」を押すと、使った量が出ます。<br><br>"+
     "<b>URLは秘密にしてください</b>: 知っている人は、Amazonで買った物と金額、デビットで払った店と金額の一覧を見られます(名前・住所・注文番号・口座の残高・メールの本文は返しません)。チャットやメモに貼らないでください。置き場所はこの端末の中だけで、同期・バックアップには入りません。漏れたと思ったら、Apps Script の「デプロイを管理」でアーカイブすれば止まります。<br><br>"+
     "<b>金額</b>: 発送メールの「合計」(割引を引いた後の、その発送で引き落とされる額)をそのまま使います。Kindleなどでポイントを使った時は、メールの金額と引き落としが違うことがあります(Amazonのメールにそう書いてあります)。<br><br>"+
     "<b>Claudeに送るもの</b>: Amazonの品名と金額、これまでのAmazonの品目名と分類(表記を揃えるため)。デビットの通知は送りません。APIキーが無い時や圏外の時は、品名は長いまま・分類は消費で取り込みます。";
@@ -11354,8 +11380,12 @@ function amzSetHtml(){
       '<span class="gl-sw'+(dbtAutoOn()?' on':'')+'" role="switch" aria-checked="'+(dbtAutoOn()?'true':'false')+'"><span></span></span></div>'+
       '<button class="btn full" style="padding:10px 0;font-size:12px;margin-top:12px" data-rs="amztest">'+((T && T.busy) ? '確かめています…' : 'つながるか確かめる')+'</button>'+
       ((T && T.msg) ? '<div class="'+(T.ok?'teal':'red')+'" style="font-size:12px;margin-top:8px;line-height:1.6">'+esc(T.msg).replace(/\n/g,"<br>")+'</div>' : '')+
-      /* 版1のプログラムのままだと、デビットの通知は返ってこない(Amazon の取り込みは動く)。確かめた時・裏で確かめた時に分かるので、分かっている時だけ言う */
-      (((T && T.ok && T.old) || (UI.dbt && UI.dbt.bm && UI.dbt.bm.old)) ? '<div class="amber" style="font-size:12px;margin-top:8px;line-height:1.6">Googleに置いたプログラムが古い版です。デビットの通知を見るには、プログラムを新しくしてください(手順は上のⓘの「プログラムを新しくする時」)。</div>' : '');
+      /* 版1のプログラムのままだと、デビットの通知は返ってこない(Amazon の取り込みは動く)。版2は通知を1通ずつ開くことがあり、Gmail の上限に当たりやすい。
+         確かめた時・裏で確かめた時に分かるので、分かっている時だけ言う */
+      (()=>{ const gv=(T && T.ok) ? (Number(T.v)||0) : (UI.dbt && UI.dbt.bm) ? (Number(UI.dbt.bm.v)||0) : 0, old1=(T && T.ok && T.old) || (UI.dbt && UI.dbt.bm && UI.dbt.bm.old);
+        if(!old1 && !(gv && gv<AMZ_GAS_V)) return '';
+        return '<div class="amber" style="font-size:12px;margin-top:8px;line-height:1.6">Googleに置いたプログラムが古い版です。'+(old1 ? 'デビットの通知を見るには' : 'Gmailを読む量の上限に当たりやすいので')+
+          '、プログラムを新しくしてください(手順は上のⓘの「プログラムを新しくする時」)。</div>'; })();
   }
   h+='<div class="row" style="gap:8px;margin-top:12px"><button class="btn" style="flex:1;padding:9px 0;font-size:12px" data-rs="amzgas">プログラムをコピー</button>'+
     '<button class="btn" style="flex:1;padding:9px 0;font-size:12px" data-rs="amzjson">設定ファイルをコピー</button></div></div>';
@@ -11401,43 +11431,65 @@ const AMZ_GAS_JSON=['{',
 /* Google に置くプログラム(Apps Script)。**ここが元**(設定の画面の「プログラムをコピー」で、これがそのままクリップボードに入る)。
    検査は tests/amz658/gas_test.js が、この文字をそのまま Node の上で動かす。String.raw なので、中にバッククォートと ${ は書けない */
 const AMZ_GAS=String.raw`/**
- * Tally 用 — Amazon のメールと、ソニー銀行のデビットの通知から、支払いの中身だけを取り出すプログラム
+ * Tally 用 — Amazon のメールと、ソニー銀行のデビットの通知から、支払いの中身だけを取り出すプログラム(版3)
  *
  * 読むメール: Amazon の「発送済み」(shipment-tracking@amazon.co.jp)と、デジタルの注文(digital-no-reply@amazon.co.jp)。
  *             ソニー銀行の「Sony Bank WALLET ご利用のお知らせ」(banking@sonybank.jp)。
  * 返すもの  : Amazon は、メールの日付・品名・数量・価格・合計。デビットは、利用日・金額・加盟店の名前・承認番号。
  * 返さないもの: 名前・住所・注文番号・口座の残高・メールの本文・ほかのメール(ワンタイムパスワードのメールは読みません)。
  * 権限      : メールを読むだけ(gmail.readonly)。メールの変更・削除・送信はできません。
+ * 読む量    : Gmail には読む量の上限があります(1人 1分に 6,000。メールの一覧 5〜10・書き出し 20・本文 60)。
+ *             1回にこれより多く使いそうな時は、途中でやめて「多すぎます」と返します(RUN_BUDGET)。
  *
  * 使い方: Tally の 管理 → レシートの読み取り → メール の欄に、このプログラムを公開した時のURLを貼ります。
- * 直した時: 貼り替えて保存 →「デプロイ」→「デプロイを管理」→ 鉛筆 → バージョンを「新バージョン」→「デプロイ」(URLは変わりません)。
+ * 直した時: ファイルを作り直して貼り、保存 →「デプロイ」→「デプロイを管理」→ 鉛筆 → バージョンを「新バージョン」→「デプロイ」(URLは変わりません)。
  */
-var TALLY_AMZ_VERSION = 2;
+var TALLY_AMZ_VERSION = 3;
 var AMZ_TZ = 'Asia/Tokyo';
 var AMZ_MAX_DAYS = 90;       // これより前のメールは見ない
 var AMZ_DEFAULT_DAYS = 30;   // 「いつから」の指定が無い時
+var AMZ_TEST_DAYS = 7;       // test() で見る日数(確かめるだけなので、読む量を小さく)
 var AMZ_MAX_MAILS = 200;
 var DEBIT_MAX = 600;         // デビットの通知は、これより多くは見ない
+var FULL_MAX = 15;           // デビットの通知の本文を開くのは、1回にこれまで(残りは「読めなかった通知」)
+var SKIP_MAX = 300;          // Tally から「もう読まなくてよい」と渡される Amazon のメールの数の上限
+var RUN_BUDGET = 4500;       // 1回で使う読み取りの上限(Google の上限は 1人 1分に 6,000)
+var COST = {tlist: 10, mlist: 5, meta: 20, full: 60};   // Gmail の読み取りの単位(2026年5月から)
+var used_ = 0;               // この回で使った読み取り(目安)
 
-/** Tally から呼ばれる入口。?from=2026-11-05 で「この日からのメール」 */
+/** 読む前に、使う量を足す。上限を超えそうなら、全体をやめる(途中までの結果を「全部」として返さない) */
+function spend_(n) {
+  if (used_ + n > RUN_BUDGET) throw new Error('TOO_MANY: 一度に読むメールが多すぎます(読み取り ' + used_ + ' 単位を使ったところで止めました)');
+  used_ += n;
+}
+
+/**
+ * Tally から呼ばれる入口。
+ *   ?from=2026-11-05   Amazon のメールを、この日から(デビットの通知も、dfrom が無ければこの日から)
+ *   &dfrom=2026-11-01  デビットの通知を、この日から(省いてよい)
+ *   &skip=id1,id2      もう取り込んだ Amazon のメール(読まない・返さない。省いてよい)
+ */
 function doGet(e) {
-  var out;
+  var p = (e && e.parameter) || {}, out;
   try {
-    out = collect_(e && e.parameter ? e.parameter.from : '');
+    out = collect_(p.from || '', p.dfrom || '', p.skip || '');
   } catch (err) {
     out = {ok: false, v: TALLY_AMZ_VERSION, err: String((err && err.message) || err)};
   }
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** エディタで一度だけ実行する(権限の確認と、読めるかどうかの確かめ)。結果は下の「実行ログ」に出ます */
+/** エディタで実行して確かめる(権限の確認と、読めるかどうか)。直近 AMZ_TEST_DAYS 日だけ見る。結果は下の「実行ログ」に出ます */
 function test() {
   var r;
   try {
-    r = collect_('');
+    r = collect_('', '', '', AMZ_TEST_DAYS);
   } catch (err) {
-    Logger.log('失敗: ' + String((err && err.message) || err));
-    Logger.log('「Gmail」という字のある失敗なら: 左の「サービス」の＋を押し、「Gmail API」を選んで「追加」してから、もう一度実行してください。');
+    var m = String((err && err.message) || err);
+    Logger.log('失敗: ' + m);
+    if (/Gmail is not defined|Gmail API has not been used/.test(m)) Logger.log('左の「サービス」の＋を押し、「Gmail API」を選んで「追加」してから、もう一度実行してください。');
+    else if (/^TOO_MANY/.test(m)) Logger.log('読むメールが多すぎます。少し待ってから、もう一度実行してください。');
+    else if (/quota|rate ?limit|too many/i.test(m)) Logger.log('Gmail を読む量の上限(1人 1分に 6,000)に当たりました。1分ほど待ってから、もう一度実行してください。');
     return;
   }
   Logger.log('読めたメール ' + r.mails.length + '通(' + r.from + ' から)。読めなかったメール ' + r.unread.length + '通。');
@@ -11445,13 +11497,23 @@ function test() {
     Logger.log(m.date + ' ' + (m.kind === 'ship' ? '発送' : 'デジタル') + ' ' + m.items.length + '品 合計 ' + m.total + '円');
   });
   r.unread.forEach(function (m) { Logger.log('読めない: ' + m.date + ' ' + m.subject); });
-  Logger.log('デビットの通知 ' + r.debits.length + '通(うち、本文まで読んだもの ' + r.dfull + '通)。読めなかったもの ' + r.dunread.length + '通。');
+  var st = r.dstat;
+  Logger.log('デビットの通知 ' + r.debits.length + '通(' + r.dfrom + ' から)。読めなかったもの ' + r.dunread.length + '通。');
+  Logger.log('読み方: 一覧の書き出しで ' + st.tsnip + '通・1通ずつ書き出しを見て ' + st.msnip + '通・本文を開いて ' + st.full + '通。金額の無い通知 ' + st.hidden + '通。');
+  if (st.shape) Logger.log('一覧の書き出しで読めなかった最初の通知の形: ' + st.shape);
   r.dunread.forEach(function (m) { Logger.log('読めない: ' + m.date + ' ' + m.subject); });
+  Logger.log('Gmail の読み取り: 約 ' + r.used + ' 単位(上限は 1人 1分に 6,000)。');
 }
 
-function collect_(from) {
-  var start = startDate_(from, new Date());
-  var after = Math.floor(new Date(start + 'T00:00:00+09:00').getTime() / 1000);
+function collect_(from, dfrom, skip, days) {
+  used_ = 0;
+  var now = new Date();
+  var start = startDate_(from, now, days);
+  var dstart = /^\d{4}-\d{2}-\d{2}$/.test(String(dfrom || '')) ? startDate_(dfrom, now) : start;
+  var epoch = function (d) { return Math.floor(new Date(d + 'T00:00:00+09:00').getTime() / 1000); };
+  var after = epoch(start);
+  var skipSet = {};
+  String(skip || '').split(',').slice(0, SKIP_MAX).forEach(function (id) { if (/^[A-Za-z0-9]{1,40}$/.test(id)) skipSet[id] = 1; });
   var plan = [
     {kind: 'ship',    q: 'from:shipment-tracking@amazon.co.jp subject:発送済み after:' + after},
     {kind: 'digital', q: 'from:digital-no-reply@amazon.co.jp after:' + after}
@@ -11459,6 +11521,8 @@ function collect_(from) {
   var mails = [], unread = [];
   plan.forEach(function (p) {
     listIds_(p.q).forEach(function (id) {
+      if (skipSet[id]) return;   // もう取り込んだメール(読まない)
+      spend_(COST.full);
       var msg = Gmail.Users.Messages.get('me', id, {format: 'full'});
       var subject = header_(msg.payload, 'Subject');
       var date = Utilities.formatDate(new Date(Number(msg.internalDate)), AMZ_TZ, 'yyyy-MM-dd');
@@ -11475,66 +11539,125 @@ function collect_(from) {
   var byDate = function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); };
   mails.sort(byDate);
   unread.sort(byDate);
-  var deb = debits_(after);
+  var deb = debits_(epoch(dstart));
   deb.list.sort(byDate);
   deb.unread.sort(byDate);
-  return {ok: true, v: TALLY_AMZ_VERSION, from: start, mails: mails, unread: unread, debits: deb.list, dunread: deb.unread, dfull: deb.full};
+  return {ok: true, v: TALLY_AMZ_VERSION, from: start, dfrom: dstart, mails: mails, unread: unread,
+    debits: deb.list, dunread: deb.unread, dfull: deb.stat.full, dstat: deb.stat, used: used_};
 }
 
 /**
  * ソニー銀行のデビット(Sony Bank WALLET)の「ご利用のお知らせ」。1通 = 1回の引き落とし(マイナスの金額は払戻)。
- * メールの一覧に付いてくる「書き出し」(本文の先頭200字ほど)に、利用日・金額・加盟店・承認番号が入っているので、
- * ふつうは本文を開かない(1回の問い合わせで全部そろうので速い)。書き出しが無い・途中で切れている時だけ、そのメールの本文を読む。
+ * 読み方は安い順に3段:
+ *   ① 一覧(スレッドの一覧)に付いてくる書き出し(本文の先頭200字ほど)。1回の問い合わせで全部(500通まで 10)。
+ *   ② ①で決まらない通知だけ、1通ずつ書き出しと日付・件名を見る(1通 20)。
+ *   ③ それでも決まらない(書き出しが途中で切れている)通知だけ、本文を開く(1通 60)。1回に FULL_MAX 通まで。
+ * 金額を出さない設定の通知(書き出しが「カード利用日 … 承認番号 …」)は、開かずに「読めなかった通知」にする。
  */
 function debits_(after) {
   var q = 'from:banking@sonybank.jp subject:"ご利用のお知らせ" after:' + after;
-  var list = [], unread = [], full = 0, seen = {};
+  var list = [], unread = [], seen = {}, mids = null;
+  var stat = {n: 0, tsnip: 0, msnip: 0, full: 0, hidden: 0, shape: ''};
+  var day = function (ms) { return Utilities.formatDate(new Date(Number(ms)), AMZ_TZ, 'yyyy-MM-dd'); };
+  var settle = function (id, r, date, subject) {   // r が決まった時の置き場所。決まらなければ false
+    if (!r) return false;
+    if (r.zero) return true;
+    if (r.hidden) { stat.hidden++; unread.push({id: id, date: r.date || date, kind: 'debit', subject: clip_(subject || '金額の無い通知', 60)}); return true; }
+    if (r.bad) return false;
+    list.push({id: id, date: r.date, amount: r.amount, shop: r.shop, appr: r.appr});
+    return true;
+  };
   listThreads_(q, DEBIT_MAX).forEach(function (t) {
     if (seen[t.id]) return;
     seen[t.id] = 1;
+    stat.n++;
+    // ① 一覧の書き出し
     var r = t.snippet ? parseDebit_(t.snippet, true) : null;
-    if (r && r.zero) return;              // 0円の通知
-    if (!r || r.bad) {                    // 書き出しだけでは決められない(途中で切れている・その形でない)→ 本文を読む
-      full++;
-      var msg = lastMessage_(t.id);       // 開けなければ全体を失敗にする(通知を黙って落とさない。Tally は前の結果を残す)
-      var date = Utilities.formatDate(new Date(Number(msg.internalDate)), AMZ_TZ, 'yyyy-MM-dd');
-      var subject = '';
-      try {
-        subject = header_(msg.payload, 'Subject');
-        var body = bodyText_(msg.payload);
-        r = /\S/.test(body) ? parseDebit_(body, false) : {bad: true};   // 本文が取れない時は、別の知らせだと決めつけない
-      } catch (err) {
-        r = {bad: true};                  // 中身の形が読めない → 「読めなかった通知」として日付と件名だけ返す
-      }
-      if (!r || r.zero) return;           // デビットの利用の通知ではない・0円の通知
-      if (r.bad) {
-        unread.push({id: t.id, date: date, kind: 'debit', subject: clip_(subject, 60)});
-        return;
-      }
+    if (r === null && longEnough_(t.snippet)) return;   // デビットの利用の通知ではない(十分な長さの書き出しに、その文が無い)
+    if (settle(t.id, r, '', '')) { stat.tsnip++; return; }
+    if (!stat.shape) stat.shape = shape_(t.snippet);
+    // ② 1通ずつ書き出し・日付・件名を見る
+    if (!mids) mids = msgIds_(q);
+    var mid = mids[t.id] || t.id;
+    spend_(COST.meta);
+    var meta = Gmail.Users.Messages.get('me', mid, {format: 'metadata', metadataHeaders: ['Subject']}) || {};
+    var date = meta.internalDate ? day(meta.internalDate) : '';
+    var subject = header_(meta.payload, 'Subject');
+    var r2 = meta.snippet ? parseDebit_(meta.snippet, true) : null;
+    if (r2 === null && longEnough_(meta.snippet)) return;
+    if (settle(t.id, r2, date, subject)) { stat.msnip++; return; }
+    // ③ 本文を開く(1回に FULL_MAX 通まで)
+    if (stat.full >= FULL_MAX) { unread.push({id: t.id, date: date, kind: 'debit', subject: clip_(subject, 60)}); return; }
+    stat.full++;
+    spend_(COST.full);
+    var msg = Gmail.Users.Messages.get('me', mid, {format: 'full'}) || {};
+    var r3;
+    try {
+      var body = bodyText_(msg.payload);
+      r3 = /\S/.test(body) ? parseDebit_(body, false) : {bad: true};   // 本文が取れない時は、別の知らせだと決めつけない
+    } catch (err) {
+      r3 = {bad: true};
     }
-    list.push({id: t.id, date: r.date, amount: r.amount, shop: r.shop, appr: r.appr});
+    if (r3 === null) return;   // 本文を見て、デビットの利用の通知ではなかった
+    if (!settle(t.id, r3, date, subject)) unread.push({id: t.id, date: date, kind: 'debit', subject: clip_(subject, 60)});
   });
-  return {list: list, unread: unread, full: full};
+  return {list: list, unread: unread, stat: stat};
+}
+
+/** 書き出しが、通知の書き出しの文(「…のご利用がありました。」)まで届く長さか。短ければ、デビットの通知でないとは決めない */
+function longEnough_(s) {
+  return String(s || '').length >= 150;
+}
+
+/** 書き出しの形だけ(中身は出さない): 長さと、目印の言葉があるかどうか。test() で、読めない時の手がかりにする */
+function shape_(s) {
+  var t = normText_(s);
+  var has = function (re) { return re.test(t) ? 'あり' : 'なし'; };
+  return '長さ ' + String(s || '').length + '・Visaデビット ' + has(/visa ?デビット/i) + '・ご利用がありました ' + has(/ご利用がありました/) +
+    '・カード利用日 ' + has(/カード利用日 ?: ?\d{4}年/) + '・ご利用金額 ' + has(/ご利用金額 ?: ?[-−‐]? ?[\d,]+ ?円/) +
+    '・ご利用加盟店 ' + has(/ご利用加盟店 ?:/) + '・承認番号 ' + has(/承認番号 ?: ?\d/);
+}
+
+/** メールの一覧(id と、スレッドの id)。デビットの通知のスレッド → その中のいちばん新しいメールの id */
+function msgIds_(q) {
+  var map = {}, token = '', n = 0;
+  do {
+    var opt = {q: q, maxResults: 500};
+    if (token) opt.pageToken = token;
+    spend_(COST.mlist);
+    var res = Gmail.Users.Messages.list('me', opt) || {};
+    (res.messages || []).forEach(function (m) { if (!map[m.threadId]) map[m.threadId] = m.id; n++; });   // 一覧は新しい順
+    token = res.nextPageToken || '';
+  } while (token && n < DEBIT_MAX);
+  return map;
 }
 
 /** メールのまとまり(スレッド)の一覧。id と書き出しだけ(本文は開かない) */
-/** スレッドの中の、いちばん新しいメール(通知は1通で1スレッド)。スレッドの id をメールの id として読むことはしない */
-function lastMessage_(threadId) {
-  var th = Gmail.Users.Threads.get('me', threadId, {format: 'full'}) || {};
-  var ms = th.messages || [];
-  if (!ms.length) throw new Error('empty thread');
-  return ms[ms.length - 1];
-}
 function listThreads_(q, max) {
   var out = [], token = '';
   do {
     var opt = {q: q, maxResults: 500};
     if (token) opt.pageToken = token;
+    spend_(COST.tlist);
     var res = Gmail.Users.Threads.list('me', opt) || {};
     (res.threads || []).forEach(function (t) { out.push({id: t.id, snippet: String(t.snippet || '')}); });
     token = res.nextPageToken || '';
   } while (token && out.length < max);
   return out.slice(0, max);
+}
+
+/** 書き出し・本文を読みやすくそろえる: 文字の置き換え(&amp; &#65306; など)を戻し、全角の英数字・記号・空白を半角に */
+function normText_(text) {
+  var t = String(text || '');
+  t = t.replace(/&#x([0-9a-f]+);/gi, function (m0, h) { return cp_(parseInt(h, 16)); })
+       .replace(/&#(\d+);/g, function (m0, n) { return cp_(Number(n)); })
+       .replace(/&nbsp;/gi, ' ').replace(/&quot;/gi, '"').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&amp;/gi, '&');
+  if (t.normalize) t = t.normalize('NFKC');
+  return t.replace(/\r/g, '').replace(/[ \t\u00a0\u3000]+/g, ' ');
+}
+function cp_(n) {
+  if (!(n > 0 && n <= 0x10FFFF)) return '';
+  return String.fromCodePoint ? String.fromCodePoint(n) : String.fromCharCode(n);
 }
 
 /**
@@ -11544,15 +11667,16 @@ function listThreads_(q, max) {
  *   ご利用金額:800円            ← 払戻はマイナス
  *   ご利用加盟店:MISE NO NAMAE
  *   承認番号:123456
- * 返すもの: {date, amount, shop, appr} / デビットの利用の通知でなければ null / 通知だが読めない所があれば {bad: true}
+ * 金額を出さない設定の時は「カード利用日」のすぐ後が「承認番号」になる。
+ * 返すもの: {date, amount, shop, appr} / デビットの利用の通知でなければ null / 0円 {zero} / 金額の無い通知 {hidden, date} / 読めない所があれば {bad}
  */
 function parseDebit_(text, snippet) {
-  var t = String(text || '');
-  if (t.normalize) t = t.normalize('NFKC');      // 全角の英数字・記号・空白を半角に(加盟店の名前は全角の大文字で来る)
-  t = t.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-  t = t.replace(/\r/g, '').replace(/[ \t]+/g, ' ');
-  if (!/Visa ?デビット/.test(t) || !/ご利用がありました/.test(t)) return null;
+  var t = normText_(text);
+  if (!/visa ?デビット/i.test(t) || !/ご利用がありました/.test(t)) return null;
+  var two = function (x) { return (String(x).length < 2 ? '0' : '') + x; };
   var d = /カード利用日 ?: ?(\d{4})年 ?(\d{1,2})月 ?(\d{1,2})日/.exec(t);
+  var date = d ? d[1] + '-' + two(d[2]) + '-' + two(d[3]) : '';
+  if (d && /カード利用日 ?: ?\d{4}年 ?\d{1,2}月 ?\d{1,2}日\s*承認番号 ?: ?\d/.test(t)) return {hidden: true, date: date};   // 金額を出さない設定の通知
   var a = /ご利用金額 ?: ?([-−‐]?) ?([\d,]+) ?円/.exec(t);
   var s, appr;
   if (snippet) {
@@ -11568,17 +11692,16 @@ function parseDebit_(text, snippet) {
   var amt = Number(a[2].replace(/,/g, ''));
   if (!shop) return {bad: true};
   if (!(amt > 0)) return {zero: true};           // 0円の通知(カードの確認など。お金は動いていない)は数えない
-  var two = function (x) { return (String(x).length < 2 ? '0' : '') + x; };
-  return {date: d[1] + '-' + two(d[2]) + '-' + two(d[3]), amount: (a[1] ? -amt : amt), shop: clip_(shop, 60), appr: appr};
+  return {date: date, amount: (a[1] ? -amt : amt), shop: clip_(shop, 60), appr: appr};
 }
 
-/** 「いつから」を yyyy-MM-dd で決める。指定が無ければ30日前、古すぎれば90日前、先の日付なら今日 */
-function startDate_(from, now) {
+/** 「いつから」を yyyy-MM-dd で決める。指定が無ければ def(30)日前、古すぎれば90日前、先の日付なら今日 */
+function startDate_(from, now, def) {
   var today = Utilities.formatDate(now, AMZ_TZ, 'yyyy-MM-dd');
   var shift = function (n) {
     return Utilities.formatDate(new Date(new Date(today + 'T12:00:00+09:00').getTime() + n * 86400000), AMZ_TZ, 'yyyy-MM-dd');
   };
-  var d = /^\d{4}-\d{2}-\d{2}$/.test(String(from || '')) ? String(from) : shift(-AMZ_DEFAULT_DAYS);
+  var d = /^\d{4}-\d{2}-\d{2}$/.test(String(from || '')) ? String(from) : shift(-(def || AMZ_DEFAULT_DAYS));
   var lo = shift(-AMZ_MAX_DAYS);
   if (d < lo) d = lo;
   if (d > today) d = today;
@@ -11590,6 +11713,7 @@ function listIds_(q) {
   do {
     var opt = {q: q, maxResults: 100};
     if (token) opt.pageToken = token;
+    spend_(COST.mlist);
     var res = Gmail.Users.Messages.list('me', opt) || {};
     (res.messages || []).forEach(function (m) { ids.push(m.id); });
     token = res.nextPageToken || '';
