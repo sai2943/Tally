@@ -417,7 +417,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.58 (localStorage保存・完全オフライン)
+   Tally 6.59 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1207,7 +1207,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.58";
+const APP_VERSION = "6.59";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1747,7 +1747,36 @@ function bmDefaultWal(){
   const hit=p.find(x=>/ソニー/.test(x.name)) || p.find(x=>/銀行/.test(x.name)) || p[0];
   return String(UI.reconWal || hit.id);
 }
+/* v6.59: 「銀行にあってTallyに無い」の1行。銀行の明細(CSV)の突き合わせと、デビットの通知の突き合わせで**同じ形**にする(2か所に書かない)。
+   hide=true の時だけ、右に「この一覧に出さない」の × を付ける(通知の突き合わせは毎日見るので、別の形で記録した支払いを外せるように) */
+function bmOnlyRow(r, k, W, hide){
+  const md=d=>String(d||"").slice(5).replace("-","/");
+  const amtCol=y=>'<span class="mono '+clsPM(y)+'" style="font-size:13px;font-weight:600;flex-shrink:0;margin-left:8px">'+signYen(y)+'</span>';
+  const uLab=u=>{ const m=u.ms[0]; return md(m.date)+' '+bmLabel(m)+(u.ms.length>1?' ほか'+(u.ms.length-1)+'件':'')+' '+signYen(u.amt); };
+  const main='<div class="row between" style="align-items:baseline;cursor:pointer'+(hide?';flex:1;min-width:0':'')+'" data-bm="add" data-v="'+r.i+'">'+
+      '<span class="ellip" style="min-width:0;font-size:12px"><span class="mono muted" style="margin-right:8px">'+md(r.date)+'</span>'+esc(r.merch||r.desc||"(摘要なし)")+'</span>'+amtCol(r.amt)+'</div>';
+  return '<div style="padding:8px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
+      (hide ? '<div class="row" style="align-items:baseline">'+main+'<button class="xbtn" style="font-size:13px;margin-left:10px;flex-shrink:0" data-bm="hide" data-v="'+r.i+'" aria-label="この一覧に出さない">×</button></div>' : main)+
+      (r.hint ? '<div class="amber" style="font-size:11px;margin-top:3px;cursor:pointer" data-bm="edit" data-v="'+esc(String((r.hint.u.ms[0].ent||{}).id||""))+'">'+
+        esc(r.hint.text)+': '+esc(uLab(r.hint.u))+' '+CHEV_T+'</div>'
+        : (()=>{ const sh=bmShape(r, W); return sh ? '<div class="muted" style="font-size:11px;margin-top:3px">'+esc(bmShapeText(sh, r, W))+'</div>' : ''; })())+
+      '</div>';
+}
+/* 畳んで出す節と、その中の小さい行(2つの突き合わせの画面で同じ形) */
+function bmFold(key,lab,right,body){
+  const open=!!(UI.bmOpen||{})[key];
+  return '<div class="row between" style="padding:9px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.8;margin-bottom:8px" data-bm="fold" data-v="'+key+'">'+
+    '<span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+' '+lab+'</span><span class="mono muted" style="font-size:12px">'+right+'</span></div>'+
+    (open ? '<div class="card" style="margin-bottom:12px;padding:4px 16px 6px">'+body+'</div>' : '');
+}
+function bmSm(d,lab,y,sub,k){
+  const md=x=>String(x||"").slice(5).replace("-","/");
+  return '<div style="padding:6px 0;'+(k?'border-top:1px solid var(--line)':'')+'"><div class="row between" style="align-items:baseline;font-size:12px">'+
+    '<span class="ellip" style="min-width:0"><span class="mono muted" style="margin-right:8px">'+md(d)+'</span>'+esc(lab)+'</span><span class="mono muted" style="flex-shrink:0;margin-left:8px">'+signYen(y)+'</span></div>'+
+    (sub?'<div class="mono muted" style="font-size:10px;margin-top:2px">'+esc(sub)+'</div>':'')+'</div>';
+}
 function viewBankMatch(){
+  if(UI.bm && UI.bm.mail) return viewDbt(UI.bm);   /* v6.59: デビットの通知メールとの突き合わせ(下の viewDbt) */
   const bm=UI.bm||null, W=String((bm&&bm.walId)||UI.bmWal||bmDefaultWal()), pots=walletPots();
   const md=d=>String(d||"").slice(5).replace("-","/");
   let h='<div class="hdr"><button class="navbtn" data-bm="back">‹ 戻る</button>'+
@@ -1772,6 +1801,9 @@ function viewBankMatch(){
       '<button class="btn" style="flex:1;padding:12px 0;font-size:13px;font-weight:700" data-bm="paste">貼り付け</button></div>'+
       (bm&&bm.err ? '<div class="red" style="font-size:12px;margin-top:10px">'+esc(bm.err)+'</div>' : '')+
       '</div>';
+    /* v6.59: 明細のファイルが無くても、デビットの通知メールで突き合わせられる(メールのURLを設定してある時だけ出す) */
+    if(amzUrl()) h+='<div class="card" style="margin-bottom:14px"><div class="fxl">メールで確かめる'+infoBtn(dbtInfo())+'</div>'+
+      '<button class="btn full" style="padding:12px 0;font-size:13px;font-weight:700;color:var(--teal)" data-bm="mail">デビットの通知と突き合わせる</button></div>';
     return h;
   }
   const R=bankMatch(bm);
@@ -1804,18 +1836,10 @@ function viewBankMatch(){
   h+='</div>';
   /* ── 銀行にあってTallyに無い(記帳漏れ) ── */
   const amtCol=y=>'<span class="mono '+clsPM(y)+'" style="font-size:13px;font-weight:600;flex-shrink:0;margin-left:8px">'+signYen(y)+'</span>';
-  const uLab=u=>{ const m=u.ms[0]; return md(m.date)+' '+bmLabel(m)+(u.ms.length>1?' ほか'+(u.ms.length-1)+'件':'')+' '+signYen(u.amt); };
   if(R.bankOnly.length){
     h+=band("銀行にあってTallyに無い", '<span class="mono muted" style="font-size:11px">'+R.bankOnly.length+'件</span>',
       "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。<b>ATM</b>と、店名にTallyの財布の名前が入っている行(Suicaのチャージなど)は<b>振替</b>で開きます(ATMは、相手の財布や軍資金を選びます)。それ以外は支出(入金なら収入)で開くので、店名・品目・分類を足して保存します。<br><br><b>いつもの形</b>: 同じ摘要の行を前にどう付けたか(分類・店名、振替なら相手)をTallyが覚えていて、その形で開きます。覚えるのは銀行と一致した行からで、付け方が割れている時(8割に届かない時)は、その項目は決めません。レシートをClaudeで読ませてあったなら、記録の画面の「レシートを取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br><b>何の支払いか分からない行</b>は、一覧の下の「分からない行をClaude用にコピー」でまとめてコピーできます(手がかり・いつもの形が出ている行と、ATM・チャージの行は入りません)。レシートを変換しているClaudeのチャットに貼ると、店を調べて1行ずつ取り込み用の形にして返します。その行を押して開いた画面で「レシートを取り込む」を押すと入ります。<br><br>下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(銀行の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
-    h+='<div class="card" style="margin-bottom:14px;padding:4px 16px 6px">'+R.bankOnly.map((r,k)=>
-      '<div style="padding:8px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
-      '<div class="row between" style="align-items:baseline;cursor:pointer" data-bm="add" data-v="'+r.i+'">'+
-      '<span class="ellip" style="min-width:0;font-size:12px"><span class="mono muted" style="margin-right:8px">'+md(r.date)+'</span>'+esc(r.merch||r.desc||"(摘要なし)")+'</span>'+amtCol(r.amt)+'</div>'+
-      (r.hint ? '<div class="amber" style="font-size:11px;margin-top:3px;cursor:pointer" data-bm="edit" data-v="'+esc(String((r.hint.u.ms[0].ent||{}).id||""))+'">'+
-        esc(r.hint.text)+': '+esc(uLab(r.hint.u))+' '+CHEV_T+'</div>'
-        : (()=>{ const sh=bmShape(r, W); return sh ? '<div class="muted" style="font-size:11px;margin-top:3px">'+esc(bmShapeText(sh, r, W))+'</div>' : ''; })())+
-      '</div>').join("")+'</div>';
+    h+='<div class="card" style="margin-bottom:14px;padding:4px 16px 6px">'+R.bankOnly.map((r,k)=>bmOnlyRow(r, k, W, false)).join("")+'</div>';
     /* v6.22: Tallyだけでは中身が分からない行(手がかりも・いつもの形も無く、ATM・振替でもない)を、レシートのチャットに渡す形でコピーする。
        店の正体はチャットがWebやカレンダーで調べ、取り込み用のブロックにして返す(ユーザーの提案: 明細をチャットに渡して知らない内容を考えてもらう) */
     const unk=bmUnknown(R, W);
@@ -1835,15 +1859,7 @@ function viewBankMatch(){
   if(!R.bankOnly.length && !R.tallyOnly.length)
     h+='<div style="text-align:center;padding:18px 0 24px;font-size:13px" class="teal">'+(R.diff?'行はすべて一致しました。差は期間より前からのずれです。':'すべて一致しました。')+'</div>';
   /* ── 畳んで出すもの ── */
-  const fold=(key,lab,right,body)=>{
-    const open=!!(UI.bmOpen||{})[key];
-    return '<div class="row between" style="padding:9px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.8;margin-bottom:8px" data-bm="fold" data-v="'+key+'">'+
-      '<span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+' '+lab+'</span><span class="mono muted" style="font-size:12px">'+right+'</span></div>'+
-      (open ? '<div class="card" style="margin-bottom:12px;padding:4px 16px 6px">'+body+'</div>' : '');
-  };
-  const sm=(d,lab,y,sub,k)=>'<div style="padding:6px 0;'+(k?'border-top:1px solid var(--line)':'')+'"><div class="row between" style="align-items:baseline;font-size:12px">'+
-    '<span class="ellip" style="min-width:0"><span class="mono muted" style="margin-right:8px">'+md(d)+'</span>'+esc(lab)+'</span><span class="mono muted" style="flex-shrink:0;margin-left:8px">'+signYen(y)+'</span></div>'+
-    (sub?'<div class="mono muted" style="font-size:10px;margin-top:2px">'+esc(sub)+'</div>':'')+'</div>';
+  const fold=bmFold, sm=bmSm;
   const nC=R.cancelB.length+R.cancelT.length;
   if(nC) h+=fold("cancel", "打ち消し合う行 "+nC+"組", "",
     R.cancelB.map((p,k)=>sm(p[0].date, (p[0].merch||p[0].desc)+(p[1].merch!==p[0].merch?" / "+(p[1].merch||p[1].desc):"")+" "+md(p[0].date)+"・"+md(p[1].date), p[0].amt,
@@ -1863,6 +1879,29 @@ function bmLoad(text, src){
   if(n || learned) save();
   render();
   toast(p.rows.length+"行を読み込みました"+(n?"(✓ "+n+"件)":""));
+}
+/* 「銀行にあってTallyに無い」の行を押した時: その日付と金額で記録の画面を開く(v6.59: 2つの突き合わせの画面で使うので、押した先から外に出した) */
+function bmOpenAdd(r, W, mail){
+  const hint=r.date.replace(/-/g,"/")+"  "+(r.merch||r.desc||"(摘要なし)")+"  "+signYen(r.amt);
+  UI.editEntryId=null; UI.entryReturn="bankmatch";
+  /* v6.20: ATMとチャージは**振替**で開く(実データの記帳漏れの多くがATM・自分への振込・Suicaのチャージだった)。
+     収入や支出で付けると、残高は合っても月の収支と予算が狂う */
+  /* v6.21: いつもの形(この摘要を前にどう付けたか)があればそれで開く。無ければATM・財布の名前から推す */
+  const sh=bmShape(r, W);
+  const tr=(sh && sh.type==="transfer") ? sh : (sh ? null : bmTransferGuess(r, W));
+  if(tr){
+    UI.entryForm={date:r.date, type:"transfer", category:"", amount:String(Math.abs(r.amt)), store:"", item:"", memo:"", bankHint:hint};
+    UI.trFrom = r.amt<0 ? W : (tr.other||""); UI.trTo = r.amt<0 ? (tr.other||"") : W; UI.trAmt="";
+  } else {
+    UI.entryForm={date:r.date, type:(r.amt>0?"income":"expense"),
+      category:((sh&&sh.cat) || (r.amt>0?"臨時":"消費")), amount:String(Math.abs(r.amt)),
+      /* v6.59: いつもの形が無い Amazon の行は、店名だけ先に入れる(後で発送メールが届いた時に、この記録を記録済みと見分けられるように) */
+      store:((sh&&sh.store) || ((r.amt<0 && amzPayShop(r.merch||r.desc)) ? amzStore() : "")), item:"", memo:"", tmode:"", tfrom:"", tto:"", tplace:"", wal:W, bankHint:hint};
+    /* 上で「振替」に切り替えた時のために、銀行の側だけ先に入れておく(前の振替の選択が残っていると取り違える) */
+    UI.trFrom = r.amt<0 ? W : ""; UI.trTo = r.amt<0 ? "" : W; UI.trAmt="";
+  }
+  if(mail) UI.entryForm.bankHintSrc="mail";
+  UI.screen="entry"; render();
 }
 function bindBankMatch(){
   /* 記帳を足して戻ってきた時など、新しく一致した記録にも✓を付ける */
@@ -1885,7 +1924,8 @@ function bindBankMatch(){
       if(a==="wal"){ if(UI.bm) UI.bm.walId=String(v); else UI.bmWal=String(v); render(); return; }
       if(a==="fold"){ UI.bmOpen=Object.assign({}, UI.bmOpen||{}, {[v]:!(UI.bmOpen||{})[v]}); render(); return; }
       if(a==="copyunk"){
-        const t=bmUnknownText(bankMatch(UI.bm), String(UI.bm.walId));
+        const R0=bankMatch(UI.bm);
+        const t=bmUnknownText(R0, String(UI.bm.walId), UI.bm.mail ? dbtSplit(R0, UI.bm).open : null);
         const done=()=>toast("コピーしました。レシートのチャットに貼ってください");
         if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, ()=>alert(t));
         else alert(t);
@@ -1898,24 +1938,23 @@ function bindBankMatch(){
       }
       if(a==="add"){
         const r=((UI.bm||{}).rows||[]).find(x=>String(x.i)===String(v)); if(!r) return;
-        const W=String(UI.bm.walId), hint=r.date.replace(/-/g,"/")+"  "+(r.merch||r.desc||"(摘要なし)")+"  "+signYen(r.amt);
-        UI.editEntryId=null; UI.entryReturn="bankmatch";
-        /* v6.20: ATMとチャージは**振替**で開く(実データの記帳漏れの多くがATM・自分への振込・Suicaのチャージだった)。
-           収入や支出で付けると、残高は合っても月の収支と予算が狂う */
-        /* v6.21: いつもの形(この摘要を前にどう付けたか)があればそれで開く。無ければATM・財布の名前から推す */
-        const sh=bmShape(r, W);
-        const tr=(sh && sh.type==="transfer") ? sh : (sh ? null : bmTransferGuess(r, W));
-        if(tr){
-          UI.entryForm={date:r.date, type:"transfer", category:"", amount:String(Math.abs(r.amt)), store:"", item:"", memo:"", bankHint:hint};
-          UI.trFrom = r.amt<0 ? W : (tr.other||""); UI.trTo = r.amt<0 ? (tr.other||"") : W; UI.trAmt="";
-        } else {
-          UI.entryForm={date:r.date, type:(r.amt>0?"income":"expense"),
-            category:((sh&&sh.cat) || (r.amt>0?"臨時":"消費")), amount:String(Math.abs(r.amt)),
-            store:((sh&&sh.store)||""), item:"", memo:"", tmode:"", tfrom:"", tto:"", tplace:"", wal:W, bankHint:hint};
-          /* 上で「振替」に切り替えた時のために、銀行の側だけ先に入れておく(前の振替の選択が残っていると取り違える) */
-          UI.trFrom = r.amt<0 ? W : ""; UI.trTo = r.amt<0 ? "" : W; UI.trAmt="";
-        }
-        UI.screen="entry"; render(); return;
+        bmOpenAdd(r, String(UI.bm.walId), !!UI.bm.mail); return;
+      }
+      /* v6.59: デビットの通知メールとの突き合わせ */
+      if(a==="mail"){ dbtOpen(); return; }
+      if(a==="recheck"){ dbtCheck(true); return; }
+      if(a==="tocsv"){ UI.bm=null; UI.bmOpen={}; render(); return; }
+      if(a==="toset"){ UI.rcptTest=null; UI.amzTest=null; UI.screen="rcptset"; render(); return; }
+      if(a==="hide" || a==="unhide"){
+        const r=((UI.bm||{}).rows||[]).find(x=>String(x.i)===String(v)); if(!r || !r.id) return;
+        if(a==="hide" && !confirm("この支払いを、この一覧に出さないようにしますか?\n\n"+r.date.replace(/-/g,"/")+"  "+(r.merch||"")+"  "+signYen(r.amt)+
+          "\n\n記帳はされません(別の形で記録してある時などに使います)。\n一覧の下の「出さないことにした行」から戻せます。")) return;
+        dbtHideSet(r, a==="hide"); render(); return;
+      }
+      if(a==="amzget"){
+        /* 取り込みは記録の画面の仕事(確認・やめる・Claudeのメモがそこにある)。新しい記録の画面を開いて、そのまま始める。終わるとこの画面に戻る */
+        UI.editEntryId=null; UI.entryForm=mjlNewEntryForm(); UI.entryReturn="bankmatch"; UI.screen="entry"; render();
+        amzImport(UI.entryForm); return;
       }
       if(a==="edit"){
         const e=(S.entries||[]).find(x=>String(x.id)===String(v)); if(!e) return;
@@ -3655,6 +3694,8 @@ function viewLedger(){
           : '<div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">立替の記帳漏れか、精算の重複かもしれません。</div>')+
         '</div>';
     } }
+  /* v6.59: **デビットの未記帳**(メールで確かめた結果)。言うことがある時だけ出す(立替の板と同じ考え)。押すと突き合わせの画面 */
+  h += dbtCardHtml();
   h += viewLedgerDetail(mk);
   return h;
 }
@@ -6599,6 +6640,10 @@ function bmLabel(m){
 function bankMatch(bm){
   const rows=bm.rows, W=String(bm.walId), from=bm.from, to=bm.to, today=todayStr();
   const lo=potDay(from,-BM_LAG_BACK);
+  /* v6.59: **Amazon は引き落としが先**で、Tallyの記録の日付(発送メールの日)の方が後になる(ユーザー: Amazonは先に金を引かれて、発送されたらメールが来る)。
+     Amazon の支払いの行だけ、銀行の日付が記録より早くてよい幅を BM_LAG_FWD(3日)から AMZ_PAY_LEAD に広げる(CSV でも、デビットの通知でも同じ)。
+     前の計算で行に付けた手がかりは、消してから始める(行は UI に残っていて、画面を描くたびに計算し直すため。前の手がかりが残ると、消した記録を指す) */
+  rows.forEach(r=>{ delete r.hint; r.lead=(r.amt<0 && amzPayShop(r.merch||r.desc)) ? AMZ_PAY_LEAD : 0; });
   /* 記帳から生えた振替(遊技の経費の補充・箱からの補填・収入を箱へ)は、✓と呼び名をその記帳に付ける */
   const byTx={};
   (S.entries||[]).forEach(e=>{ ["gtTx","svTx","inSvTx"].forEach(k=>{ if(e[k]!=null) byTx[String(e[k])]=e; }); });
@@ -6614,7 +6659,7 @@ function bankMatch(bm){
     const g=m.date+"|"+m.kind+"|"+st; (gmap[g]=gmap[g]||[]).push(m); });
   const G=Object.keys(gmap).map(k=>gmap[k]).filter(a=>a.length>1);
   const inG=new Set(); G.forEach(a=>a.forEach(m=>inG.add(m.k)));
-  const lagOK=(rd,td)=>{ const d=bmDays(td,rd); return d>=-BM_LAG_FWD && d<=BM_LAG_BACK; };
+  const lagOK=(r,td)=>{ const d=bmDays(td,r.date); return d>=-Math.max(BM_LAG_FWD, r.lead||0) && d<=BM_LAG_BACK; };
   const cost=(rd,td)=>{ const d=bmDays(td,rd); return d>=0 ? d : 1-2*d; };   /* 銀行が先の日付は少し不利に */
   const byAmt={}; rows.forEach(r=>{ (byAmt[r.amt]=byAmt[r.amt]||[]).push(r); });
   const usedR=new Set(), usedM=new Set(), pairs=[], cancelB=[];
@@ -6632,16 +6677,16 @@ function bankMatch(bm){
   /* ①レシート単位(合計)を先に。品目1つの額は他の取引とぶつかりやすく、合計の方が見分けやすい */
   let cand=[];
   G.forEach(a=>{ const s=a.reduce((t,m)=>t+m.amt,0), d=a[0].date;
-    (byAmt[s]||[]).forEach(r=>{ if(lagOK(r.date,d)) cand.push({r:r, ms:a, c:cost(r.date,d), rank:0}); }); });
+    (byAmt[s]||[]).forEach(r=>{ if(lagOK(r,d)) cand.push({r:r, ms:a, c:cost(r.date,d), rank:0}); }); });
   take(cand);
   /* ②1件ずつ。同点なら、レシートの一部より単独の記帳を先に */
   cand=[];
-  mv.forEach(m=>{ (byAmt[m.amt]||[]).forEach(r=>{ if(lagOK(r.date,m.date)) cand.push({r:r, ms:[m], c:cost(r.date,m.date), rank:(inG.has(m.k)?1:0)}); }); });
+  mv.forEach(m=>{ (byAmt[m.amt]||[]).forEach(r=>{ if(lagOK(r,m.date)) cand.push({r:r, ms:[m], c:cost(r.date,m.date), rank:(inG.has(m.k)?1:0)}); }); });
   take(cand);
   /* ③同じ店で同じ日に2回払った時: 残った品目の組み合わせで合う額を探す */
   G.forEach(a=>{
     if(a.filter(m=>!usedM.has(m.k)).length<2) return;
-    rows.filter(r=>!usedR.has(r.i) && lagOK(r.date,a[0].date)).sort((x,y)=>Math.abs(y.amt)-Math.abs(x.amt)).forEach(r=>{
+    rows.filter(r=>!usedR.has(r.i) && lagOK(r,a[0].date)).sort((x,y)=>Math.abs(y.amt)-Math.abs(x.amt)).forEach(r=>{
       const fr=a.filter(m=>!usedM.has(m.k)); if(fr.length<2 || fr.length>12) return;
       for(let mask=3; mask<(1<<fr.length); mask++){
         if((mask&(mask-1))===0) continue;
@@ -6701,7 +6746,7 @@ function bankMatch(bm){
     let u=best(oU.filter(x=>x.amt===r.amt && bmDays(x.date,r.date)>=0 && bmDays(x.date,r.date)<=2));
     if(u){ r.hint={kind:"wal", u:u, text:walName(wOf(u.ms[0]))+"で記録あり"}; return; }
     /* 日付違いは**記帳だけ**を相手にする。振替には✓が無く、前の明細で一致した振替(毎月のATM¥20,000など)が何度でも候補に戻ってくるため */
-    u=best(fU.filter(x=>x.ms.every(m=>m.src==="e") && x.amt===r.amt && !lagOK(r.date,x.date) && near(x.date,r.date)<=62 && dtypo(x.date,r.date)));
+    u=best(fU.filter(x=>x.ms.every(m=>m.src==="e") && x.amt===r.amt && !lagOK(r,x.date) && near(x.date,r.date)<=62 && dtypo(x.date,r.date)));
     if(u){ r.hint={kind:"date", u:u, text:"日付違い?"}; return; }
     u=fU.filter(x=>x.ms.length===1 && x.date>=from && Math.sign(x.amt)===Math.sign(r.amt) && typo(x.amt,r.amt) && near(x.date,r.date)<=2)
       .sort((a,b)=>near(a.date,r.date)-near(b.date,r.date))[0];
@@ -6793,10 +6838,11 @@ function bmShape(r, W){
   return {type:type, cat:(cats.indexOf(cat)>=0?cat:""), store:mode(m.store)};
 }
 /* v6.22: Tallyでは埋められない行(手がかり・いつもの形・ATMや財布の名前からの振替、のどれも無い) */
-function bmUnknown(R, W){ return R.bankOnly.filter(r=>!r.hint && !bmShape(r, W) && !bmTransferGuess(r, W)); }
-function bmUnknownText(R, W){
+/* v6.59: list を渡すと、その行の中から選ぶ(デビットの通知の突き合わせでは、Amazon の待ち・出さないことにした行を除いた一覧を渡す) */
+function bmUnknown(R, W, list){ return (list||R.bankOnly).filter(r=>!r.hint && !bmShape(r, W) && !bmTransferGuess(r, W)); }
+function bmUnknownText(R, W, list){
   return "銀行の明細の記帳漏れ(財布: "+walName(W)+")。何の支払いか調べて、1行ずつ取り込み用のブロックにしてください。\n"+
-    bmUnknown(R, W).map(r=>r.date+" | "+(r.merch||r.desc)+" | "+(r.amt>0?"+":"-")+Math.abs(r.amt)).join("\n");
+    bmUnknown(R, W, list).map(r=>r.date+" | "+(r.merch||r.desc)+" | "+(r.amt>0?"+":"-")+Math.abs(r.amt)).join("\n");
 }
 /* 画面に出す一言 */
 function bmShapeText(sh, r, W){
@@ -9593,7 +9639,9 @@ function bindMain(){
         save(); renderKeepScroll();
       }
       else if(a==="rwal"){ UI.reconWal=(v==="all")?null:String(v); renderKeepScroll(); }
-      else if(a==="bmopen"){ UI.bmWal=UI.reconWal||null; if(UI.bm && UI.reconWal) UI.bm.walId=String(UI.reconWal); UI.screen="bankmatch"; render(); }   /* v6.18 */
+      else if(a==="bmopen"){ if(UI.bm && UI.bm.mail) UI.bm=null;   /* v6.59: 照合の入口からは、明細を選ぶ所から(メールの突き合わせの結果は、家計簿タブの板か、この先のボタンで開く) */
+        UI.bmWal=UI.reconWal||null; if(UI.bm && UI.reconWal) UI.bm.walId=String(UI.reconWal); UI.screen="bankmatch"; render(); }   /* v6.18 */
+      else if(a==="dbtopen"){ dbtOpen(); }   /* v6.59 */
       else if(a==="rclr"){
         const mk0=monthKey();
         const n0=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk0)&&e.chk).length;
@@ -10670,7 +10718,7 @@ function bindRcptSet(){
   /* v6.58: いつのメールから見るか(日付を選んだら、その場で覚える) */
   { const af=document.getElementById("rs-amzfrom"); if(af) af.onchange = e=>{
       const d=normDate(e && e.target && e.target.value);
-      if(d){ rcptLS(AMZ_FROM_LS, d); UI.amzTest=null; }
+      if(d){ rcptLS(AMZ_FROM_LS, d); UI.amzTest=null; UI.dbt=null; UI.dbtAt=0; if(UI.bm && UI.bm.mail) UI.bm=null; }   /* v6.59: 覚えている突き合わせの結果は前の範囲のものなので捨てる */
       render(); if(d) toast(String(amzFrom()).slice(5).replace("-","/")+" からのメールを見ます");
     }; }
 }
@@ -10752,7 +10800,9 @@ async function amzFetch(url, from, ctl){
   try{ js=await res.json(); }catch(e){ js=null; }
   if(!js || typeof js!=="object") return {ok:false, msg:"プログラムの返事が読めません。\nデプロイの「アクセスできるユーザー」が「全員」になっているか確かめてください(ログインの画面が返ってきているかもしれません)。"};
   if(js.ok!==true) return {ok:false, msg:"プログラムの中で失敗しました。\n"+String(js.err||"(理由が返ってきませんでした)").slice(0,300)};
-  return {ok:true, mails:amzClean(js.mails), unread:amzCleanUnread(js.unread)};
+  /* v6.59: 版2のプログラムは、ソニー銀行のデビットの通知(debits)も返す。版1(debits が無い)のままでも Amazon の取り込みは動く——hasDebits で見分ける */
+  return {ok:true, v:(Number(js.v)||0), mails:amzClean(js.mails), unread:amzCleanUnread(js.unread),
+    hasDebits:Array.isArray(js.debits), debits:dbtClean(js.debits), dunread:amzCleanUnread(js.dunread)};
 }
 /* 前から付けてあった記録の中から、このメールの分を探す。金額がぴったりの1件(日付が近い順)、無ければ、その日のAmazonの記録の合計がぴったりの日 */
 function amzMatch(m, pool, claimed){
@@ -10899,6 +10949,7 @@ async function amzRun(f, t, url){
   if(timer) clearTimeout(timer);
   if(left()) return;
   if(!got.ok){ UI.rcptBusy=null; render(); alert(t.timeout ? "時間がかかりすぎたので止めました。少し待ってから、もう一度。" : got.msg); return; }
+  try{ dbtStore(got); UI.dbtAt=Date.now(); }catch(e){ console.error(e); }   /* v6.59: 同じ返事にデビットの通知も入っている(取り込みの後で突き合わせの画面に戻った時、新しい中身になる) */
   const md=d=>String(d||"").slice(5).replace("-","/"), yen=v=>"¥"+num(v).toLocaleString("ja-JP");
   const tri=amzTriage(got.mails), store=amzStore(), seen0=amzSeen();
   const unread=got.unread.filter(u=>!seen0[u.id] && u.date>=amzFrom());
@@ -10962,28 +11013,296 @@ async function amzTest(){
   if(timer) clearTimeout(timer);
   if(got.ok){
     const sh=got.mails.filter(m=>m.kind==="ship").length, md=String(amzFrom()).slice(5).replace("-","/");
-    UI.amzTest={ok:true, msg:"つながりました。\n"+md+" からのメール: 発送 "+sh+"通・デジタル "+(got.mails.length-sh)+"通"+(got.unread.length ? "・読めない "+got.unread.length+"通" : "")+
+    UI.amzTest={ok:true, old:!got.hasDebits, msg:"つながりました。\n"+md+" からのメール: 発送 "+sh+"通・デジタル "+(got.mails.length-sh)+"通"+(got.unread.length ? "・読めない "+got.unread.length+"通" : "")+
+      (got.hasDebits ? "\nデビットの通知 "+got.debits.length+"通"+(got.dunread.length ? "・読めない "+got.dunread.length+"通" : "") : "")+
       "\n記録の画面から取り込めます。"};
+    try{ dbtStore(got); UI.dbtAt=Date.now(); }catch(e){ console.error(e); }
   } else UI.amzTest={ok:false, msg:got.msg};
   if(UI.screen==="rcptset") render();
+}
+/* ========================= v6.59 デビットの通知メールと突き合わせる =========================
+   ユーザー(11/13):「ソニー銀行でズレる原因はデビット使用です/そしてメールで来るなら計上してないやつとの照合が出来るのでは?/
+   またAmazonは先に金を引かれて発送されたらメール来るからラグがある/ここを考慮した方がいい/その仕組みを作って欲しい/
+   また可能なら起動したら裏で自動で確認して欲しいかも」
+   ソニー銀行は、デビット(Sony Bank WALLET)で払うたびに「ご利用のお知らせ」を送ってくる(利用日・金額・加盟店・承認番号。ユーザーの Gmail で形を確かめた)。
+   Google に置いたプログラム(AMZ_GAS の版2)がこれも返すので、**銀行の明細(CSV)と同じ形の行にして、同じ突き合わせ(bankMatch)に渡す**(突き合わせを2つ作らない)。
+   通知はデビットの分だけ(ATM・振込・口座振替は来ない)なので、見るのは片側だけ——**通知にあってTallyに無い支払い**。
+   「Tallyにあって通知に無い」は出さない(デビット以外で払った記録が全部当たる)。残高も比べない(通知に残高は無い)。代わりに「未記帳を引いた残高」を出す。
+   **Amazon**: 引き落としの通知が先で、発送メールは数分〜1日ほど後(11/13 に確かめた: 注文の5分後に通知、発送メールはその3時間後〜翌日)。
+   金額は発送メールの「合計」と同じ(発送ごとに引き落とされる)。Amazon の通知で相手の無いものは、
+   届いている発送メール(まだ取り込んでいない)と金額が合えば「取り込める」、無ければ AMZ_WAIT 日のあいだは「発送メール待ち」、過ぎたら未記帳、に分ける。
+   **裏で確かめる**(起動・復帰の時): 読むだけ。S は書き換えない(✓を付ける・いつもの形を覚えるのは、画面を開いた時=今までの突き合わせと同じ)。
+   通知の中身は保存しない(UI だけ)。「出さない」と決めた行の id と、自動で確かめるかどうかは、この端末の localStorage(URL と同じ扱い・S に入れない)。 */
+const DBT_HIDE_LS="tally:dbtHide", DBT_AUTO_LS="tally:dbtAuto";
+const AMZ_PAY_LEAD=10;        /* Amazon の行: 銀行の日付が、Tallyの記録の日付より何日早くても同じ取引とみるか(ふつうの行は BM_LAG_FWD=3) */
+const AMZ_WAIT=7;             /* Amazon の引き落としの通知から、発送メールを待つ日数。過ぎたら未記帳として出す(会費など、発送メールが来ない支払い) */
+const DBT_EVERY=10*60*1000;   /* 裏で確かめる間隔(これより短い間隔では確かめ直さない) */
+/* Amazon の買い物の加盟店名か(AMAZON CO JP・AMAZON.CO.JP・AMAZON DOWNLOADS など)。**Amazon Pay は入れない**——よその店の支払いで、発送メールは来ない */
+function amzPayShop(s){ const t=bmNorm(s).toLowerCase().replace(/[^a-z0-9]/g,""); return /^amazon/.test(t) && !/^amazonpay/.test(t); }
+/* プログラムの返事の通知は、形を確かめてから使う(amzClean と同じ考え) */
+function dbtClean(a){
+  const ids=new Set();
+  return (Array.isArray(a) ? a : []).slice(0,800).map(d=>{
+    if(!d || typeof d!=="object") return null;
+    const id=String(d.id||""), date=normDate(d.date), amt=Number(d.amount), appr=String(d.appr==null?"":d.appr);
+    const shop=String(d.shop||"").replace(/[\r\n|｜`]/g," ").replace(/\s+/g," ").trim().slice(0,60);
+    if(!/^[A-Za-z0-9_\-]{1,60}$/.test(id) || !date || !Number.isInteger(amt) || amt===0 || Math.abs(amt)>99999999 || !shop) return null;
+    if(ids.has(id)) return null;
+    ids.add(id);
+    return {id:id, date:date, amount:amt, shop:shop, appr:(/^\d{1,12}$/.test(appr) ? appr : "")};
+  }).filter(Boolean).sort((a,b)=>a.date<b.date ? -1 : a.date>b.date ? 1 : a.id<b.id ? -1 : a.id>b.id ? 1 : 0);
+}
+/* 通知を、銀行の明細の行と同じ形にする(amt は銀行から見た向き=支払いはマイナス・払戻はプラス)。先の日付の通知は使わない(時計のずれ) */
+function dbtBm(got){
+  const W=String(rcptBank().id||""), from=amzFrom(), today=todayStr();
+  const rows=(got.debits||[]).filter(d=>d.date<=today).map((d,i)=>{
+    const merch=bmNorm(d.shop);
+    return {i:i, id:d.id, date:d.date, amt:-d.amount, bal:null, desc:"Visaデビット "+merch, merch:merch, appr:((d.appr && !/^0+$/.test(d.appr)) ? d.appr : ""), memo:""};
+  });
+  return {mail:true, walId:W, rows:rows, from:(rows.length && rows[0].date<from ? rows[0].date : from), to:today, src:"メール",
+    mails:(got.mails||[]), dunread:(got.dunread||[]), old:!got.hasDebits, at:Date.now()};
+}
+function dbtHide(){ let o=null; try{ o=JSON.parse(rcptLS(DBT_HIDE_LS)||"{}"); }catch(e){ o=null; } return (o && typeof o==="object" && !Array.isArray(o)) ? o : {}; }
+function dbtHideSet(r, on){
+  const o=dbtHide(), lo=amzDay(todayStr(), -(AMZ_BACK+30));
+  if(on) o[String(r.id)]=String(r.date||todayStr()); else delete o[String(r.id)];
+  Object.keys(o).forEach(k=>{ if(String(o[k])<lo) delete o[k]; });   /* 見る範囲を過ぎたものは忘れる(増え続けないように) */
+  rcptLS(DBT_HIDE_LS, JSON.stringify(o));
+}
+/* 突き合わせの結果(R)の「通知にあってTallyに無い」を、4つに分ける:
+   open=未記帳 / ready=Amazon の発送メールが届いていて、取り込めば合う / wait=Amazon の発送メール待ち / hidden=出さないことにした行
+   fresh=まだ取り込んでいない Amazon のメール(通知と合わないものも含む)。gap=まだ記録していない支払いの合計(出さない行は除く) */
+function dbtSplit(R, bm){
+  const hide=dbtHide(), today=todayStr(), tri=amzTriage(bm.mails||[]), usedF=new Set();
+  const out={open:[], ready:[], wait:[], hidden:[], fresh:tri.fresh, gap:0};
+  R.bankOnly.forEach(r=>{
+    if(hide[r.id]){ out.hidden.push(r); return; }
+    out.gap+=r.amt;
+    if(r.amt<0 && amzPayShop(r.merch)){
+      const lag=m=>bmDays(r.date, m.date);   /* 発送メールの日 − 引き落としの日 */
+      const f=tri.fresh.filter(m=>!usedF.has(m.id) && m.total===-r.amt && lag(m)>=-2 && lag(m)<=AMZ_PAY_LEAD)
+        .sort((a,b)=>(Math.abs(lag(a))-Math.abs(lag(b))) || (a.id<b.id ? -1 : 1))[0];
+      if(f){ usedF.add(f.id); out.ready.push({r:r, m:f}); return; }
+      if(bmDays(r.date, today)<=AMZ_WAIT){ out.wait.push(r); return; }
+    }
+    out.open.push(r);
+  });
+  return out;
+}
+/* 家計簿タブの板で使う結果。記録・「出さない」・取り込み済みの印が変わるまでは、計算し直さない(タブを描くたびに突き合わせない) */
+function dbtState(){
+  const d=UI.dbt; if(!d || !d.bm || !d.bm.rows) return null;
+  const bm=d.bm; bm.to=todayStr();
+  const key=[S.updatedAt||0, (S.entries||[]).length, rcptLS(DBT_HIDE_LS), rcptLS(AMZ_SEEN_LS), bm.at, bm.to, bm.walId].join("|");
+  if(d._key!==key){ const R=bankMatch(bm); d._val={R:R, sp:dbtSplit(R, bm)}; d._key=key; }
+  return d._val;
+}
+function dbtAutoOn(){ return rcptLS(DBT_AUTO_LS)!=="0"; }
+/* 結果を覚える(UI だけ)。突き合わせの画面を開いていれば、その画面の中身も新しい結果に替える */
+function dbtStore(got){
+  const was=!!(UI.bm && UI.bm.mail);
+  UI.dbt={bm:dbtBm(got)}; UI.dbtErr="";
+  if(was) UI.bm=UI.dbt.bm;
+}
+/* 結果が来た時に、描き直してよい画面だけ描き直す。字を打っている画面(記録の画面など)は触らない——描き直すとキーボードが閉じる */
+function dbtRepaint(){
+  if(UI.screen==="bankmatch" && UI.bm && UI.bm.mail){ render(); return; }
+  if(UI.screen==="main" && UI.tab==="ledger"){
+    const a=(typeof document!=="undefined") ? document.activeElement : null, tag=a ? String(a.tagName||"") : "";
+    if(tag==="INPUT" || tag==="TEXTAREA" || tag==="SELECT") return;
+    render();
+  }
+}
+/* メールを確かめる。manual=false は裏(起動・復帰)——失敗しても何も言わず、前の結果を残す。
+   裏で確かめている途中に画面から押された時は、2度は取りに行かず、その回を「画面から」に格上げする(失敗した時に、画面に理由が出るように) */
+async function dbtCheck(manual){
+  const url=amzUrl(); if(!url) return;
+  if(UI.dbtRun){ if(manual && !UI.dbtRun.manual){ UI.dbtRun.manual=true; UI.dbtErr=""; } return; }
+  if(typeof navigator!=="undefined" && navigator.onLine===false){ if(manual){ UI.dbtErr="オフラインです。電波のある所で、もう一度。"; dbtRepaint(); } return; }
+  const ctl=(typeof AbortController==="function") ? new AbortController() : null, timer=ctl ? setTimeout(()=>ctl.abort(), 45000) : 0;
+  const run=UI.dbtRun={manual:!!manual}; UI.dbtAt=Date.now();
+  if(run.manual){ UI.dbtErr=""; dbtRepaint(); }
+  let got=null;
+  try{ got=await amzFetch(url, amzFrom(), ctl); }catch(e){ got={ok:false, msg:"確かめている途中で失敗しました。もう一度試してください。"}; }
+  if(timer) clearTimeout(timer);
+  if(UI.dbtRun===run) UI.dbtRun=null;
+  try{ if(got.ok) dbtStore(got); else if(run.manual) UI.dbtErr=got.msg; }
+  catch(e){ if(run.manual) UI.dbtErr="メールの中身を読めませんでした。"; }
+  dbtRepaint();
+}
+/* 裏で確かめる(起動した時・しばらくして戻った時)。確かめ始めたら true */
+function dbtAuto(){
+  if(!amzUrl() || !dbtAutoOn() || UI.dbtRun) return false;
+  if(typeof navigator!=="undefined" && navigator.onLine===false) return false;
+  if(UI.dbtAt && Date.now()-UI.dbtAt < DBT_EVERY) return false;
+  dbtCheck(false);
+  return true;
+}
+/* 突き合わせの画面を開く(家計簿タブの板・照合の先のボタンから)。結果が無い・古い時は、開いたついでに確かめ直す */
+function dbtOpen(){
+  const have=!!(UI.dbt && UI.dbt.bm);
+  UI.bm = have ? UI.dbt.bm : {mail:true, walId:String(rcptBank().id||"")};
+  UI.bmOpen={}; UI.screen="bankmatch"; render();
+  if(!have || Date.now()-(UI.dbt.bm.at||0) > DBT_EVERY) dbtCheck(true);
+}
+function dbtInfo(){
+  return "ソニー銀行のデビット(Sony Bank WALLET)で払うと届く<b>「ご利用のお知らせ」</b>のメールと、Tallyの記録を突き合わせて、<b>まだ記録していない支払い</b>を見つけます。<br><br>"+
+    "<b>突き合わせ方</b>: 銀行の明細の突き合わせと同じです。金額が同じで、日付が近いもの(通知の日付がTallyより3日早い〜10日遅い)を同じ取引とみなします。1枚のレシートを品目ごとに分けて記録していても、同じ日・同じ店の合計で突き合わせます。一致した記録には、照合の✓が付きます。<br><br>"+
+    "<b>差し引いた残高</b> = Tallyの残高から、まだ記録していないデビットの支払いを引いた額です。銀行のアプリの残高がこの額なら、ずれの原因はこの画面に出ている支払いだけです。違う時は、デビット以外(ATM・振込・口座振替)か、見ている期間より前の分です。その時は、銀行の明細(CSV)の突き合わせで調べられます。<br><br>"+
+    "<b>見ている期間</b>: 管理 → レシートの読み取り →「いつのメールから」の日から、今日まで。<br><br>"+
+    "<b>自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏で確かめます(10分に1回まで)。記録していない支払いがあった時だけ、家計簿のタブに「デビットの未記帳」が出ます。切るのは、管理 → レシートの読み取り。<br><br>"+
+    "通知のメールの中身は、Tallyに保存しません。";
+}
+/* 「差し引いた残高」= Tallyの残高 + まだ記録していないデビット(出さないことにした行は除く)。銀行のアプリの残高と見比べる数字。
+   家計簿タブの板と、突き合わせの画面が同じ数字を出すように、ここだけで計算する */
+function dbtNet(bm, sp){ const bal=walletBalance(null, String(bm.walId)); return {bal:bal, net:bal+sp.gap}; }
+/* 残高はマイナスにもなりうる(記録が足りない時)。yen() は符号を落とすので、「−」を付ける(色だけに頼らない) */
+function dbtBalYen(v){ return (v<0 ? "−" : "")+yen(v); }
+/* 家計簿タブの板。**言うことがある時だけ出す**(未記帳がある・取り込める発送メールがある・発送メール待ちがある)。押すと突き合わせの画面 */
+function dbtCardHtml(){
+  if(!amzUrl()) return "";
+  let st=null; try{ st=dbtState(); }catch(e){ st=null; }
+  if(!st) return "";
+  const sp=st.sp, nO=sp.open.length, nF=sp.fresh.length, nW=sp.wait.length;
+  if(!nO && !nF && !nW) return "";
+  const sum=a=>a.reduce((x,r)=>x+r.amt,0);
+  let title, val, cls="amber";
+  if(nO){ title="デビットの未記帳 "+nO+"件"; val=signYen(sum(sp.open)); }
+  else if(nF){ title="Amazonの発送メール "+nF+"件"; val=yen(sp.fresh.reduce((x,m)=>x+m.total,0)); }
+  else { title="Amazonの発送メール待ち "+nW+"件"; val=signYen(sum(sp.wait)); cls="muted"; }
+  const sub=[];
+  if(nO && nF) sub.push("Amazonの発送メール "+nF+"件(取り込めます)");
+  if((nO || nF) && nW) sub.push("Amazonの発送メール待ち "+nW+"件 "+signYen(sum(sp.wait)));
+  /* 銀行のアプリの残高と見比べる数字(画面を開かなくても、合っているかが分かる) */
+  if(sp.gap) sub.push("差し引いた残高("+walName(String(UI.dbt.bm.walId))+") "+dbtBalYen(dbtNet(UI.dbt.bm, sp).net));
+  return '<div class="card" style="margin-bottom:12px;padding:11px 16px;cursor:pointer" data-a="dbtopen">'+
+    '<div class="row between" style="align-items:baseline">'+
+    '<span style="font-size:13px;font-weight:700">'+title+infoBtn(dbtInfo())+'</span>'+
+    '<span class="nw"><span class="mono '+cls+'" style="font-size:17px;font-weight:700">'+val+'</span>'+CHEV_IN+'</span></div>'+
+    (sub.length ? '<div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">'+sub.map(esc).join("<br>")+'</div>' : '')+
+    '</div>';
+}
+/* デビットの通知との突き合わせの画面(viewBankMatch から呼ぶ。押した先は bindBankMatch の data-bm) */
+function viewDbt(bm){
+  const W=String(bm.walId), md=d=>String(d||"").slice(5).replace("-","/"), run=UI.dbtRun;
+  let h='<div class="hdr"><button class="navbtn" data-bm="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">デビットの通知と突き合わせ</div><div style="width:44px"></div></div>';
+  const again='<button class="btn full" style="padding:10px 0;font-size:12px;margin-top:12px" data-bm="recheck">'+(run ? '確かめています…' : 'いま確かめる')+'</button>';
+  const err=UI.dbtErr ? '<div class="red" style="font-size:12px;margin-top:8px;line-height:1.6">'+esc(UI.dbtErr).replace(/\n/g,"<br>")+'</div>' : '';
+  const toCsv='<div style="margin-top:10px;text-align:right"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-bm="tocsv">銀行の明細(CSV)で突き合わせる</button></div>';
+  if(!bm.rows){
+    h+='<div class="card" style="margin-bottom:14px"><div class="fxl">デビットの通知メール'+infoBtn(dbtInfo())+'</div>'+
+      '<div class="muted" style="font-size:12px;line-height:1.6">'+(run ? 'メールを確かめています。数秒ほどかかります。' : 'まだ確かめていません。')+'</div>'+again+err+toCsv+'</div>';
+    return h;
+  }
+  bm.to=todayStr();
+  const R=bankMatch(bm);
+  UI._bmR=R;   /* 続けて走る bind が同じ結果で✓を付ける(突き合わせを2度しない) */
+  const sp=dbtSplit(R, bm), nb=dbtNet(bm, sp), bal=nb.bal, net=nb.net;
+  const at=new Date(bm.at||Date.now()), hm=("0"+at.getHours()).slice(-2)+":"+("0"+at.getMinutes()).slice(-2);
+  const nGap=sp.open.length+sp.ready.length+sp.wait.length;
+  const balY=dbtBalYen;
+  h+='<div class="card" style="margin-bottom:14px">'+
+    '<div class="mono muted" style="font-size:11px">'+md(bm.from)+'〜'+md(bm.to)+' · '+esc(walName(W))+' · 通知 '+R.rows.length+'通 · '+hm+' に確認</div>';
+  if(bm.old){
+    h+='<div class="amber" style="font-size:12px;margin-top:10px;line-height:1.6">Googleに置いたプログラムが古い版なので、デビットの通知は見られません。プログラムを新しくしてください(手順は、設定の「メール」のⓘにあります)。</div>'+
+      '<button class="btn full" style="padding:10px 0;font-size:12px;margin-top:10px;color:var(--teal)" data-bm="toset">設定を開く '+CHEV_T+'</button>';
+  } else if(sp.gap){
+    h+='<div class="row between" style="font-size:12px;margin-top:10px"><span class="muted">Tallyの残高</span><span class="mono'+(bal<0?' red':'')+'">'+balY(bal)+'</span></div>'+
+      '<div class="row between" style="font-size:12px;margin-top:2px"><span class="muted">まだ記録していないデビット '+nGap+'件</span><span class="mono">'+signYen(sp.gap)+'</span></div>'+
+      '<div class="row between sumline" style="align-items:baseline;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">'+
+      '<span style="font-size:13px;font-weight:700">差し引いた残高'+infoBtn(dbtInfo())+'</span>'+
+      '<span class="mono '+(net<0?'red':'amber')+'" style="font-size:20px;font-weight:700">'+balY(net)+'</span></div>';
+  } else {
+    h+='<div class="row between" style="align-items:baseline;margin-top:10px">'+
+      '<span style="font-size:13px;font-weight:700">Tallyの残高'+infoBtn(dbtInfo())+'</span>'+
+      '<span class="mono'+(bal<0?' red':'')+'" style="font-size:20px;font-weight:700">'+balY(bal)+'</span></div>';
+  }
+  h+=again+err+toCsv+'</div>';
+  if((bm.dunread||[]).length)
+    h+='<div class="card" style="margin-bottom:14px;padding:11px 16px;border-color:var(--amber)"><div class="amber" style="font-size:12px;line-height:1.6">読めなかった通知が '+bm.dunread.length+'通あります('+
+      esc(bm.dunread.slice(0,6).map(u=>md(u.date)).join("・"))+(bm.dunread.length>6?' ほか':'')+')。</div>'+
+      '<div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">通知に金額を出さない設定になっていると読めません(ソニー銀行の「デビットメール配信設定」)。その日の支払いは、銀行のアプリで確かめてください。</div></div>';
+  /* ── 通知にあってTallyに無い(未記帳) ── */
+  if(sp.open.length){
+    h+=band("デビットで払ってTallyに無い", '<span class="mono muted" style="font-size:11px">'+sp.open.length+'件</span>',
+      "デビットの通知があるのに、Tallyで見つからなかった支払いです。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。店名・品目・分類を足して保存します(そこで「写真・PDFから読む」でレシートを読ませても同じです)。保存して戻ると、この一覧から消えます。<br><br>"+
+      "<b>いつもの形</b>: 同じ加盟店の支払いを前にどう付けたか(分類・店名、振替なら相手)をTallyが覚えていて、その形で開きます。覚えるのは、通知や銀行の明細と一致した記録からです。付け方が割れている時(8割に届かない時)は、その項目は決めません。<br><br>"+
+      "<b>右の ×</b>: この支払いを、この一覧に出さないようにします(記帳はされません)。金額を分けて記録してある時など、別の形でもう付けてある支払いに使います。一覧の下の「出さないことにした行」から戻せます。<br><br>"+
+      "下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(通知の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
+    h+='<div class="card" style="margin-bottom:14px;padding:4px 16px 6px">'+sp.open.map((r,k)=>bmOnlyRow(r, k, W, true)).join("")+'</div>';
+    const unk=bmUnknown(R, W, sp.open);
+    if(unk.length) h+='<div style="text-align:right;margin:-6px 2px 14px"><button class="navbtn" style="color:var(--teal);font-size:12px;text-decoration:underline" data-bm="copyunk">分からない行をClaude用にコピー('+unk.length+'件)</button></div>';
+  }
+  /* ── Amazon(引き落としが先・発送メールが後) ── */
+  if(sp.fresh.length || sp.wait.length){
+    h+=band("Amazon", "",
+      "Amazonは、<b>引き落としが先で、発送の時にメールが届きます</b>(数分〜1日ほど後)。その間は、銀行の残高だけが先に減っています。<br><br>"+
+      "<b>発送メール</b>: 届いていて、まだ取り込んでいないメールです。「Amazonのメールから取り込む」を押すと、品名と分類を付けて記録します。引き落としの通知と金額が合うものには「○/○ に引き落とし済み」と出ます。<br><br>"+
+      "<b>発送メール待ち</b>: 引き落としの通知は来たけれど、発送メールがまだ届いていない支払いです。メールが届いたら取り込めば合うので、<b>そのまま待つ</b>のがおすすめです(行を押すと、待たずに記録することもできます。その時は、後で届いたメールを記録済みとして飛ばします)。<br>"+
+      AMZ_WAIT+"日たっても届かない時は、上の「デビットで払ってTallyに無い」に移ります(プライムの会費のように、発送メールが来ない支払いです)。");
+    if(sp.fresh.length){
+      const pay={}; sp.ready.forEach(x=>{ pay[x.m.id]=x.r; });
+      h+='<div class="card" style="margin-bottom:14px;padding:11px 16px">'+
+        '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">発送メール '+sp.fresh.length+'件(まだ取り込んでいません)</span>'+
+        '<span class="mono" style="font-size:13px;font-weight:600;flex-shrink:0;margin-left:8px">'+yen(sp.fresh.reduce((x,m)=>x+m.total,0))+'</span></div>'+
+        /* 品名は長いので1行に切り詰め、引き落としの日は下の行に出す(同じ行に続けると、品名に押されて見えなくなる) */
+        sp.fresh.slice(0,12).map(m=>'<div style="padding:6px 0 0"><div class="row between" style="align-items:baseline;font-size:12px">'+
+          '<span class="ellip muted" style="min-width:0"><span class="mono" style="margin-right:8px">'+md(m.date)+'</span>'+
+          esc(amzShort(m.items[0].name))+(m.items.length>1?' ほか'+(m.items.length-1)+'品':'')+'</span>'+
+          '<span class="mono muted" style="flex-shrink:0;margin-left:8px">'+yen(m.total)+'</span></div>'+
+          (pay[m.id] ? '<div class="muted" style="font-size:11px;margin-top:2px">'+md(pay[m.id].date)+' に引き落とし済み</div>' : '')+'</div>').join("")+
+        (sp.fresh.length>12 ? '<div class="muted" style="font-size:11px;padding-top:5px">ほか'+(sp.fresh.length-12)+'件</div>' : '')+
+        '<button class="btn full" style="padding:10px 0;font-size:12px;margin-top:12px;color:var(--teal);font-weight:700" data-bm="amzget">Amazonのメールから取り込む</button></div>';
+    }
+    if(sp.wait.length){
+      h+='<div class="card" style="margin-bottom:14px;padding:11px 16px 6px">'+
+        '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">発送メール待ち '+sp.wait.length+'件</span>'+
+        '<span class="mono muted" style="font-size:13px;font-weight:600;flex-shrink:0;margin-left:8px">'+signYen(sp.wait.reduce((x,r)=>x+r.amt,0))+'</span></div>'+
+        sp.wait.map(r=>'<div class="row between" style="align-items:baseline;font-size:12px;padding:8px 0 5px;cursor:pointer" data-bm="add" data-v="'+r.i+'">'+
+          '<span class="ellip muted" style="min-width:0"><span class="mono" style="margin-right:8px">'+md(r.date)+'</span>'+esc(r.merch)+'</span>'+
+          '<span class="mono muted" style="flex-shrink:0;margin-left:8px">'+signYen(r.amt)+'</span></div>').join("")+'</div>';
+    }
+  }
+  if(!bm.old && !sp.open.length && !sp.fresh.length && !sp.wait.length)
+    h+='<div style="text-align:center;padding:18px 0 24px;font-size:13px" class="teal">'+(R.rows.length ? 'デビットの支払いは、すべてTallyにあります。' : 'この期間に、デビットの通知はありません。')+'</div>';
+  /* ── 畳んで出すもの ── */
+  if(R.cancelB.length) h+=bmFold("cancel", "打ち消し合う通知 "+R.cancelB.length+"組", "",
+    R.cancelB.map((p,k)=>bmSm(p[0].date, (p[0].merch||p[0].desc)+(p[1].merch!==p[0].merch?" / "+(p[1].merch||p[1].desc):"")+" "+md(p[0].date)+"・"+md(p[1].date), p[0].amt,
+      p[0].appr && p[0].appr===p[1].appr ? "同じ承認番号の支払いと払戻(取消・返金)" : "同じ店の同じ額の支払いと払戻(返金など)", k)).join(""));
+  if(R.pairs.length) h+=bmFold("ok", "一致 "+R.pairs.length+"件", "",
+    R.pairs.map((p,k)=>bmSm(p.r.date, (p.r.merch||p.r.desc||"")+" ⇔ "+bmLabel(p.ms[0])+(p.ms.length>1?" ほか"+(p.ms.length-1)+"件":""), p.r.amt,
+      p.lag ? "Tallyの日付 "+md(p.ms[0].date)+"("+(p.lag>0?p.lag+"日後に":(-p.lag)+"日前に")+"引き落とし)" : "", k)).join(""));
+  if(sp.hidden.length) h+=bmFold("hid", "出さないことにした行 "+sp.hidden.length+"件", "",
+    sp.hidden.map((r,k)=>'<div class="row between" style="align-items:baseline;font-size:12px;padding:6px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
+      '<span class="ellip muted" style="min-width:0"><span class="mono" style="margin-right:8px">'+md(r.date)+'</span>'+esc(r.merch)+' '+signYen(r.amt)+'</span>'+
+      '<button class="navbtn" style="color:var(--teal);font-size:12px;flex-shrink:0;margin-left:8px;padding:0" data-bm="unhide" data-v="'+r.i+'">戻す</button></div>').join(""));
+  return h;
 }
 /* 設定の画面の「Amazonのメール」の板 */
 function amzSetHtml(){
   const au=amzUrl(), T=UI.amzTest;
-  const info="Amazonの<b>発送済み</b>のメールと、Kindleなど<b>デジタルの注文</b>のメールから、買った物と金額を取り込みます。領収書のPDFは要りません。<br><br>"+
-    "<b>使い方</b>: 記録の画面の「Amazonのメールから取り込む」を押します。新しい発送が、品名を短く整えて分類を付けた形で出るので、確かめて保存します。<b>同じメールを二度入れません。</b>前から付けてあった記録(店がAmazon・同じ金額・日付が近い)も、記録済みとして飛ばします。入れたくない注文は、保存した後でその記録を消せば、次からは出ません。<br><br>"+
+  const info="Googleに置いた小さなプログラムを通して、2種類のメールを見ます。領収書のPDFや、銀行の明細のファイルは要りません。<br><br>"+
+    "<b>Amazon</b>: <b>発送済み</b>のメールと、Kindleなど<b>デジタルの注文</b>のメールから、買った物と金額を取り込みます。記録の画面の「Amazonのメールから取り込む」を押すと、新しい発送が、品名を短く整えて分類を付けた形で出るので、確かめて保存します。<b>同じメールを二度入れません。</b>前から付けてあった記録(店がAmazon・同じ金額・日付が近い)も、記録済みとして飛ばします。入れたくない注文は、保存した後でその記録を消せば、次からは出ません。<br><br>"+
+    "<b>デビットの通知</b>: ソニー銀行のデビット(Sony Bank WALLET)で払うと届く「ご利用のお知らせ」と、Tallyの記録を突き合わせて、<b>まだ記録していない支払い</b>を見つけます。見つかった時だけ、家計簿のタブに「デビットの未記帳」が出ます。押すと一覧が出て、行を押すと、その日付と金額で記録の画面が開きます。<br><br>"+
+    "<b>起動した時に自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏でメールを確かめます(10分に1回まで)。確かめるだけで、記録を足したり直したりはしません。電波が無い時は何もしません。<br><br>"+
     "<b>はじめに一度だけ</b>(PCかタブレットのブラウザが楽です)<br>"+
     "① script.google.com を開き、「新しいプロジェクト」<br>"+
     "② 下の「プログラムをコピー」を押し、エディタの中身を全部消して貼る<br>"+
     "③ 左の歯車(プロジェクトの設定)で、「appsscript.json」マニフェスト ファイルをエディタで表示する、に印を付ける<br>"+
-    "④ エディタに戻って appsscript.json を開き、中身を「設定ファイルをコピー」で貼り替えて、保存する<br>"+
-    "⑤ 上の関数の欄で test を選んで「実行」→ 権限を確認する(「詳細」→「安全ではないページに移動」→ 許可。求められるのは<b>メールを読む権限だけ</b>です)→ 下の実行ログに「読めたメール N通」と出れば成功<br>"+
-    "⑥ 右上の「デプロイ」→「新しいデプロイ」→ 種類は「ウェブアプリ」、実行するユーザーは「自分」、アクセスできるユーザーは「全員」→「デプロイ」<br>"+
+    "④ 左の &lt;&gt;(エディタ)に戻って appsscript.json を開き、中身を「設定ファイルをコピー」で貼り替えて、保存する(時計のマークの「履歴」の画面では直せません)<br>"+
+    "⑤ コード.gs を開き、上の並びの「doGet ▼」と出ている所を押して test を選び、その左の「実行」を押す → 権限を確認する(「詳細」→「安全ではないページに移動」→ 許可。求められるのは<b>メールを読む権限だけ</b>です)→ 下の実行ログに「読めたメール N通」「デビットの通知 N通」と出れば成功<br>"+
+    "⑥ 右上の「デプロイ」→「新しいデプロイ」→「種類の選択」の歯車で「ウェブアプリ」→「次のユーザーとして実行」は「自分」、「アクセスできるユーザー」は「全員」→「デプロイ」<br>"+
     "⑦ 出てきた「ウェブアプリ」のURL(…/exec で終わる)をコピーして、ここに貼って保存する<br><br>"+
-    "<b>URLは秘密にしてください</b>: 知っている人は、Amazonで買った物と金額の一覧を見られます(名前・住所・注文番号・メールの本文は返しません)。チャットやメモに貼らないでください。置き場所はこの端末の中だけで、同期・バックアップには入りません。漏れたと思ったら、Apps Script の「デプロイを管理」でアーカイブすれば止まります。<br><br>"+
+    "<b>プログラムを新しくする時</b>(Tallyの更新で、Google側のプログラムも変わった時)<br>"+
+    "① 下の「プログラムをコピー」を押す<br>"+
+    "② script.google.com でプロジェクトを開き、コード.gs の中身を全部消して貼り、保存する<br>"+
+    "③ 右上の「デプロイ」→「デプロイを管理」→ 鉛筆のマーク →「バージョン」を「新バージョン」にして「デプロイ」<br>"+
+    "URLは変わらないので、貼り直しは要りません。権限の確認も、もう一度は出ません(読むだけのまま)。<br><br>"+
+    "<b>URLは秘密にしてください</b>: 知っている人は、Amazonで買った物と金額、デビットで払った店と金額の一覧を見られます(名前・住所・注文番号・口座の残高・メールの本文は返しません)。チャットやメモに貼らないでください。置き場所はこの端末の中だけで、同期・バックアップには入りません。漏れたと思ったら、Apps Script の「デプロイを管理」でアーカイブすれば止まります。<br><br>"+
     "<b>金額</b>: 発送メールの「合計」(割引を引いた後の、その発送で引き落とされる額)をそのまま使います。Kindleなどでポイントを使った時は、メールの金額と引き落としが違うことがあります(Amazonのメールにそう書いてあります)。<br><br>"+
-    "<b>Claudeに送るもの</b>: 品名と金額、これまでのAmazonの品目名と分類(表記を揃えるため)。APIキーが無い時や圏外の時は、品名は長いまま・分類は消費で取り込みます。";
-  let h='<div class="card" style="margin-bottom:14px"><div class="fxl">Amazonのメール'+infoBtn(info)+'</div>'+
+    "<b>Claudeに送るもの</b>: Amazonの品名と金額、これまでのAmazonの品目名と分類(表記を揃えるため)。デビットの通知は送りません。APIキーが無い時や圏外の時は、品名は長いまま・分類は消費で取り込みます。";
+  let h='<div class="card" style="margin-bottom:14px"><div class="fxl">メール(Amazon・デビットの通知)'+infoBtn(info)+'</div>'+
     '<div class="mono" style="font-size:12px;margin-bottom:8px">'+(au ? esc(amzMask(au)) : '<span class="muted">未設定</span>')+'</div>'+
     '<input class="input mono" id="rs-amz" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="width:100%;margin-bottom:8px;font-size:12px">'+
     '<div class="row" style="gap:8px"><button class="btn tealb" style="flex:1;padding:10px 0;font-size:12px;font-weight:700" data-rs="amzsave">'+(au?'貼り直す':'保存')+'</button>'+
@@ -10991,8 +11310,13 @@ function amzSetHtml(){
   if(au){
     h+='<div class="row between" style="align-items:center;gap:8px;margin-top:12px"><span style="font-size:12px">いつのメールから</span>'+
       '<input class="input sm mono" type="date" id="rs-amzfrom" value="'+esc(amzFrom())+'" min="'+esc(amzDay(todayStr(), -AMZ_BACK))+'" max="'+esc(todayStr())+'" style="width:118px;flex:none;text-align:center"></div>'+
+      /* v6.59: 起動した時に裏で確かめるか(この端末の設定。切っても、突き合わせの画面の「いま確かめる」は使える) */
+      '<div class="row between" style="align-items:center;gap:8px;margin-top:12px;min-height:32px;cursor:pointer" data-rs="dbtauto"><span style="font-size:12px">起動した時に自動で確かめる</span>'+
+      '<span class="gl-sw'+(dbtAutoOn()?' on':'')+'" role="switch" aria-checked="'+(dbtAutoOn()?'true':'false')+'"><span></span></span></div>'+
       '<button class="btn full" style="padding:10px 0;font-size:12px;margin-top:12px" data-rs="amztest">'+((T && T.busy) ? '確かめています…' : 'つながるか確かめる')+'</button>'+
-      ((T && T.msg) ? '<div class="'+(T.ok?'teal':'red')+'" style="font-size:12px;margin-top:8px;line-height:1.6">'+esc(T.msg).replace(/\n/g,"<br>")+'</div>' : '');
+      ((T && T.msg) ? '<div class="'+(T.ok?'teal':'red')+'" style="font-size:12px;margin-top:8px;line-height:1.6">'+esc(T.msg).replace(/\n/g,"<br>")+'</div>' : '')+
+      /* 版1のプログラムのままだと、デビットの通知は返ってこない(Amazon の取り込みは動く)。確かめた時・裏で確かめた時に分かるので、分かっている時だけ言う */
+      (((T && T.ok && T.old) || (UI.dbt && UI.dbt.bm && UI.dbt.bm.old)) ? '<div class="amber" style="font-size:12px;margin-top:8px;line-height:1.6">Googleに置いたプログラムが古い版です。デビットの通知を見るには、プログラムを新しくしてください(手順は上のⓘの「プログラムを新しくする時」)。</div>' : '');
   }
   h+='<div class="row" style="gap:8px;margin-top:12px"><button class="btn" style="flex:1;padding:9px 0;font-size:12px" data-rs="amzgas">プログラムをコピー</button>'+
     '<button class="btn" style="flex:1;padding:9px 0;font-size:12px" data-rs="amzjson">設定ファイルをコピー</button></div></div>';
@@ -11008,9 +11332,10 @@ function amzSetAct(a, v){
     if(!normDate(rcptLS(AMZ_FROM_LS))) rcptLS(AMZ_FROM_LS, amzDay(todayStr(), -AMZ_FIRST));   /* 初めての時は7日前から(前に手で入れた分を、まとめて出さないように) */
     UI.amzTest=null; render(); toast("保存しました(この端末だけ)"); return true;
   }
+  if(a==="dbtauto"){ rcptLS(DBT_AUTO_LS, dbtAutoOn() ? "0" : null); render(); return true; }   /* v6.59: 既定は入(印が無い)。切った時だけ "0" を置く */
   if(a==="amzdel"){
     if(!confirm("この端末からAmazonのメールのURLを消しますか?\n\n「Amazonのメールから取り込む」が使えなくなります(Googleに置いたプログラムは残ります。止める時は、Apps Script の「デプロイを管理」でアーカイブしてください)。")) return true;
-    rcptLS(AMZ_URL_LS, null); UI.amzTest=null; render(); toast("消しました"); return true;
+    rcptLS(AMZ_URL_LS, null); UI.amzTest=null; UI.dbt=null; UI.dbtErr=""; if(UI.bm && UI.bm.mail) UI.bm=null; render(); toast("消しました"); return true;
   }
   if(a==="amztest"){ amzTest(); return true; }
   if(a==="amzgas" || a==="amzjson"){   /* 「プログラムをコピー」「設定ファイルをコピー」 */
@@ -11037,20 +11362,23 @@ const AMZ_GAS_JSON=['{',
 /* Google に置くプログラム(Apps Script)。**ここが元**(設定の画面の「プログラムをコピー」で、これがそのままクリップボードに入る)。
    検査は tests/amz658/gas_test.js が、この文字をそのまま Node の上で動かす。String.raw なので、中にバッククォートと ${ は書けない */
 const AMZ_GAS=String.raw`/**
- * Tally 用 — Amazon のメールから、支払いの中身だけを取り出すプログラム
+ * Tally 用 — Amazon のメールと、ソニー銀行のデビットの通知から、支払いの中身だけを取り出すプログラム
  *
- * 読むメール: 「発送済み」(shipment-tracking@amazon.co.jp)と、デジタルの注文(digital-no-reply@amazon.co.jp)。
- * 返すもの  : メールの日付・品名・数量・価格・合計 だけ。
- * 返さないもの: 名前・住所・注文番号・メールの本文・ほかのメール。
+ * 読むメール: Amazon の「発送済み」(shipment-tracking@amazon.co.jp)と、デジタルの注文(digital-no-reply@amazon.co.jp)。
+ *             ソニー銀行の「Sony Bank WALLET ご利用のお知らせ」(banking@sonybank.jp)。
+ * 返すもの  : Amazon は、メールの日付・品名・数量・価格・合計。デビットは、利用日・金額・加盟店の名前・承認番号。
+ * 返さないもの: 名前・住所・注文番号・口座の残高・メールの本文・ほかのメール(ワンタイムパスワードのメールは読みません)。
  * 権限      : メールを読むだけ(gmail.readonly)。メールの変更・削除・送信はできません。
  *
- * 使い方: Tally の 管理 → レシートの読み取り → Amazonのメール に、このプログラムを公開した時のURLを貼ります。
+ * 使い方: Tally の 管理 → レシートの読み取り → メール の欄に、このプログラムを公開した時のURLを貼ります。
+ * 直した時: 貼り替えて保存 →「デプロイ」→「デプロイを管理」→ 鉛筆 → バージョンを「新バージョン」→「デプロイ」(URLは変わりません)。
  */
-var TALLY_AMZ_VERSION = 1;
+var TALLY_AMZ_VERSION = 2;
 var AMZ_TZ = 'Asia/Tokyo';
 var AMZ_MAX_DAYS = 90;       // これより前のメールは見ない
 var AMZ_DEFAULT_DAYS = 30;   // 「いつから」の指定が無い時
 var AMZ_MAX_MAILS = 200;
+var DEBIT_MAX = 600;         // デビットの通知は、これより多くは見ない
 
 /** Tally から呼ばれる入口。?from=2026-11-05 で「この日からのメール」 */
 function doGet(e) {
@@ -11078,6 +11406,8 @@ function test() {
     Logger.log(m.date + ' ' + (m.kind === 'ship' ? '発送' : 'デジタル') + ' ' + m.items.length + '品 合計 ' + m.total + '円');
   });
   r.unread.forEach(function (m) { Logger.log('読めない: ' + m.date + ' ' + m.subject); });
+  Logger.log('デビットの通知 ' + r.debits.length + '通(うち、本文まで読んだもの ' + r.dfull + '通)。読めなかったもの ' + r.dunread.length + '通。');
+  r.dunread.forEach(function (m) { Logger.log('読めない: ' + m.date + ' ' + m.subject); });
 }
 
 function collect_(from) {
@@ -11106,7 +11436,101 @@ function collect_(from) {
   var byDate = function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); };
   mails.sort(byDate);
   unread.sort(byDate);
-  return {ok: true, v: TALLY_AMZ_VERSION, from: start, mails: mails, unread: unread};
+  var deb = debits_(after);
+  deb.list.sort(byDate);
+  deb.unread.sort(byDate);
+  return {ok: true, v: TALLY_AMZ_VERSION, from: start, mails: mails, unread: unread, debits: deb.list, dunread: deb.unread, dfull: deb.full};
+}
+
+/**
+ * ソニー銀行のデビット(Sony Bank WALLET)の「ご利用のお知らせ」。1通 = 1回の引き落とし(マイナスの金額は払戻)。
+ * メールの一覧に付いてくる「書き出し」(本文の先頭200字ほど)に、利用日・金額・加盟店・承認番号が入っているので、
+ * ふつうは本文を開かない(1回の問い合わせで全部そろうので速い)。書き出しが無い・途中で切れている時だけ、そのメールの本文を読む。
+ */
+function debits_(after) {
+  var q = 'from:banking@sonybank.jp subject:"ご利用のお知らせ" after:' + after;
+  var list = [], unread = [], full = 0, seen = {};
+  listThreads_(q, DEBIT_MAX).forEach(function (t) {
+    if (seen[t.id]) return;
+    seen[t.id] = 1;
+    var r = t.snippet ? parseDebit_(t.snippet, true) : null;
+    if (r && r.zero) return;              // 0円の通知
+    if (!r || r.bad) {                    // 書き出しだけでは決められない(途中で切れている・その形でない)→ 本文を読む
+      full++;
+      var msg = lastMessage_(t.id);       // 開けなければ全体を失敗にする(通知を黙って落とさない。Tally は前の結果を残す)
+      var date = Utilities.formatDate(new Date(Number(msg.internalDate)), AMZ_TZ, 'yyyy-MM-dd');
+      var subject = '';
+      try {
+        subject = header_(msg.payload, 'Subject');
+        var body = bodyText_(msg.payload);
+        r = /\S/.test(body) ? parseDebit_(body, false) : {bad: true};   // 本文が取れない時は、別の知らせだと決めつけない
+      } catch (err) {
+        r = {bad: true};                  // 中身の形が読めない → 「読めなかった通知」として日付と件名だけ返す
+      }
+      if (!r || r.zero) return;           // デビットの利用の通知ではない・0円の通知
+      if (r.bad) {
+        unread.push({id: t.id, date: date, kind: 'debit', subject: clip_(subject, 60)});
+        return;
+      }
+    }
+    list.push({id: t.id, date: r.date, amount: r.amount, shop: r.shop, appr: r.appr});
+  });
+  return {list: list, unread: unread, full: full};
+}
+
+/** メールのまとまり(スレッド)の一覧。id と書き出しだけ(本文は開かない) */
+/** スレッドの中の、いちばん新しいメール(通知は1通で1スレッド)。スレッドの id をメールの id として読むことはしない */
+function lastMessage_(threadId) {
+  var th = Gmail.Users.Threads.get('me', threadId, {format: 'full'}) || {};
+  var ms = th.messages || [];
+  if (!ms.length) throw new Error('empty thread');
+  return ms[ms.length - 1];
+}
+function listThreads_(q, max) {
+  var out = [], token = '';
+  do {
+    var opt = {q: q, maxResults: 500};
+    if (token) opt.pageToken = token;
+    var res = Gmail.Users.Threads.list('me', opt) || {};
+    (res.threads || []).forEach(function (t) { out.push({id: t.id, snippet: String(t.snippet || '')}); });
+    token = res.nextPageToken || '';
+  } while (token && out.length < max);
+  return out.slice(0, max);
+}
+
+/**
+ * デビットの通知。本文はこの形(書き出しは、これが1行につながったもの):
+ *   Sony Bank WALLET(Visaデビット)のご利用がありました。
+ *   カード利用日:2026年11月10日
+ *   ご利用金額:800円            ← 払戻はマイナス
+ *   ご利用加盟店:MISE NO NAMAE
+ *   承認番号:123456
+ * 返すもの: {date, amount, shop, appr} / デビットの利用の通知でなければ null / 通知だが読めない所があれば {bad: true}
+ */
+function parseDebit_(text, snippet) {
+  var t = String(text || '');
+  if (t.normalize) t = t.normalize('NFKC');      // 全角の英数字・記号・空白を半角に(加盟店の名前は全角の大文字で来る)
+  t = t.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  t = t.replace(/\r/g, '').replace(/[ \t]+/g, ' ');
+  if (!/Visa ?デビット/.test(t) || !/ご利用がありました/.test(t)) return null;
+  var d = /カード利用日 ?: ?(\d{4})年 ?(\d{1,2})月 ?(\d{1,2})日/.exec(t);
+  var a = /ご利用金額 ?: ?([-−‐]?) ?([\d,]+) ?円/.exec(t);
+  var s, appr;
+  if (snippet) {
+    // 書き出しは1行。加盟店は「承認番号」の手前まで。承認番号の後ろに何か続いていなければ、途中で切れている
+    s = /ご利用加盟店 ?: ?(.*?) ?承認番号 ?: ?(\d{1,12})(?=\D)/.exec(t);
+    appr = s ? s[2] : '';
+  } else {
+    s = /ご利用加盟店 ?: ?([^\n]*)/.exec(t);
+    appr = (/承認番号 ?: ?(\d{1,12})/.exec(t) || [])[1] || '';
+  }
+  if (!d || !a || !s) return {bad: true};
+  var shop = String(s[1]).replace(/\s+/g, ' ').trim();
+  var amt = Number(a[2].replace(/,/g, ''));
+  if (!shop) return {bad: true};
+  if (!(amt > 0)) return {zero: true};           // 0円の通知(カードの確認など。お金は動いていない)は数えない
+  var two = function (x) { return (String(x).length < 2 ? '0' : '') + x; };
+  return {date: d[1] + '-' + two(d[2]) + '-' + two(d[3]), amount: (a[1] ? -amt : amt), shop: clip_(shop, 60), appr: appr};
 }
 
 /** 「いつから」を yyyy-MM-dd で決める。指定が無ければ30日前、古すぎれば90日前、先の日付なら今日 */
@@ -11545,7 +11969,7 @@ function viewEntry(){
        金額は品目行にあるので、ここに残すのは品目行を使わない振替/交通コンポーザのときだけ */
     /* v6.18: 銀行の明細から開いた時は、その行を上に出す(記録には書かない。フォームを開き直すと消える) */
     (f.bankHint ? '<div class="card" style="margin-bottom:12px;padding:9px 16px;border-color:var(--amber)">'+
-      '<div class="muted" style="font-size:11px;margin-bottom:2px">銀行の明細</div><div class="mono" style="font-size:12px">'+esc(f.bankHint)+'</div></div>' : '')+
+      '<div class="muted" style="font-size:11px;margin-bottom:2px">'+(f.bankHintSrc==="mail" ? 'デビットの通知' : '銀行の明細')+'</div><div class="mono" style="font-size:12px">'+esc(f.bankHint)+'</div></div>' : '')+
     '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="width:100%;margin-bottom:12px">'+
     '<div class="row" style="gap:8px;margin-bottom:12px">'+
     TYPES.map(([v,l])=>
@@ -13356,6 +13780,10 @@ async function reloadForUpdate(){
 /* 起動時・復帰時の自動チェック */
 setTimeout(()=>checkForUpdate(false), 1500);
 document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") checkForUpdate(false); });
+/* v6.59: 起動した時・戻った時に、デビットの通知と Amazon のメールを裏で確かめる(メールのURLを設定してあって、切っていない時だけ。10分に1回まで)。
+   読むだけで、失敗しても何も言わない。起動の邪魔をしないよう、少し待ってから始める */
+setTimeout(()=>{ try{ dbtAuto(); }catch(e){ console.error(e); } }, 2500);
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible"){ try{ dbtAuto(); }catch(e){ console.error(e); } } });
 
 setSync("nokey");
 whenSbReady(initCloud);
