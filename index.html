@@ -407,6 +407,37 @@
   /* 矢印を包む枠。**枠の高さは前(字の「›」1行分)のまま**にして行の高さを変えない(1lh = その字の大きさの1行の高さ)。その中で上下の中央へ */
   .chevw{display:flex; align-items:center; min-height:1lh;}
   .chev-t{display:inline-block; width:.5em; height:.82em; vertical-align:-.07em; flex:none;}
+  /* v6.64: **記録の画面の作り直し**(3枚の板: ①取り込む ②記録 ③中身)。経緯は viewEntry の前の説明に。
+     .seg = **つながった選択の帯**(種別・分類・支払い元)。1つを選ぶ段を、ばらばらの箱ではなく1本の帯にして、箱と線を減らす。
+       列の数は style の grid-template-columns で決める(segHtml)。マスの間の線は、マスの右と下に落とす影(1px)。外側にはみ出た分は帯の枠で切れる。
+       2段になる時は、空いたマスを <i> で埋める(線が途切れないように)。四隅のマスは c-tl などで角を丸める(選んだ時の内側の輪が、帯の角丸に沿うように)。
+       高さは 44px(iPhone の押せる大きさの下限・v4.70)。選んだ色は .btn.sel / .btn.selt と同じ(琥珀 = 財布・軍資金、teal = 貯金の箱・v4.94) */
+  .seg{display:grid; gap:1px; border:1px solid var(--line); border-radius:11px; overflow:hidden;}
+  .seg > *{min-width:0; min-height:44px; margin:0; padding:2px; border:0; border-radius:0; background:transparent; color:var(--muted);
+    font-size:13px; font-family:inherit; cursor:pointer; box-shadow:1px 0 0 var(--line), 0 1px 0 var(--line), 1px 1px 0 var(--line);}
+  .seg > i{cursor:default;}
+  .seg > .sel{color:var(--amber); background:rgba(242,179,61,.12); font-weight:600;
+    box-shadow:inset 0 0 0 1px var(--amber), 1px 0 0 var(--line), 0 1px 0 var(--line), 1px 1px 0 var(--line);}
+  .seg > .selt{color:var(--teal); background:rgba(45,212,191,.12); font-weight:600;
+    box-shadow:inset 0 0 0 1px var(--teal), 1px 0 0 var(--line), 0 1px 0 var(--line), 1px 1px 0 var(--line);}
+  /* 経由する財布(v6.08): 選択の色は行き先の1つだけ。経由の財布は点線の輪で示す */
+  .seg > .via{color:var(--text); outline:1px dashed var(--muted); outline-offset:-4px;}
+  .seg > .c-tl{border-top-left-radius:10px;} .seg > .c-tr{border-top-right-radius:10px;}
+  .seg > .c-bl{border-bottom-left-radius:10px;} .seg > .c-br{border-bottom-right-radius:10px;}
+  .seg .nm, .seg .bl{display:block; font-size:11px;}
+  .seg .bl{opacity:.85;}
+  /* 取り込みの板(①): アイコン + 短い名前を横に並べる。仕切りは管理タブの行の線と同じ濃さ。1つしか無い時(.one)は横1行 */
+  .card.imps{display:grid; padding:0;}
+  .imp{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-width:0; min-height:68px; padding:12px 4px 10px;
+    background:none; border:0; border-left:1px solid rgba(255,255,255,.08); color:var(--teal); font-size:12px; font-weight:600; font-family:inherit; position:relative;}
+  .imp:first-child{border-left:0;}
+  .imp.one{flex-direction:row; gap:8px; min-height:48px; padding:10px 4px;}
+  .imp svg{width:22px; height:22px; flex:none;}
+  /* 畳んである「軍資金から出す ›」など。字は小さいが、押せる範囲は上下に広げてある(行の高さは増やさない)。
+     上は段の間の12pxぶんまで(それより広げると、上の帯の下の端を押した時にこちらが反応する)。下は板の余白14pxぶん */
+  .fold{background:none; border:0; color:var(--muted); font-size:11px; font-family:inherit; cursor:pointer; padding:9px 14px 14px 0; margin:-12px 0 -14px;}
+  /* 下のメニューの「記録」に付く点(書きかけがある・読み取り中)。.tabs button > * の決まり(position:relative)より強く書く */
+  body:not(.sheet-light) .tabs button > .tdot{position:absolute; top:6px; left:50%; margin-left:9px; width:7px; height:7px; border-radius:50%; background:var(--amber); z-index:2;}
 </style>
 </head>
 <body>
@@ -417,7 +448,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.63 (localStorage保存・完全オフライン)
+   Tally 6.64 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1214,7 +1245,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.63";
+const APP_VERSION = "6.64";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1345,7 +1376,7 @@ function goBackViaHeader(){
 function refreshSubnav(){
   const navbar = document.getElementById("navbar");
   if(!navbar || UI.screen==="main" || SUBNAV_SKIP.indexOf(UI.screen)>=0) return;
-  navbar.innerHTML = subNavHtml(); navbar.style.display="";
+  navbar.innerHTML = entryTabbed() ? entryTabNavHtml() : subNavHtml(); navbar.style.display="";   /* v6.64: タブとして出した記録(メニューの上に「記録する」。メニューのボタンは bindEntry が結ぶ) */
   const bb = navbar.querySelector('[data-nav="back"]');
   if(bb) bb.onclick = goBackViaHeader;
   const tb = navbar.querySelector('[data-nav="transfer"]');
@@ -1516,12 +1547,27 @@ const TAB_ICONS = {
   add: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17.1 3.7a2.05 2.05 0 0 1 2.9 2.9L8.6 18 4.2 19.4 5.6 15z"/><path d="M14.9 5.9l2.9 2.9"/></svg>'
 };
 function tabBar(){
-  const tb=([v,l])=>'<button class="'+(UI.tab===v?"on":"")+'" data-a="tab" data-v="'+v+'">'+TAB_ICONS[v]+'<span>'+l+'</span></button>';
+  /* v6.64: 記録をタブとして出している間は「記録」を点灯する(ほかの4つは消す。UI.tab は保存後に戻る先として ledger のまま)。
+     ほかのタブにいる時、記録に書きかけ・読み取り中があれば、点を付ける(押せば続きから) */
+  const et=entryTabbed();
+  const tb=([v,l])=>'<button class="'+((!et && UI.tab===v)?"on":"")+'" data-a="tab" data-v="'+v+'">'+TAB_ICONS[v]+'<span>'+l+'</span></button>';
   return '<div class="tabs">'+
     [["ledger","家計簿"],["games","遊技"]].map(tb).join("")+
-    '<button data-a="add" aria-label="家計簿に記帳">'+TAB_ICONS.add+'<span>記録</span></button>'+
+    '<button'+(et?' class="on"':'')+' data-a="add" aria-label="家計簿に記帳">'+TAB_ICONS.add+((!et && entryDraftLive())?'<i class="tdot" title="書きかけがあります"></i>':'')+'<span>記録</span></button>'+
     [["assets","資産"],["tool","管理"]].map(tb).join("")+
     '</div>';
+}
+/* v6.64: タブを切り替える(家計簿・遊技・資産・管理)。タブの棒は main と、タブとして出した記録の画面にあるので、両方の bind から呼ぶ */
+function goTab(v){ UI.tab=v; UI.screen="main"; render(); }
+/* v6.64: 右上の同期の丸を押した時(記録のタブにも同じ丸があるので関数にした) */
+function syncNow(){ checkForUpdate(true); if(sb && sbSession) cloudSync(); }
+/* v6.64: タブとして出した記録の画面の下の棒。**メニューはそのまま**、そのすぐ上に「記録する」の帯(戻るの画面の下の棒と同じ部品・同じ仕組み=本文の隠しボタンを押すだけ)。
+   「記録」のタブ自身を「記録する」に化けさせる案は捨てた: 押すたびに意味が変わるボタンは、開くつもりで保存してしまう */
+function entryTabNavHtml(){
+  const x=subnavExtra("entry")[0];
+  return '<div class="subnav" style="display:flex;margin-bottom:8px">'+
+    '<button data-nav="app:'+esc(x[0])+'" style="flex:1;'+(x[2]||'')+'"><span>'+x[1]+'</span></button></div>'+
+    tabBar()+footHtml("4px 0 1px");
 }
 
 /* ---------- カテゴリ内訳(店別ドリルダウン) ---------- */
@@ -1845,7 +1891,7 @@ function viewBankMatch(){
   const amtCol=y=>'<span class="mono '+clsPM(y)+'" style="font-size:13px;font-weight:600;flex-shrink:0;margin-left:8px">'+signYen(y)+'</span>';
   if(R.bankOnly.length){
     h+=band("銀行にあってTallyに無い", '<span class="mono muted" style="font-size:11px">'+R.bankOnly.length+'件</span>',
-      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。<b>ATM</b>と、店名にTallyの財布の名前が入っている行(Suicaのチャージなど)は<b>振替</b>で開きます(ATMは、相手の財布や軍資金を選びます)。それ以外は支出(入金なら収入)で開くので、店名・品目・分類を足して保存します。<br><br><b>いつもの形</b>: 同じ摘要の行を前にどう付けたか(分類・店名、振替なら相手)をTallyが覚えていて、その形で開きます。覚えるのは銀行と一致した行からで、付け方が割れている時(8割に届かない時)は、その項目は決めません。レシートをClaudeで読ませてあったなら、記録の画面の「レシートを取り込む」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br><b>何の支払いか分からない行</b>は、一覧の下の「分からない行をClaude用にコピー」でまとめてコピーできます(手がかり・いつもの形が出ている行と、ATM・チャージの行は入りません)。レシートを変換しているClaudeのチャットに貼ると、店を調べて1行ずつ取り込み用の形にして返します。その行を押して開いた画面で「レシートを取り込む」を押すと入ります。<br><br>下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(銀行の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
+      "銀行の明細にあるのに、Tallyで見つからなかった取引です。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。<b>ATM</b>と、店名にTallyの財布の名前が入っている行(Suicaのチャージなど)は<b>振替</b>で開きます(ATMは、相手の財布や軍資金を選びます)。それ以外は支出(入金なら収入)で開くので、店名・品目・分類を足して保存します。<br><br><b>いつもの形</b>: 同じ摘要の行を前にどう付けたか(分類・店名、振替なら相手)をTallyが覚えていて、その形で開きます。覚えるのは銀行と一致した行からで、付け方が割れている時(8割に届かない時)は、その項目は決めません。レシートをClaudeで読ませてあったなら、記録の画面の「貼り付け」から貼り付けても同じです。保存して戻ると、この一覧から消えます。<br><br><b>何の支払いか分からない行</b>は、一覧の下の「分からない行をClaude用にコピー」でまとめてコピーできます(手がかり・いつもの形が出ている行と、ATM・チャージの行は入りません)。レシートを変換しているClaudeのチャットに貼ると、店を調べて1行ずつ取り込み用の形にして返します。その行を押して開いた画面で「貼り付け」を押すと入ります。<br><br>下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(銀行の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
     h+='<div class="card" style="margin-bottom:14px;padding:4px 16px 6px">'+R.bankOnly.map((r,k)=>bmOnlyRow(r, k, W, false)).join("")+'</div>';
     /* v6.22: Tallyだけでは中身が分からない行(手がかりも・いつもの形も無く、ATM・振替でもない)を、レシートのチャットに渡す形でコピーする。
        店の正体はチャットがWebやカレンダーで調べ、取り込み用のブロックにして返す(ユーザーの提案: 明細をチャットに渡して知らない内容を考えてもらう) */
@@ -2914,13 +2960,18 @@ function bindCatDrill(){
 }
 
 /* ---------- メイン画面 ---------- */
-function viewMain(){
-  const TABNAMES = {ledger:"家計簿", games:"遊技", assets:"資産", tool:"管理"};
-  let h = '<div class="row" style="align-items:center;margin-bottom:6px">'+
-    '<div style="width:34px;flex-shrink:0"></div>'+
-    '<div style="flex:1;text-align:center;font-size:18px;font-weight:700;letter-spacing:.02em">'+(TABNAMES[UI.tab]||"")+'</div>'+
+/* v6.64: タブの画面の上の見出し(大きい題・右に同期の丸)。**記録のタブも同じ形にする**ので関数にした(同じものを2か所に書かない)。
+   left = 左の34pxの枠に置くもの(記録の「クリア」。枠の幅は変えない=題の位置がタブごとにずれない)、mb = 下の余白(省くと6px) */
+function tabHdrHtml(title, left, mb){
+  return '<div class="row" style="align-items:center;margin-bottom:'+(mb||6)+'px">'+
+    '<div style="width:34px;flex-shrink:0'+(left?';position:relative':'')+'">'+(left||'')+'</div>'+
+    '<div style="flex:1;text-align:center;font-size:18px;font-weight:700;letter-spacing:.02em">'+title+'</div>'+
     '<button class="syncbtn '+syncState+'" id="syncbadge" data-a="syncnow" title="同期"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>'+
     '</div>';
+}
+function viewMain(){
+  const TABNAMES = {ledger:"家計簿", games:"遊技", assets:"資産", tool:"管理"};
+  let h = tabHdrHtml(TABNAMES[UI.tab]||"");
 
   if(UI.tab==="tool"){
     h += viewTool();
@@ -9517,7 +9568,7 @@ function bindMain(){
   document.querySelectorAll("[data-a]").forEach(el=>{
     el.onclick = () => {
       const a = el.dataset.a, v = el.dataset.v;
-      if(a==="tab"){ UI.tab=v; UI.screen="main"; render(); }  /* v3.58: 通常は無害(タブバーはmainのみ)、エラー画面からの脱出路として機能する */
+      if(a==="tab"){ goTab(v); }  /* v3.58: 通常は無害(タブバーはmainのみ)、エラー画面からの脱出路として機能する */
       else if(a==="mprev") moveMonth(-1);
       else if(a==="mnext") moveMonth(1);
       else if(a==="csv") exportCsv();
@@ -9599,13 +9650,13 @@ function bindMain(){
       else if(a==="mdb"){ UI.screen="mdb"; UI.mdbForm=null; render(); }
       else if(a==="stores"){ UI.screen="stores"; UI.storeForm=null; render(); }
       else if(a==="mjtlist"){ UI.screen="mjtlist"; render(); }
-      else if(a==="syncnow"){ checkForUpdate(true); if(sb && sbSession) cloudSync(); }
+      else if(a==="syncnow"){ syncNow(); }
       else if(a==="backup"){ UI.screen="backup"; UI.msg=""; render(); }
       else if(a==="add"){
         /* v3.39: 中央ボタン=常に家計簿記帳(1ボタン=1動詞)。遊技の新規作成はタブ内破線カード(slotnew/mjnew)へ移設 */
-        UI.tab="ledger"; UI.editEntryId=null;
-        UI.entryForm={date:todayStr(),type:"expense",category:"消費",amount:"",store:"",item:"",memo:"",tmode:"",tfrom:"",tto:"",tplace:""};
-        UI.screen="entry"; render();
+        /* v6.64: メニューを出したまま開く。書きかけがあれば続きから(entryOpenTab)。離れている間に終わった読み取りがあれば、ここで当てる */
+        entryOpenTab(); render();
+        rcptPendingApply();
       }
       else if(a==="mjnew"){ UI.tab="games"; 
           UI.mjDraft={id:uid(),date:todayStr(),shop:"",store:"",category:"free",rule:"4",startAt:"",endAt:"",
@@ -10275,6 +10326,7 @@ function receiptPasteText(raw, f){
   if(list.length===1 && !list[0].r.items.some(it=>it.date)){
     const n=applyReceipt(raw); if(!n) return false;
     UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";   /* v6.23: 写真のメモが前の中身のまま残らないように */
+    f.rcptSrc="貼り付けから取り込みました";   /* v6.64: 上の板を、入口から「何を読んだか」の要約に替える */
     render(); toast(n+"件を取り込みました");
     const note=receiptNote(list[0].r); if(note) alert(note);
     return true;
@@ -10557,7 +10609,7 @@ function rcptApply(txt, f, stop){
     rcptKeepBank(f);
     UI.pasteOpen=false; UI.pasteText="";
     f.rcptNote=notes.concat([receiptNote(x.r)]).filter(Boolean).join("\n\n");
-    return {form:true, saved:0};
+    return {form:true, saved:0, one:true};   /* v6.64: one = 1枚をフォームに入れた(呼んだ側が、上の板を要約に替える) */
   }
   /* v6.28: それ以外(履歴・1枚の写真に複数のレシート・注文の一覧)は、**まとめて1回の確認で保存**し、記録済みは飛ばす */
   const res=receiptImportMany(rs, notes.join("\n\n"));
@@ -10604,12 +10656,25 @@ async function rcptSend(t, imgs){
   if(timer) clearTimeout(timer);
   if(UI.rcptBusy!==t) return;   /* やめた(または次の読み取りが始まった) */
   UI.rcptBusy=null;
-  if(UI.screen!=="entry" || UI.entryForm!==f){ toast("記録の画面を離れたので、読み取りの結果は使いませんでした"); return; }
+  const r={err:!!err, timeout:!!t.timeout, status:(res ? res.status : 0), ok:!!(res && res.ok), js:js, src:String(t.src||"")};
+  if(UI.screen!=="entry" || UI.entryForm!==f){
+    /* v6.64: **タブの記録の書きかけなら、結果を預かる**(記録に戻った時に rcptPendingApply が当てる)。
+       メニューが出たままなので、読んでいる10〜30秒の間にほかのタブを見に行くのは普通の動きになった。前のように捨てると、費用だけかかって読み直しになる。
+       預かるのは返事そのもの(メモリの中だけ)。当てるのは戻った時なので、記録済みの見分け(receiptImportMany)もその時の記録でやり直される */
+    if(f===UI.entryDraft && f.type!=="transfer"){ f.rcptPending=r; toast("読み取りが終わりました。「記録」を開くと結果が出ます"); return; }
+    toast("記録の画面を離れたので、読み取りの結果は使いませんでした"); return;
+  }
+  rcptFinish(f, r);
+}
+/* 読み取りの返事を、見えている記録の画面に当てる(返事が届いた時と、v6.64: 記録のタブに戻った時)。r = rcptSend が作る {err, timeout, status, ok, js, src} */
+function rcptFinish(f, r){
+  const js=r.js;
   if(f.type==="transfer"){ render(); toast("振替に切り替えたので、読み取りの結果は使いませんでした"); return; }
-  if(err){ render(); alert(t.timeout ? "時間がかかりすぎたので止めました。写真を減らすか、少し待ってから、もう一度。" : "Claudeにつながりませんでした(オフラインか、電波が弱い)。"); return; }
-  if(!res || !res.ok){ render(); alert(rcptErr(res ? res.status : 0, js)); return; }
+  if(r.err){ render(); alert(r.timeout ? "時間がかかりすぎたので止めました。写真を減らすか、少し待ってから、もう一度。" : "Claudeにつながりませんでした(オフラインか、電波が弱い)。"); return; }
+  if(!r.ok){ render(); alert(rcptErr(r.status, js)); return; }
   if(!js){ render(); alert("返事を最後まで受け取れませんでした(途中で切れた)。もう一度試してください。"); return; }
   const out=rcptApply(rcptText(js), f, js.stop_reason);
+  if(out.one) f.rcptSrc=r.src || "読み取りました";   /* v6.64: 上の板を、入口から「何を読んだか」の要約に替える */
   if(out.form){
     render();
     toast(out.empty ? "取り込めるものがありませんでした(メモを見てください)"
@@ -10619,6 +10684,13 @@ async function rcptSend(t, imgs){
   }
   if(out.saved){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
   render(); toast("取り込みをやめました");
+}
+/* v6.64: 記録のタブを離れている間に終わった読み取りを、戻った時に当てる(下のメニューの「記録」を押した時に呼ぶ) */
+function rcptPendingApply(){
+  const f=UI.entryForm;
+  if(!f || !f.rcptPending || UI.screen!=="entry") return;
+  const r=f.rcptPending; f.rcptPending=null;
+  rcptFinish(f, r);
 }
 /* v6.25: **PDFも読む**(ユーザー要望: Amazonの領収書はPDF)。PDFは縮めずに document として送る
    (Claudeがページごとに画像と文字で読む。1ページの領収書なら数円)。上限はリクエスト全体で128MBなので、1つ30MBまでにする */
@@ -10653,6 +10725,8 @@ async function rcptFromFiles(files){
   /* v6.35: **10個まで**(5個から増やした。Suicaの利用履歴は1枚に7〜9行なので、ひと月分のスクリーンショットを1回で)。
      送る中身は合わせて24MBまで(APIの1回の上限は32MB。PDFが大きい時に超えないように) */
   const t=rcptBegin(f, Math.min(files.length, RCPT_MAXF)), m=rcptModel();
+  { const used=files.slice(0,RCPT_MAXF), nP=used.filter(rcptIsPdf).length;   /* v6.64: 読んだ後の要約に出す言葉 */
+    t.src=(nP===used.length ? "PDF" : nP ? "写真・PDF" : "写真")+"から読みました"; }
   if(files.length>RCPT_MAXF) toast("写真・PDFは"+RCPT_MAXF+"個までです。最初の"+RCPT_MAXF+"個を読みます");
   /* v6.23(レビュー): **1枚ずつ**縮める(iPhoneで5枚を同時に開くとメモリが足りずページごと落ちることがある) */
   const imgs=[]; let bytes=0, cut=0;
@@ -10665,16 +10739,16 @@ async function rcptFromFiles(files){
   catch(e){ if(UI.rcptBusy===t){ UI.rcptBusy=null; render(); alert(/PDFが大きすぎます/.test(String(e && e.message)) ? e.message+"。" : "画像やPDFを開けませんでした(この端末では開けない形式かもしれません)。"); } return; }
   if(UI.rcptBusy!==t) return;
   if(cut) toast("大きすぎるので、最初の"+imgs.length+"個だけ読みます(残りはもう一度)");
-  /* 縮めている間に画面を離れていたら送らない(費用がかかるだけ) */
-  if(UI.screen!=="entry" || UI.entryForm!==f){ UI.rcptBusy=null; return; }
+  /* 縮めている間に画面を離れていたら送らない(費用がかかるだけ)。v6.64: タブの記録の書きかけなら、離れていても続ける(結果は預かる・rcptSend) */
+  if((UI.screen!=="entry" || UI.entryForm!==f) && f!==UI.entryDraft){ UI.rcptBusy=null; return; }
   await rcptSend(t, imgs);
 }
 /* 設定の画面(管理 → レシートの読み取り) */
 function viewRcptSet(){
   const k=rcptKey(), m=rcptModel(), T=UI.rcptTest;
   const info="写真やPDFを選ぶと、Tallyが画像をClaude(AnthropicのAPI)に送って読み取り、記録の画面を埋めます。保存の前に中身を見て直せます。読めなかった所は、画面の「Claudeのメモ」に出ます。<br><br>"+
-    "<b>スクリーンショット</b>: 撮った後の「完了」→「コピーして削除」→ 記録の画面の「レシートを取り込む」でも読めます(写真に残りません)。iPhoneはWebアプリを共有シートに出せないので、この形で代えています。<br><br>"+
-    "<b>Suicaの付け漏れ</b>: Walletのカードの画面(またはモバイルSuicaの利用履歴)をスクロールしながらスクリーンショットを撮り、「写真・PDFから読む」でまとめて選びます(1回に10枚まで)。<b>記録済みの乗車・買い物は飛ばして</b>、未記入の分だけを1回の確認で保存します。同じ財布・同じ日・同じ額の記録があれば記録済みとみなすので、レシートから付けた買い物も二重になりません。重なった期間をもう一度読んでも増えません。残高が写っていれば、取り込んだ後のSuicaの残高が合うかも、保存の前に出します。<br><br>"+
+    "<b>スクリーンショット</b>: 撮った後の「完了」→「コピーして削除」→ 記録の画面の「貼り付け」でも読めます(写真に残りません)。iPhoneはWebアプリを共有シートに出せないので、この形で代えています。<br><br>"+
+    "<b>Suicaの付け漏れ</b>: Walletのカードの画面(またはモバイルSuicaの利用履歴)をスクロールしながらスクリーンショットを撮り、「写真・PDF」でまとめて選びます(1回に10枚まで)。<b>記録済みの乗車・買い物は飛ばして</b>、未記入の分だけを1回の確認で保存します。同じ財布・同じ日・同じ額の記録があれば記録済みとみなすので、レシートから付けた買い物も二重になりません。重なった期間をもう一度読んでも増えません。残高が写っていれば、取り込んだ後のSuicaの残高が合うかも、保存の前に出します。<br><br>"+
     "<b>はじめに一度だけ</b><br>① claude.ai の設定 → 請求(Billing)の「API credits」で、Claude Console の組織をつなぐ(Maxプランは毎月$100分。翌月には繰り越さない)<br>"+
     "② Console(platform.claude.com)の API keys で「Create key」。Workspace は Tally(作っていなければ Default)、Linked account は自分、有効期限(Expiration)は Never を選んで作り、出たキーをすぐコピーする(この時しか表示されない)<br>③ ここに貼って保存する<br><br>"+
     "<b>キーの置き場所</b>: この端末の中だけ。同期・バックアップには入りません(別の端末では、そこでもう一度貼ります)。<br><br>"+
@@ -10704,7 +10778,7 @@ async function rcptTest(){
   catch(e){ err=e; }
   if(timer) clearTimeout(timer);
   UI.rcptTest = err ? {ok:false, msg:"つながりませんでした(オフラインか、電波が弱い)。"}
-    : res.ok ? {ok:true, msg:"つながりました("+rcptModel().name+")。記録の画面に「写真・PDFから読む」が出ます。"}
+    : res.ok ? {ok:true, msg:"つながりました("+rcptModel().name+")。記録の画面に「写真・PDF」が出ます。"}
     : {ok:false, msg:rcptErr(res.status, js)};
   if(UI.screen==="rcptset") render();
 }
@@ -10720,7 +10794,7 @@ function bindRcptSet(){
         rcptLS(RCPT_KEY_LS, k); UI.rcptTest=null; render(); toast("保存しました(この端末だけ)"); return;
       }
       if(a==="del"){
-        if(!confirm("この端末からAPIキーを消しますか?\n\n「写真・PDFから読む」が使えなくなります(Consoleのキー自体は残ります)。")) return;
+        if(!confirm("この端末からAPIキーを消しますか?\n\n記録の画面の「写真・PDF」が使えなくなります(Consoleのキー自体は残ります)。")) return;
         rcptLS(RCPT_KEY_LS, null); UI.rcptTest=null; render(); toast("消しました"); return;
       }
       if(a==="model"){ rcptLS(RCPT_MODEL_LS, String(v)); UI.rcptTest=null; render(); return; }
@@ -11002,7 +11076,7 @@ async function amzRun(f, t, url){
   const linkedLines=tri.linked.map(x=>md(x.m.date)+" "+store+" "+yen(x.m.total)+"("+md(x.es[0].date)+"の記録)");
   const side=[];
   if(tri.zero.length) side.push("0円のメール(ポイントなどで払った注文)"+tri.zero.length+"通は入れていません");
-  if(unread.length) side.push("⚠ 読めなかったメールが"+unread.length+"通あります(「写真・PDFから読む」で入れてください)\n"+unread.map(u=>md(u.date)+" "+u.subject).join("\n"));
+  if(unread.length) side.push("⚠ 読めなかったメールが"+unread.length+"通あります(「写真・PDF」で入れてください)\n"+unread.map(u=>md(u.date)+" "+u.subject).join("\n"));
   /* 確認に「はい」と答えた時と、入れるものが無い時にだけ、記録済みの印と「もう出さない」を残す(「いいえ」なら何も残さない=次も同じ一覧が出る) */
   const settle=()=>{
     tri.linked.forEach(x=>x.es.forEach(e=>{ e.ref="amz:"+x.m.id; }));
@@ -11310,7 +11384,7 @@ function viewDbt(bm){
   /* ── 通知にあってTallyに無い(未記帳) ── */
   if(sp.open.length){
     h+=band("デビットで払ってTallyに無い", '<span class="mono muted" style="font-size:11px">'+sp.open.length+'件</span>',
-      "デビットの通知があるのに、Tallyで見つからなかった支払いです。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。店名・品目・分類を足して保存します(そこで「写真・PDFから読む」でレシートを読ませても同じです)。保存して戻ると、この一覧から消えます。<br><br>"+
+      "デビットの通知があるのに、Tallyで見つからなかった支払いです。多くは記帳漏れです。<br><br>行を押すと、その日付と金額で記録の画面が開きます。店名・品目・分類を足して保存します(そこで「写真・PDF」でレシートを読ませても同じです)。保存して戻ると、この一覧から消えます。<br><br>"+
       "<b>いつもの形</b>: 同じ加盟店の支払いを前にどう付けたか(分類・店名、振替なら相手)をTallyが覚えていて、その形で開きます。覚えるのは、通知や銀行の明細と一致した記録からです。付け方が割れている時(8割に届かない時)は、その項目は決めません。<br><br>"+
       "<b>右の ×</b>: この支払いを、この一覧に出さないようにします(記帳はされません)。金額を分けて記録してある時など、別の形でもう付けてある支払いに使います。一覧の下の「出さないことにした行」から戻せます。<br><br>"+
       "下に出る小さな文字は、打ち間違い・選び間違いの手がかりです。<b>○○で記録あり</b> = 同じ額の記録が別の財布にある(通知の日付の当日〜2日前)。<b>日付違い?</b> = 同じ額の記録が、月か日のどちらか一方だけ違う日付にある。<b>金額違い?</b> = 2日以内の記録の金額が、1桁だけ違うか、隣どうしの数字が入れ替わっている。押すとその記録を直せます。");
@@ -11367,7 +11441,7 @@ function viewDbt(bm){
 function amzSetHtml(){
   const au=amzUrl(), T=UI.amzTest;
   const info="Googleに置いた小さなプログラムを通して、2種類のメールを見ます。領収書のPDFや、銀行の明細のファイルは要りません。<br><br>"+
-    "<b>Amazon</b>: <b>発送済み</b>のメールと、Kindleなど<b>デジタルの注文</b>のメールから、買った物と金額を取り込みます。記録の画面の「Amazonのメールから取り込む」を押すと、新しい発送が、品名を短く整えて分類を付けた形で出るので、確かめて保存します。<b>同じメールを二度入れません。</b>前から付けてあった記録(店がAmazon・同じ金額・日付が近い)も、記録済みとして飛ばします。入れたくない注文は、保存した後でその記録を消せば、次からは出ません。<br><br>"+
+    "<b>Amazon</b>: <b>発送済み</b>のメールと、Kindleなど<b>デジタルの注文</b>のメールから、買った物と金額を取り込みます。記録の画面の「Amazon」を押すと、新しい発送が、品名を短く整えて分類を付けた形で出るので、確かめて保存します。<b>同じメールを二度入れません。</b>前から付けてあった記録(店がAmazon・同じ金額・日付が近い)も、記録済みとして飛ばします。入れたくない注文は、保存した後でその記録を消せば、次からは出ません。<br><br>"+
     "<b>デビットの通知</b>: ソニー銀行のデビット(Sony Bank WALLET)で払うと届く「ご利用のお知らせ」と、Tallyの記録を突き合わせて、<b>まだ記録していない支払い</b>を見つけます。見つかった時だけ、家計簿のタブに「デビットの未記帳」が出ます。押すと一覧が出て、行を押すと、その日付と金額で記録の画面が開きます。<br><br>"+
     "<b>起動した時に自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏でメールを確かめます(10分に1回まで)。確かめるだけで、記録を足したり直したりはしません。電波が無い時は何もしません。<br><br>"+
     "<b>はじめに一度だけ</b>(PCかタブレットのブラウザが楽です)<br>"+
@@ -11425,7 +11499,7 @@ function amzSetAct(a, v){
   }
   if(a==="dbtauto"){ rcptLS(DBT_AUTO_LS, dbtAutoOn() ? "0" : null); render(); return true; }   /* v6.59: 既定は入(印が無い)。切った時だけ "0" を置く */
   if(a==="amzdel"){
-    if(!confirm("この端末からAmazonのメールのURLを消しますか?\n\n「Amazonのメールから取り込む」が使えなくなります(Googleに置いたプログラムは残ります。止める時は、Apps Script の「デプロイを管理」でアーカイブしてください)。")) return true;
+    if(!confirm("この端末からAmazonのメールのURLを消しますか?\n\nAmazonのメールからの取り込みと、デビットの通知の突き合わせが使えなくなります(Googleに置いたプログラムは残ります。止める時は、Apps Script の「デプロイを管理」でアーカイブしてください)。")) return true;
     rcptLS(AMZ_URL_LS, null); UI.amzTest=null; UI.dbt=null; UI.dbtErr=""; UI.dbtLast=null; if(UI.bm && UI.bm.mail) UI.bm=null; render(); toast("消しました"); return true;
   }
   if(a==="amztest"){ amzTest(); return true; }
@@ -11896,8 +11970,117 @@ function parseDigital_(subject, text) {
 function entryFormOf(e){
   return {date:e.date,type:e.type,category:e.category,amount:String(e.amount),store:e.store||"",item:(e.item!=null?e.item:(e.memo||"")),memo:e.memo||"",wal:e.wal||"",svPot:(e.type==="income"?(e.inPot||""):(e.svPot||"")),svDraw:(e.svTx!=null),bkSrc:(e.type==="income"?(e.inBk||""):(e.bkSrc||((isGameCat(e)&&e.gtTx==null)?(e.bwal||""):"")))};   /* v5.95 */
 }
+/* ========================= v6.64 記録の画面の作り直し + 記録をタブに =========================
+   ユーザー(11/14 02:11):「ここまで機能を追加したから思いますが 基本的にもう手動で入力する事は殆ど行って無いです。支払い元と支出の区分は変えたりするくらいです。
+   この画面のUIですが貴方なら洗練させられるのでは？ 手動入力しか無かった時は良かったですが 今だとごちゃごちゃしてるように見えませんか？」
+   → 3枚の板に分けた(見本を見て「案には賛成です」):
+     ① 取り込む(写真・PDF / 貼り付け / Amazon)を一番上へ。読んだ後は「店・品数・合計」の要約に替わる(合計をレシートと見比べるのが最初の仕事なので)
+     ② 記録(日付と種別を1行に・分類・支払い元)。1つを選ぶ段は、つながった帯(.seg)にして箱と線を減らした。
+        軍資金・貯金は「…から出す ›」に畳む(開いたかどうかはこの端末が覚える。**選んである時・遊技経費の時は必ず開く**=選択が隠れない)
+     ③ 中身(交通・店名・品目・金額)
+   **押した時に起きることと、保存されるデータは変えていない**(data-a と入力欄の id は前と同じ。足したのは 畳む/開く・取り込み直す・クリア)。
+   ユーザー(11/14 02:25):「メニューバーが下にあるんですが 記録の時だけ別画面に飛ばされるのが微妙に感覚として引っかかってて、仕様上仕方ないとは思うのですがもう難しいですかね？」
+   → 下のメニューの「記録」から開いた時は、**メニューを出したまま**にする(entryTabbed)。仕様の制約ではなく、下の棒を「戻る｜記録する」に使っていただけだった。
+     ・「記録する」はメニューのすぐ上の帯(entryTabNavHtml)。保存した後は今までどおり家計簿へ
+     ・**書きかけは消えない**(UI.entryDraft)。ほかのタブを見て戻れば続きから。捨てる時は左上の「クリア」。アプリを閉じれば消える(保存はしない)
+     ・読み取りの途中でタブを離れても、読み取りは続く(結果は預かって、記録に戻った時に当てる・rcptFinish)
+     ・明細から開く編集・突き合わせから開く記録・資産の画面から開く振替・複製は、戻る先が決まっているので、今までどおり「戻る」のある画面 */
+/* 記録をタブとして出しているか: 新しい記録で、戻る先が決まっていない時だけ */
+function entryTabbed(){ return UI.screen==="entry" && UI.editEntryId===null && !UI.entryReturn; }
+/* 書きかけと呼べる中身があるか。**見えているものだけ**で決める(読み取りの控え rcptBase など、見えない印は数えない)。
+   day = その形を作った日(日付が変わってから開いた時に、触っていない形が昨日の日付のまま残らないように) */
+function entryHasDraft(f, day){
+  if(!f) return false;
+  const D=mjlNewEntryForm(), w0=String((walletPots()[0]||{}).id||"");
+  return ["type","category","amount","store","item","memo"].some(k=>String(f[k]==null?"":f[k])!==D[k])
+    || String(f.date||"")!==String(day||D.date)
+    || !!(f.tmode || f.tfrom || f.tto || f.tplace || f.bkSrc || f.svPot || f.rcptNote || f.rcptSrc || f.rcptPending || (f.extra||[]).length)
+    || !!(f.wal && String(f.wal)!==w0);
+}
+/* タブの記録に、残しておくものがあるか(書きかけ・読み取り中)。下のメニューの点と、開く時の「続きから」が同じ判定を使う */
+function entryDraftLive(){
+  const d=UI.entryDraft;
+  return !!d && (entryHasDraft(d, UI.entryDraftDay) || !!(UI.rcptBusy && UI.rcptBusy.form===d));
+}
+/* 下のメニューの「記録」を押した時・起動時に開く設定の時。書きかけがあれば続きから、無ければ今日の日付の新しい形(v3.39: 中央のボタンはいつも家計簿の記帳) */
+function entryOpenTab(){
+  UI.tab="ledger"; UI.editEntryId=null; UI.entryReturn=null;
+  if(!entryDraftLive()){ UI.entryDraft=mjlNewEntryForm(); UI.entryDraftDay=todayStr(); }
+  const f=UI.entryForm=UI.entryDraft;
+  if(f.type==="transfer" && f.trFrom!=null){ UI.trFrom=f.trFrom; UI.trTo=f.trTo||""; }
+  UI.screen="entry";
+}
+/* 記録のタブに**何も触っていない形**が、日付をまたいで残っていたら、今日の日付の新しい形にする(アプリに戻ってきた時・記録のタブでもう一度「記録」を押した時)。
+   前は、記録の画面を出るたびに形を捨てていたので、開くたびに今日の日付だった。タブにして出入りが減った分をここで補う
+   (起動時に記録を開く設定で、アプリを生かしたまま翌日に戻った時に昨日の日付が残っていたのも、これで直る)。直したら true */
+function entryOnResume(){
+  try{
+    if(!entryTabbed() || UI.entryForm!==UI.entryDraft || UI.pasteOpen || entryDraftLive()) return false;
+    if(UI.entryDraftDay===todayStr()) return false;
+  }catch(e){ console.error(e); return false; }
+  UI.entryDraft=null; entryOpenTab(); render(); return true;
+}
+/* タブの記録から、ほかのタブへ移る時。振替の元/先は UI.trFrom / UI.trTo にあり、資産の画面から開く振替が上書きするので、書きかけに控えておく */
+function entryLeaveTab(){
+  const f=UI.entryDraft;
+  if(f && f.type==="transfer"){ f.trFrom=String(UI.trFrom||""); f.trTo=String(UI.trTo||""); }
+}
+/* フォームの品目の数と合計。上の要約(読んだ後)と下の「N件の合計」が同じ関数を使う。**保存される行**(金額が0より大きい行)だけを数える */
+function entryTotals(f){
+  const a=[num(f.amount)].concat((f.extra||[]).map(x=>num(x.amount))).filter(v=>v>0);
+  return {n:a.length, sum:a.reduce((x,v)=>x+v,0)};
+}
+function entrySumName(f){
+  if(f.tmode) return f.tmode==="駐輪" ? ((f.tplace||"").trim() || "駐輪") : f.tmode;
+  return (f.store||"").trim() || "(店名なし)";
+}
+/* 打っている間は描き直さない(キーボードが閉じる)ので、合計の字と「クリア」の出し入れだけを差し替える */
+function entryPaint(){
+  const f=UI.entryForm; if(!f) return;
+  const t=entryTotals(f), y="¥"+t.sum.toLocaleString("ja-JP");
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+  set("e-sum-total", y); set("e-sum-n", String(t.n)); set("e-sum-store", entrySumName(f));
+  set("e-tot", y); set("e-tot-n", String(t.n));
+  const c=document.getElementById("e-clear"); if(c) c.style.visibility = entryHasDraft(f, UI.entryDraftDay) ? "" : "hidden";
+}
+/* 「軍資金から出す」「貯金から出す」を開いておくか。**この端末で覚える**(同期・バックアップには入れない。画面の好みは端末ごと) */
+const ENT_FOLD_LS="tally:entFold";
+function entFold(k){ return (","+rcptLS(ENT_FOLD_LS)+",").indexOf(","+k+",")>=0; }
+function entFoldSet(k, on){
+  const cur=rcptLS(ENT_FOLD_LS).split(",").filter(x=>x && x!==k);
+  if(on) cur.push(k);
+  rcptLS(ENT_FOLD_LS, cur.length ? cur.join(",") : null);
+}
+/* つながった選択の帯(.seg)。cells = [{at, html, cls}]。列の数は cols(マスの数より多ければマスの数)。
+   2段以上になる時は、空いたマスを埋め、四隅のマスに角丸の印を付ける(CSS の .seg の説明)。
+   at = マスの属性(data-a と data-v)。**呼ぶ側が data-a の名前を字のまま書く**(ここで組み立てない)——
+   リポジトリの actions_test.js は、ソースに字で書かれた data-a の名前を拾って「押しても何も起きないボタン」を探すので、組み立てると見えなくなる
+   (この説明に例を引用符つきで書くと、それも拾われて「未処理」が増える。書かないこと) */
+function segCols(n){ return n<=4 ? n : (((4-n%4)%4 <= (3-n%3)%3) ? 4 : 3); }   /* 5つ以上は、空きマスが少ない方(同じなら4列) */
+function segHtml(cols, cells, style){
+  const n=cells.length, c=Math.max(1, Math.min(cols, n)), rows=Math.ceil(n/c);
+  const corner=i=>{ const r=Math.floor(i/c), k=i%c;
+    return (r===0&&k===0?" c-tl":"")+(r===0&&k===c-1?" c-tr":"")+(r===rows-1&&k===0?" c-bl":"")+(r===rows-1&&k===c-1?" c-br":""); };
+  let h='<div class="seg" style="grid-template-columns:repeat('+c+',1fr)'+(style?';'+style:'')+'">';
+  for(let i=0;i<rows*c;i++){
+    const x=cells[i];
+    h += x ? '<button class="'+((x.cls||"")+corner(i)).trim()+'" '+x.at+'>'+x.html+'</button>'
+           : '<i class="'+corner(i).trim()+'"></i>';
+  }
+  return h+'</div>';
+}
+/* 財布・置き場・箱のマス(名前と残高の2行) */
+function segPot(at, name, bal, cls){
+  return {at:at, cls:cls, html:'<span class="ellip nm">'+esc(name)+'</span><span class="mono bl">¥'+bal.toLocaleString("ja-JP")+'</span>'};
+}
+/* 取り込みの板のアイコン(下のメニューのアイコンと同じ線の作り) */
+const IMP_ICONS = (()=>{ const ic=d=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+  return { cam: ic('<path d="M4 8.5h3l1.4-2h7.2l1.4 2h3v10H4z"/><circle cx="12" cy="13.2" r="3.2"/>'),
+           clip: ic('<rect x="6" y="5" width="12" height="15" rx="2"/><path d="M9.5 5V4h5v1M9 10h6M9 13.5h6M9 17h3.5"/>'),
+           mail: ic('<rect x="3.5" y="6" width="17" height="12.5" rx="2"/><path d="m4 7.5 8 6 8-6"/>') }; })();
 function viewEntry(){
   const f = UI.entryForm;
+  const tabbed = entryTabbed(), isNew = (UI.editEntryId===null);
   const sh = entryStoreHints(), ih = entryItemHints();
   /* v3.55: 段階的開示のカスケード。店を選ぶまで品目は出さず、品目を選ぶまで金額は出さない */
   const cStores = entryChipStores(f.type);
@@ -11915,14 +12098,17 @@ function viewEntry(){
   const storeChips = chipRow("", (UI.chipMore?cStores:cStores.slice(0,5)), "ustore", curStore, moreChip);
   const itemChips  = curStore ? chipRow("", entryChipItems(f.type, curStore), "uitem", curItem) : '';
   const amtChips   = (curStore && curItem) ? chipRow("金額", entryChipAmounts(f.type, curStore, curItem), "uamt", num(f.amount)||"") : '';
+  const isTr = (f.type==="transfer");
+  const isExp = (!isTr && f.type==="expense"), isInc = (!isTr && f.type==="income");
+  const amtInput = mb => '<input class="input mono r" type="number" inputmode="numeric" id="e-amount" placeholder="金額" value="'+esc(f.amount)+'" style="width:100%;margin-bottom:'+mb+'px">';
   /* v3.31: 交通コンポーザ(新規支出のみ)。分類は増やさず保存時に 店名=モード/場所・品目=乗車→降車・分類=消費 へ合成する入力支援レイヤー。
      表記規約(店名固定・A→B)を規律でなく構造で強制する関所。編集画面は素の店名/品目に戻る一方通行 */
-
   let transHtml="", composerHtml="";
-  if(f.type==="expense" && UI.editEntryId===null){
-    transHtml='<div class="muted" style="font-size:11px;margin:0 0 6px">交通で記帳'+
-      infoBtn("地下鉄・バス・電車・タクシー・駐輪を、決まった形で記録する入力補助です。<br><br><b>地下鉄・バス・電車・タクシー</b>: 店名が乗り物の種類(例: 地下鉄)、品目が「乗った所→降りた所」になります。電車・地下鉄は駅、バスは停留所、タクシーは場所を入れます。<br><b>駐輪</b>: 店名が場所、品目が「駐輪」になります。<br><br>形がそろうので、駅名や場所が候補として育ち、次から押すだけで入れられます。<br><br>分類は上で選べます。旅行中の移動なら承認、出張なら立替、雀荘やパチンコ店への移動なら遊技経費にできます。")+'</div>'+
-      '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
+  if(isExp && isNew){
+    /* v6.64: 見出しを種類の並びと同じ行に(1行減る)。説明は今までどおりⓘ */
+    transHtml='<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
+      '<span class="muted" style="font-size:11px;margin-right:2px">交通'+
+      infoBtn("地下鉄・バス・電車・タクシー・駐輪を、決まった形で記録する入力補助です。<br><br><b>地下鉄・バス・電車・タクシー</b>: 店名が乗り物の種類(例: 地下鉄)、品目が「乗った所→降りた所」になります。電車・地下鉄は駅、バスは停留所、タクシーは場所を入れます。<br><b>駐輪</b>: 店名が場所、品目が「駐輪」になります。<br><br>形がそろうので、駅名や場所が候補として育ち、次から押すだけで入れられます。<br><br>分類は上で選べます。旅行中の移動なら承認、出張なら立替、雀荘やパチンコ店への移動なら遊技経費にできます。")+'</span>'+
       TRANS_MODES.map(mo=>'<button class="chip '+(f.tmode===mo?"sel":"")+'" data-a="tmode" data-v="'+mo+'">'+mo+'</button>').join("")+'</div>';
     if(f.tmode){
       const toks=transTokens(f.tmode);
@@ -11937,7 +12123,9 @@ function viewEntry(){
         composerHtml='<input class="input" id="t-from" placeholder="'+_ph[0]+'" value="'+esc(f.tfrom||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkf")+
           '<input class="input" id="t-to" placeholder="'+_ph[1]+'" value="'+esc(f.tto||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkt");
       }
-      composerHtml+='<div style="height:6px"></div>';   /* v5.92: 保存の形の説明は見出しのⓘへ(分類はもう消費に固定しない) */
+      /* v5.92: 保存の形の説明は見出しのⓘへ(分類はもう消費に固定しない)。
+         v6.64: 金額は乗り降りの下に置く(上から 乗った所 → 降りた所 → 金額 の順に埋まる。前は日付のすぐ下で、中身と離れていた) */
+      composerHtml+=amtInput(0);
     }
   }
   /* v4.36: **品目と金額を同じ行に置く**(ユーザー指摘: 1件目だけ金額が画面上端にあって戻る必要があった)。
@@ -11964,7 +12152,6 @@ function viewEntry(){
      貯金・軍資金の各画面は「見る」台帳に純化させる。振替は収支ではないので
      S.entriesには一切書かず、doTransfer経由で各台帳のtxnになる(当月収支は動かない=v3.80の定義通り)。
      編集中(editEntryId!==null)はタイプを切り替えさせない——既存の収支エントリを振替に化けさせないため */
-  const isTr = (f.type==="transfer");
   let trHtml="";
   if(isTr){
     const accs=transferAccounts();
@@ -11980,130 +12167,132 @@ function viewEntry(){
           ? '<div style="height:44px;margin-bottom:5px"></div>'
           : opt(a,String(UI.trTo||"")===a.id,"trto")).join("")+'</div></div>';
     const fa=accs.find(a=>a.id===String(UI.trFrom)), ta=accs.find(a=>a.id===String(UI.trTo));
-    if(fa&&ta&&fa!==ta) trHtml+='<div class="teal" style="font-size:11px;margin-bottom:12px;text-align:center;font-weight:700">'+esc(fa.name)+' → '+esc(ta.name)+'</div>';
-    else trHtml+='<div class="muted" style="font-size:11px;margin-bottom:12px;text-align:center">振替元と振替先を選んでください'+
+    if(fa&&ta&&fa!==ta) trHtml+='<div class="teal" style="font-size:11px;text-align:center;font-weight:700">'+esc(fa.name)+' → '+esc(ta.name)+'</div>';
+    else trHtml+='<div class="muted" style="font-size:11px;text-align:center">振替元と振替先を選んでください'+
       infoBtn("<b>振替</b>は、自分の財布・口座・貯金の箱(目的別の貯金)・軍資金(遊技専用のお金)のあいだでお金を移すことです(例: 銀行からおろして現金へ)。<br><br>お金の置き場所が変わっただけなので、収入にも支出にも数えません。月の収支や予算は動きません。")+'</div>';
   }
-  /* v4.14: **どの財布から出したか/入ったか**を記帳時に選ぶ(ユーザー設計)。
-     財布が1つしかないときは出さない(摩擦を増やさない)。既定は先頭の財布 */
+  /* ---------- 支払い元(支出)・入金先(収入) ----------
+     v4.14: **どの財布から出したか/入ったか**を記帳時に選ぶ(ユーザー設計)。既定は先頭の財布 */
   /* v4.93: **箱から補填するときは財布の節を出さない**(ユーザー指摘: 選択されて見えるのはおかしい)。
      補填ONなら引き出しと支出が相殺して**その財布の残高は1円も動かない**——
      選ぶ意味が無いのに選択状態で出ていると、そこから出ていくように読める。
      内部的には引き出し先として財布が要るが、どれでも結果が同じなので既定のままでよい */
-  const _svDrawOn = (!isTr && f.type==="expense" && String(f.svPot||"") && f.svDraw!==false && savingsPots().length);
-  let walHtml="";
-  /* v5.70: 支出なら**軍資金の置き場も出所に並べる**(ユーザー要望: 軍資金→ソニー銀行と移すのが面倒)。
-     財布が1つしか無くても、軍資金があれば出所の選択肢は2つ以上になるので節を出す */
+  /* v6.64【修正】遊技の分類の時は、箱が選ばれていても「箱から出す」の形にしない。保存は遊技の分類なら箱を使わない(v5.71)のに、
+     箱を選んだ後で分類を遊技経費に変えると、この判定だけが箱を見て財布と軍資金の段を消し、箱の段も遊技の分類では出ないので、
+     **出所を選ぶ段が1つも無くなっていた**(v6.63 まで。その時は財布から出て軍資金へ補充する形で保存されていた)。画面を保存と同じ見方にそろえる */
+  const _svDrawOn = (isExp && String(f.svPot||"") && f.svDraw!==false && savingsPots().length && !GAME_CATS[f.category]);
+  /* v5.70: 支出なら**軍資金の置き場も出所に並べる**(ユーザー要望: 軍資金→ソニー銀行と移すのが面倒) */
   const _bk = String(f.bkSrc||"");
-  const _bkOpts = (!isTr && f.type==="expense" && bankPots().length>0);
+  const _bkOpts = (isExp && bankPots().length>0);
   /* v5.72: 遊技の分類も**出所の選び方は普通の支出と同じ**(財布 or 軍資金の置き場)。
      違うのは保存時の解釈と、下に出す1行の説明だけ(v5.71の「置き場だけ」の節は撤去) */
-  const _gcat = (!isTr && f.type==="expense") ? (GAME_CATS[f.category]||"") : "";
-  if(!isTr && !_svDrawOn && (walletPots().length>1 || _bkOpts)){
-    const cur=String(f.wal||walletPots()[0].id);
-    const gridOpen='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:12px">';
-    /* v4.38: **等幅のグリッド**にする(ユーザー指摘)。名前の長さでボタンの大きさが変わると
-       押す位置が毎回ずれる。auto-fitなので財布が増減しても等幅のまま折り返す */
-    /* v5.72: 遊技の経費は財布が1つでも見せる(どこから出たかを必ず目で確かめられるように) */
-    if(walletPots().length>1 || _bk || _gcat){
+  const _gcat = isExp ? (GAME_CATS[f.category]||"") : "";
+  /* v4.85 / v5.70 / v5.71: 貯金の箱から払う。軍資金から払う時・遊技の分類の時は箱を出さない */
+  const _svOpts = (isExp && savingsPots().length>0 && !_bk && !GAME_CATS[f.category]);
+  /* v5.95: **収入の行き先に軍資金の置き場・貯金の箱**(ユーザー要望)。支出の「軍資金から出す/貯金から出す」と対になる。
+     財布に入ってから振り替える扱いなので、財布の選択はそのまま残す(照合で銀行の明細と突き合わせるため) */
+  const _inBk = (isInc && bankPots().length>0), _inSv = (isInc && savingsPots().length>0);
+  const src=[], folds=[];   /* src = 板に縦に積む段 / folds = 畳んである行き先(最後に1行に並べる) */
+  const foldHead = (label, info, k, canClose) => '<div class="row between fxl"><span>'+label+(info?infoBtn(info):'')+'</span>'+
+    (canClose ? '<button class="navbtn" data-a="efold" data-v="'+k+'" style="font-size:11px;padding:10px 0 5px 14px;margin:-10px 0 -5px">閉じる</button>' : '')+'</div>';
+  const foldLink = (label, k) => '<button class="fold" data-a="efold" data-v="'+k+'">'+label+' '+CHEV_T+'</button>';
+  if(!isTr && (walletPots().length>1 || _bkOpts || _svOpts || _inBk || _inSv)){
+    /* v6.64: **財布が1つでも財布の段を出す**(畳んだ行だけが並ぶと、今どこから出るのかが見えない)。前は、財布が1つなら財布の段を出さなかった(v4.14)。
+       軍資金の置き場と貯金の箱は、設定が空でも既定の1つがある(bankPots / savingsPots)ので、この段は実際にはいつも出る(上の条件は、どれも無い時に空の見出しを出さないための保険) */
+    if(!_svDrawOn){
+      const cur=String(f.wal||walletPots()[0].id);
       /* v6.08【修正】(ユーザー指摘: 軍資金に入れようとすると二重に選択されて見える)。
          収入の行き先に軍資金の置き場・貯金の箱を選ぶと、財布(経由)と行き先の**両方が同じ琥珀の選択**で出ていた。
          データは正しい(財布にいったん入って移す・財布は増減ゼロ・v5.95)が、2か所に入るように読める。
          行き先がある時は見出しを「経由する財布」にし、財布は**点線の枠**で示すだけにする(琥珀の選択は行き先の1つだけ)。
          財布を隠さない(v4.93のように)のは、照合でこの財布の明細と突き合わせるため——銀行振込なら銀行、現金なら現金を選べる必要がある */
-      const _via = (f.type==="income") && !!(String(f.bkSrc||"") || String(f.svPot||""));
-      walHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+
-          (f.type==="income" ? (_via ? "経由する財布"+infoBtn("軍資金や貯金に入れる収入は、<b>いったんこの財布に入ってから移す</b>扱いです。財布の残高は増えも減りもしません。<br><br>照合(銀行などの明細との突き合わせ)では、この財布の明細と突き合わせます。銀行振込で受け取ったなら銀行、現金で受け取ったなら現金を選んでください。") : "どの財布に入る") : "どの財布から出す")+'</div>'+
-        gridOpen+
-        walletPots().map(w=>{
+      const _via = isInc && !!(String(f.bkSrc||"") || String(f.svPot||""));
+      /* v4.38: **等幅**にする(ユーザー指摘)。名前の長さでボタンの大きさが変わると押す位置が毎回ずれる */
+      src.push('<div class="fxl">'+
+          (isInc ? (_via ? "経由する財布"+infoBtn("軍資金や貯金に入れる収入は、<b>いったんこの財布に入ってから移す</b>扱いです。財布の残高は増えも減りもしません。<br><br>照合(銀行などの明細との突き合わせ)では、この財布の明細と突き合わせます。銀行振込で受け取ったなら銀行、現金で受け取ったなら現金を選んでください。") : "入金先") : "支払い元")+'</div>'+
+        segHtml(segCols(walletPots().length), walletPots().map(w=>{
           const on=cur===String(w.id);
-          const cls=(_via ? "" : (((f.type==="income"||!_bk)&&on)?"sel":""));
-          return '<button class="btn '+cls+'" data-a="ewal" data-v="'+w.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px'+(_via&&on?';border:1px dashed var(--muted);color:var(--text)':'')+'">'+
-          '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
-          '<span class="mono muted" style="font-size:11px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>';
-        }).join("")+'</div>';
+          return segPot('data-a="ewal" data-v="'+esc(w.id)+'"', w.name, walletBalance(null,w.id), _via ? (on?"via":"") : (((isInc||!_bk)&&on)?"sel":""));
+        })));
+      if(_bkOpts){
+        /* v6.64: 開くのは、開いておくと決めた時・置き場を選んである時・遊技経費の時(遊技経費は、財布か置き場かで金の動きが変わるので必ず見せる・v5.72) */
+        if(entFold("bk") || _bk || _gcat){
+          /* v5.75: 金の動きの説明は見出しのⓘへ(選ぶたびに本文へ1行出していた) */
+          src.push(foldHead("軍資金から出す", _gcat
+              ? "<b>遊技経費</b>(遊技に使った交通費・飲食など)は、どこから払っても<b>遊技の収支</b>から引かれます。軍資金は、遊技専用に分けて管理しているお金です。生活の予算には数えません。<br><br><b>財布を選んだ場合</b>: 所持金(生活のお金)から払います。所持金→軍資金の振替を自動で記録してから払う扱いです。<br><b>軍資金の置き場を選んだ場合</b>: その置き場のお金から払います。所持金は動きません。"
+              : "遊技用の<b>軍資金</b>(遊技専用に分けて管理しているお金)で、生活の支払いをする時に使います。<br><br>軍資金→所持金(財布や口座にある生活のお金)の振替を自動で記録してから払う扱いになるので、所持金は増えも減りもせず、軍資金だけが減ります。軍資金の画面の「今月の振替」にも、軍資金から出たお金として数えます。<br>支出そのものは普通の支出なので、消費・娯楽の予算に数えます。自動で作った振替は、この記録を消すと一緒に消えます。",
+              "bk", entFold("bk") && !_bk && !_gcat)+
+            segHtml(segCols(bankPots().length), bankPots().map(b=>segPot('data-a="ebk" data-v="'+esc(b.id)+'"', b.name, bankBalance(b.id), _bk===String(b.id)?"sel":""))));
+        } else folds.push(foldLink("軍資金から出す", "bk"));
+      }
     }
-    if(_bkOpts){
-      /* v5.75: 金の動きの説明は見出しのⓘへ(選ぶたびに本文へ1行出していた) */
-      walHtml+='<div class="muted" style="font-size:11px;margin-bottom:5px">軍資金から出す'+
-        infoBtn(_gcat
-          ? "<b>遊技経費</b>(遊技に使った交通費・飲食など)は、どこから払っても<b>遊技の収支</b>から引かれます。軍資金は、遊技専用に分けて管理しているお金です。生活の予算には数えません。<br><br><b>財布を選んだ場合</b>: 所持金(生活のお金)から払います。所持金→軍資金の振替を自動で記録してから払う扱いです。<br><b>軍資金の置き場を選んだ場合</b>: その置き場のお金から払います。所持金は動きません。"
-          : "遊技用の<b>軍資金</b>(遊技専用に分けて管理しているお金)で、生活の支払いをする時に使います。<br><br>軍資金→所持金(財布や口座にある生活のお金)の振替を自動で記録してから払う扱いになるので、所持金は増えも減りもせず、軍資金だけが減ります。軍資金の画面の「今月の振替」にも、軍資金から出たお金として数えます。<br>支出そのものは普通の支出なので、消費・娯楽の予算に数えます。自動で作った振替は、この記録を消すと一緒に消えます。")+'</div>'+
-        gridOpen+
-        bankPots().map(b=>'<button class="btn '+(_bk===String(b.id)?"sel":"")+'" data-a="ebk" data-v="'+b.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
-          '<span class="ellip" style="display:block">'+esc(b.name)+'</span>'+
-          '<span class="mono muted" style="font-size:11px;display:block">¥'+bankBalance(b.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+    if(_inBk){
+      const _ib=String(f.bkSrc||"");
+      if(entFold("bk") || _ib) src.push(foldHead("軍資金に入れる",
+          "受け取ったお金を、<b>軍資金</b>(遊技専用に分けて管理しているお金)の置き場に入れます。<br><br>上の「経由する財布」にいったん入り、そこから軍資金へ振り替える扱いです。財布の残高は増えも減りもせず、置き場だけが増えます。軍資金の画面の「今月の振替」にも、生活のお金から入ったお金として数えます。<br><br>収入として数えるかどうかは、上の分類で決まります(一部負担・立替精算は数えません)。同じ置き場をもう一度押すと外せます。",
+          "bk", entFold("bk") && !_ib)+
+        segHtml(segCols(bankPots().length), bankPots().map(b=>segPot('data-a="ebk" data-v="'+esc(b.id)+'"', b.name, bankBalance(b.id), _ib===String(b.id)?"sel":""))));
+      else folds.push(foldLink("軍資金に入れる", "bk"));
     }
+    if(_inSv){
+      const _ip=String(f.svPot||"");
+      if(entFold("sv") || _ip) src.push(foldHead("貯金に入れる",
+          "受け取ったお金を、<b>貯金の箱</b>(目的別に分けた貯金)に入れます。例: 旅行費を家族に一部負担してもらった分を、旅行の箱に戻す。<br><br>上の「経由する財布」にいったん入り、そこから箱へ入れる扱いです。財布の残高は増えも減りもせず、箱だけが増えます。<br><br>分類が一部負担・立替精算なら、今月の先取り貯金の実績には数えません(自分の収入から貯めたお金ではないため)。同じ箱をもう一度押すと外せます。",
+          "sv", entFold("sv") && !_ip)+
+        segHtml(segCols(savingsPots().length), savingsPots().map(p=>segPot('data-a="espot" data-v="'+esc(p.id)+'"', p.name, savingsBalance(p.id), _ip===String(p.id)?"sel":""))));
+      else folds.push(foldLink("貯金に入れる", "sv"));
+    }
+    /* v4.85: **貯金の箱から払えるようにする**(ユーザー指摘: 大阪旅行の貯金から払ったのに選べない)。
+       これは手間の話ではなく**正確さの話**——忘れると箱が満額のまま残り、
+       「大阪旅行に¥100,000貯まっている」と出るのに実際は使い済み、という状態になる。
+       実体は2段階(箱→財布 の引き出し + その財布からの支出)で、v4.84までも手作業では可能だった。
+       ここではその2段階を**1タップに畳む**だけで、データの形は変えない——
+       `wal`は従来どおり財布のidのまま、引き出しのtxnを別に作って`svTx`で紐づける。
+       引き出し先の財布は**その支出の財布と同じ**にするので、財布別の残高は増減ゼロで正しく相殺される。
+       v4.84の対称性もそのまま効く(承認で目標が下がり、引き出しで実績も下がる)。
+       支出のときだけ出す(収入を貯金から「補填」する意味がない)。箱が無ければ出さない */
+    if(_svOpts){
+      const cp=String(f.svPot||"");
+      if(entFold("sv") || cp){
+        /* v4.93: 見出しは状態で言い分ける。補填ONのときは財布の節が消えるので、
+           ここが唯一の「出所」になる——「(任意)」のままだと出所が無いように読める */
+        /* v4.94: **財布と同じ箱の形にする**(ユーザー指摘)。名前と残高を積んだ等幅の並び。選んだ色は teal(財布と箱は種類が違う) */
+        src.push(foldHead(_svDrawOn ? 'どこから出す' : '貯金から出す', "", "sv", entFold("sv") && !cp)+
+          segHtml(segCols(savingsPots().length), savingsPots().map(p=>segPot('data-a="espot" data-v="'+esc(p.id)+'"', p.name, savingsBalance(p.id), cp===String(p.id)?"selt":"")))+
+          /* v4.87: **所持金が動かないことを明示する**(ユーザー指摘: 視覚的にソニー銀行も減るように見える)。
+             財布と箱の両方が選択状態になるので、両方から出ていくように見えてしまう。
+             実際は箱→財布の補填と支出が相殺して**財布は増減ゼロ**。
+             財布の行は「経由するだけ」になるが、ラベルを変えると振替との区別が付かなくなるので、
+             **1行の説明で済ませる**(選んだときだけ出す=常設しない) */
+          /* v4.92: **箱から補填するかを選べるようにした**(ユーザー指摘: 箱ではなくソニー銀行から払った)。
+             既定はON(箱を選ぶ=箱から出す、が普通のため)。OFFにすると**紐づけだけ**残り、
+             所持金は動かず進捗にだけ数える。説明文も状態に合わせて変える——
+             **どちらの状態でも「金がどう動くか」が1行で読める**ようにするのが肝 */
+          /* v4.93: **トグルのチップを廃し、説明文の末尾に切替リンクを置く**(ユーザー指摘: ごちゃごちゃしている)。
+             チップ2行+トグル1行+説明2行の5行あった。**行動を語で書く**(「箱から補填する」という
+             状態名ではなく「財布から出す →」という次の動作)ので、押すと何が起きるかが読める */
+          (cp ? (()=>{ const _pn=esc((savingsPots().find(x=>String(x.id)===cp)||{}).name||"貯金");
+            const _sw='<span class="teal" data-a="espdraw" style="cursor:pointer;white-space:nowrap">'+
+              (f.svDraw===false?'箱から出す':'財布から出す')+' →</span>';
+            /* v5.75: **今どちらから出るか(状態)と切り替え(操作)は残し**、仕組みの説明だけⓘへ */
+            return '<div class="row between" style="font-size:11px;margin-top:6px;align-items:center">'+
+              '<span class="muted">'+(f.svDraw===false ? '所持金から('+_pn+'の進捗に数える)' : _pn+'の箱から')+
+              infoBtn("<b>貯金の箱</b>(目的別に分けた貯金)に貯めたお金で払ったことを記録します。<br><br><b>箱から出す</b>: 箱の残高が減ります。所持金(財布や口座にある生活のお金)は動きません(箱から引き出して、そのまま払った扱い)。<br><b>財布から出す</b>: 所持金から払いますが、この箱の目的に使ったお金として、目標の進み具合に数えます。<br><br>右側のリンクで切り替えられます。")+'</span>'+
+              _sw+'</div>'; })() : ''));
+      } else folds.push(foldLink("貯金から出す", "sv"));
+    }
+    if(folds.length) src.push('<div class="row" style="flex-wrap:wrap;gap:0 10px">'+folds.join("")+'</div>');
   }
-  /* v5.95: **収入の行き先に軍資金の置き場・貯金の箱**(ユーザー要望)。支出の「軍資金から出す/貯金から出す」と対になる。
-     上の財布に入ってから振り替える扱いなので、財布の選択はそのまま残す(照合で銀行の明細と突き合わせるため) */
-  let inHtml="";
-  if(!isTr && f.type==="income"){
-    const _ib=String(f.bkSrc||""), _ip=String(f.svPot||"");
-    const grid='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:12px">';
-    const cell=(sel,a,id,name,bal)=>'<button class="btn '+(sel?"sel":"")+'" data-a="'+a+'" data-v="'+esc(id)+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
-      '<span class="ellip" style="display:block">'+esc(name)+'</span><span class="mono muted" style="font-size:11px;display:block">¥'+bal.toLocaleString("ja-JP")+'</span></button>';
-    if(bankPots().length) inHtml+='<div class="muted" style="font-size:11px;margin-bottom:5px">軍資金に入れる'+
-      infoBtn("受け取ったお金を、<b>軍資金</b>(遊技専用に分けて管理しているお金)の置き場に入れます。<br><br>上の「経由する財布」にいったん入り、そこから軍資金へ振り替える扱いです。財布の残高は増えも減りもせず、置き場だけが増えます。軍資金の画面の「今月の振替」にも、生活のお金から入ったお金として数えます。<br><br>収入として数えるかどうかは、上の分類で決まります(一部負担・立替精算は数えません)。同じ置き場をもう一度押すと外せます。")+'</div>'+
-      grid+bankPots().map(b=>cell(_ib===String(b.id),"ebk",b.id,b.name,bankBalance(b.id))).join("")+'</div>';
-    if(savingsPots().length) inHtml+='<div class="muted" style="font-size:11px;margin-bottom:5px">貯金に入れる'+
-      infoBtn("受け取ったお金を、<b>貯金の箱</b>(目的別に分けた貯金)に入れます。例: 旅行費を家族に一部負担してもらった分を、旅行の箱に戻す。<br><br>上の「経由する財布」にいったん入り、そこから箱へ入れる扱いです。財布の残高は増えも減りもせず、箱だけが増えます。<br><br>分類が一部負担・立替精算なら、今月の先取り貯金の実績には数えません(自分の収入から貯めたお金ではないため)。同じ箱をもう一度押すと外せます。")+'</div>'+
-      grid+savingsPots().map(p=>cell(_ip===String(p.id),"espot",p.id,p.name,savingsBalance(p.id))).join("")+'</div>';
-  }
-  /* v4.85: **貯金の箱から払えるようにする**(ユーザー指摘: 大阪旅行の貯金から払ったのに選べない)。
-     これは手間の話ではなく**正確さの話**——忘れると箱が満額のまま残り、
-     「大阪旅行に¥100,000貯まっている」と出るのに実際は使い済み、という状態になる。
-     実体は2段階(箱→財布 の引き出し + その財布からの支出)で、v4.84までも手作業では可能だった。
-     ここではその2段階を**1タップに畳む**だけで、データの形は変えない——
-     `wal`は従来どおり財布のidのまま、引き出しのtxnを別に作って`svTx`で紐づける。
-     引き出し先の財布は**その支出の財布と同じ**にするので、財布別の残高は増減ゼロで正しく相殺される。
-     v4.84の対称性もそのまま効く(承認で目標が下がり、引き出しで実績も下がる)。
-     支出のときだけ出す(収入を貯金から「補填」する意味がない)。箱が無ければ出さない */
-  let svHtml="";
-  if(!isTr && f.type==="expense" && savingsPots().length && !String(f.bkSrc||"") && !GAME_CATS[f.category]){   /* v5.70/v5.71: 軍資金から払う時・遊技の分類の時は箱を出さない */
-    const cp=String(f.svPot||"");
-    /* v4.93: 見出しは状態で言い分ける。補填ONのときは財布の節が消えるので、
-       ここが唯一の「出所」になる——「(任意)」のままだと出所が無いように読める */
-    /* v4.94: **財布と同じ箱の形にする**(ユーザー指摘)。名前と残高を積んだ等幅グリッドで、
-       auto-fitなので**箱が増えれば自動で2段になる**(財布と同じ仕組み・v4.38)。
-       チップ2行より1行に収まって短い。「(任意)」は外した——出ている以上、
-       選ばない選択肢は自明で、**語だけ増えて何も伝えていなかった** */
-    svHtml='<div class="muted" style="font-size:11px;margin-bottom:5px">'+
-      (_svDrawOn ? 'どこから出す' : '貯金から出す')+'</div>'+
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:12px">'+
-      savingsPots().map(p=>'<button class="btn'+(cp===String(p.id)?" selt":"")+'" data-a="espot" data-v="'+p.id+'" style="font-size:11px;padding:4px;min-width:0;min-height:44px">'+
-        '<span class="ellip" style="display:block">'+esc(p.name)+'</span>'+
-        '<span class="mono muted" style="font-size:11px;display:block">¥'+savingsBalance(p.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>'+
-      /* v4.87: **所持金が動かないことを明示する**(ユーザー指摘: 視覚的にソニー銀行も減るように見える)。
-         財布と箱の両方が選択状態になるので、両方から出ていくように見えてしまう。
-         実際は箱→財布の補填と支出が相殺して**財布は増減ゼロ**。
-         財布の行は「経由するだけ」になるが、ラベルを変えると振替との区別が付かなくなるので、
-         **1行の説明で済ませる**(選んだときだけ出す=常設しない) */
-      /* v4.92: **箱から補填するかを選べるようにした**(ユーザー指摘: 箱ではなくソニー銀行から払った)。
-         既定はON(箱を選ぶ=箱から出す、が普通のため)。OFFにすると**紐づけだけ**残り、
-         所持金は動かず進捗にだけ数える。説明文も状態に合わせて変える——
-         **どちらの状態でも「金がどう動くか」が1行で読める**ようにするのが肝 */
-      /* v4.93: **トグルのチップを廃し、説明文の末尾に切替リンクを置く**(ユーザー指摘: ごちゃごちゃしている)。
-         チップ2行+トグル1行+説明2行の5行あった。**行動を語で書く**(「箱から補填する」という
-         状態名ではなく「財布から出す →」という次の動作)ので、押すと何が起きるかが読める */
-      (cp ? (()=>{ const _pn=esc((savingsPots().find(x=>String(x.id)===cp)||{}).name||"貯金");
-        const _sw='<span class="teal" data-a="espdraw" style="cursor:pointer;white-space:nowrap">'+
-          (f.svDraw===false?'箱から出す':'財布から出す')+' →</span>';
-        /* v5.75: **今どちらから出るか(状態)と切り替え(操作)は残し**、仕組みの説明だけⓘへ */
-        return '<div class="row between" style="font-size:11px;margin:-6px 2px 12px;align-items:center">'+
-          '<span class="muted">'+(f.svDraw===false ? '所持金から('+_pn+'の進捗に数える)' : _pn+'の箱から')+
-          infoBtn("<b>貯金の箱</b>(目的別に分けた貯金)に貯めたお金で払ったことを記録します。<br><br><b>箱から出す</b>: 箱の残高が減ります。所持金(財布や口座にある生活のお金)は動きません(箱から引き出して、そのまま払った扱い)。<br><b>財布から出す</b>: 所持金から払いますが、この箱の目的に使ったお金として、目標の進み具合に数えます。<br><br>右側のリンクで切り替えられます。")+'</span>'+
-          _sw+'</div>'; })() : '');
-  }
-  /* v4.35: **同じ店で複数の品目をまとめて入力**(ユーザー設計)。レシート1枚=1回の入力にする。
+  /* ---------- ① 取り込む ----------
+     v4.35: **同じ店で複数の品目をまとめて入力**(ユーザー設計)。レシート1枚=1回の入力にする。
      保存時は**行ごとに別のエントリ**を作る(日付/分類/店/財布は共有)ので、
      ジャンル分析や内訳ドリルなど下流は一切変更なしで動く。
      新規の支出・収入のみ(編集中は既存1件を分割できないので出さない。交通コンポーザ中も出さない) */
   /* v4.54: **交通コンポーザ中でも貼り付けを出す**(ユーザー指摘)。
      `!f.tmode` を条件にしていたため、交通で記帳を選んだ瞬間に貼り付けが消えていた。
      交通こそレシートが出ず履歴を貼る用途なのに、そのフローから貼り付けに入れないのは逆 */
-  let pasteHtml="";
-  if(!isTr && UI.editEntryId===null){
+  let impHtml="";
+  if(!isTr && isNew){
     /* v6.23: **写真から読む**(Claude API)。キーがある時だけ出す。読み取り中はこの場所に「読んでいます」、
        終わったら**Claudeのメモ**(読めなかった所・迷った判断)をここに出す——押した場所に結果が出るので見落とさない */
     const rBusy = !!(UI.rcptBusy && UI.rcptBusy.form===f);
@@ -12115,78 +12304,97 @@ function viewEntry(){
       '<span style="font-size:12px">'+((rBusy && UI.rcptBusy.label) ? esc(UI.rcptBusy.label) : 'Claudeが読んでいます('+esc(rBusy?UI.rcptBusy.model:"")+')…')+'</span>'+
       '<button class="btn" style="flex:none;font-size:11px;padding:6px 14px" data-a="rcptstop">やめる</button></div>'+
       '<div class="muted" style="font-size:11px;margin-top:4px">'+((rBusy && UI.rcptBusy.hint) ? esc(UI.rcptBusy.hint) : ((rBusy && UI.rcptBusy.n>3) ? UI.rcptBusy.n+"枚なので1〜2分ほど" : "10〜30秒ほど")+'。終わるとこの画面が埋まります')+'</div></div>';
-    /* v6.58: **Amazonのメールから取り込む**(URLを設定してある時だけ出す)。写真やクリップボードを使わない別の入口なので、下に1行で置く */
-    const rAmz = amzUrl() ? '<button class="btn full" style="padding:9px 0;font-size:12px;margin-bottom:12px;color:var(--teal)" data-a="amzget">Amazonのメールから取り込む</button>' : '';
-    const rGap = rAmz ? 8 : 12;
-    const rTwo = '<div class="row" style="gap:8px;margin-bottom:'+rGap+'px">'+
-      '<label class="btn" style="flex:1;padding:9px 0;font-size:12px;text-align:center;cursor:pointer;display:block;position:relative;color:var(--teal);font-weight:700">写真・PDFから読む'+
-      '<input type="file" id="e-photo" accept="image/*,application/pdf,.pdf" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none"></label>'+
-      '<button class="btn" style="flex:1;padding:9px 0;font-size:12px;color:var(--teal)" data-a="popen">レシートを取り込む</button></div>';
-    pasteHtml = rMemo + (rBusy ? rBusyHtml : UI.pasteOpen
+    /* v6.64: 入口を1枚の板に横に並べる(写真・PDF = キーがある時だけ / 貼り付け = いつも / Amazon = URLを設定してある時だけ・v6.58)。
+       名前は短くし、読み上げ用に元の長い名前を aria-label に残す。1つしか無い時(キーもURLも無い)は「レシートを貼り付け」と横1行に書く
+       (「貼り付け」だけでは何を貼るのか分からない。ⓘや知らせの文は「貼り付け」と書いているので、その字を含む名前にする)。
+       **ⓘ・知らせ・確認の文の中のボタンの名前も、同時に新しい名前に直した**(写真・PDF / 貼り付け / Amazon)。突き合わせの画面の「Amazonのメールから取り込む」は元の名前のまま */
+    const cells=[];
+    if(rcptKey()) cells.push('<label class="imp" style="cursor:pointer" aria-label="写真・PDFから読む">'+IMP_ICONS.cam+'<span>写真・PDF</span>'+
+      '<input type="file" id="e-photo" accept="image/*,application/pdf,.pdf" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none"></label>');
+    cells.push('<button class="imp" style="cursor:pointer" data-a="popen" aria-label="レシートを取り込む(コピーした文字や画像を貼り付ける)">'+IMP_ICONS.clip+'<span>貼り付け</span></button>');
+    if(amzUrl()) cells.push('<button class="imp" style="cursor:pointer" data-a="amzget" aria-label="Amazonのメールから取り込む">'+IMP_ICONS.mail+'<span>Amazon</span></button>');
+    const rBtns = '<div class="card imps" style="margin-bottom:12px;grid-template-columns:repeat('+cells.length+',1fr)">'+
+      (cells.length>1 ? cells.join("") : cells[0].replace('class="imp"','class="imp one"').replace('<span>貼り付け</span>','<span>レシートを貼り付け</span>'))+'</div>';
+    /* v6.64: 1枚のレシートを読んでフォームに入れた後は、入口の代わりに**何を読んだか**(店・品数・合計)を出す。
+       合計は下の品目と同じ計算(entryTotals)で、打ち直すとその場で変わる(entryPaint)。読み直す時は「取り込み直す」で入口に戻す(フォームの中身は消さない) */
+    const tt=entryTotals(f);
+    const rSum = f.rcptSrc ? '<div class="card" style="margin-bottom:12px;padding:12px 16px"><div class="row between" style="align-items:center;gap:12px">'+
+      '<div style="min-width:0"><div class="ellip" id="e-sum-store" style="font-size:15px">'+esc(entrySumName(f))+'</div>'+
+      '<div class="muted" style="font-size:11px;margin-top:2px">'+esc(f.rcptSrc)+' ・ <span id="e-sum-n">'+tt.n+'</span>品</div></div>'+
+      '<div style="flex:none;text-align:right"><div class="mono" id="e-sum-total" style="font-size:20px;font-weight:700;line-height:1.2">¥'+tt.sum.toLocaleString("ja-JP")+'</div>'+
+      '<button class="navbtn" data-a="rcptagain" style="font-size:11px;padding:6px 0 10px 14px;margin-bottom:-10px">取り込み直す</button></div></div></div>' : '';
+    impHtml = (rBusy ? rBusyHtml : UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px 16px">'+
         '<div class="muted" style="font-size:11px;margin-bottom:8px">レシートを貼る'+infoBtn("レシートの写真をClaudeに読み取らせ、返ってきた文字列をそのまま貼り付けると、まとめて記録に変換します。<br><br>書き方の例は入力欄に薄く表示されています(「#date」「#store」の行のあとに「品目 | 金額」を1行ずつ)。<br><br><b>まとめて</b>: ブロックが2つ以上あれば(チャットにAmazonの注文をまとめて頼んだ時など)、1回の確認でまとめて保存します。<b>記録済みの注文・乗車は飛ばす</b>ので、同じ期間をもう一度貼っても二重になりません。")+'</div>'+
         '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | 宮城野通→連坊 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
         '<button class="btn tealb" style="flex:1;font-size:12px;padding:9px 0;font-weight:700" data-a="papply">取り込む</button></div></div>'
-      : (rcptKey() ? rTwo
-      : '<button class="btn full" style="padding:9px 0;font-size:12px;margin-bottom:'+rGap+'px;color:var(--teal)" data-a="popen">レシートを取り込む</button>')+rAmz);
+      : (rSum || rBtns)) + rMemo;
   }
   let extraHtml="";
-  if(!isTr && UI.editEntryId===null && !(f.tmode)){
-    const ex = f.extra || [];
-    const rowsSum = ex.reduce((a,x)=>a+num(x.amount),0);
+  if(!isTr && isNew && !(f.tmode)){
+    const ex = f.extra || [], tt = entryTotals(f);
     extraHtml = ex.map((x,i)=>itemRow("e-xi-"+i, "e-xa-"+i, x.item, x.amount, i)).join("")+
-      '<button class="btn dash full" style="padding:9px 0;margin-bottom:'+(ex.length?'8':'14')+'px" data-a="exadd">＋ 品目を追加(同じ店)</button>'+
-      (ex.length ? '<div class="row between" style="font-size:11px;margin:0 0 14px">'+
-        '<span class="muted">'+(ex.length+1)+'件の合計</span>'+
-        '<span class="mono '+(f.type==="income"?"teal":"red")+'" style="font-weight:700">¥'+(num(f.amount)+rowsSum).toLocaleString("ja-JP")+'</span></div>' : '');
+      '<button class="btn dash full" style="padding:9px 0'+(ex.length?';margin-bottom:8px':'')+'" data-a="exadd">＋ 品目を追加(同じ店)</button>'+
+      (ex.length ? '<div class="row between" style="font-size:11px">'+
+        '<span class="muted"><span id="e-tot-n">'+tt.n+'</span>件の合計</span>'+
+        '<span class="mono '+(f.type==="income"?"teal":"red")+'" id="e-tot" style="font-weight:700">¥'+tt.sum.toLocaleString("ja-JP")+'</span></div>' : '');
   }
-  const TYPES = UI.editEntryId!==null ? [["expense","支出"],["income","収入"]]
-                                      : [["expense","支出"],["income","収入"],["transfer","振替"]];
-  return '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700">'+(UI.editEntryId!==null?"記録を編集":isTr?"振替":"記録を追加")+'</div>'+
-    (UI.editEntryId!==null?'<button class="navbtn" style="color:var(--red);font-weight:700" data-a="edel">削除</button>':'<div style="width:44px"></div>')+'</div>'+
-    /* v4.39: 削除はヘッダ右端に統一(ユーザー設計)。**滅多に触らない操作のために最下部まで
-   スクロールさせるのは無駄**で、位置が画面ごとに違うのも覚える対象を増やす。
-   .navbtn と同じ見た目にして、色だけ赤にする */
+  const TYPES = !isNew ? [["expense","支出"],["income","収入"]]
+                       : [["expense","支出"],["income","収入"],["transfer","振替"]];
+  /* ---------- ② 記録(日付・種別・分類・支払い元) ---------- */
+  const rec=[];
   /* v4.38: **日付を最上段へ**(ユーザー指摘)。いつの記録かが先に決まる方が読み順として自然。
-       金額は品目行にあるので、ここに残すのは品目行を使わない振替/交通コンポーザのときだけ */
+     v6.64: 種別(支出・収入・振替)と同じ行に。高さは帯と同じ46px(44 + 枠2)を明示する(v2.91: 高さは推測しない) */
+  /* v4.70: **選択の段は44pxに揃える**(ユーザー指摘: 支出収入振替の箱と消費・ソニー銀行の箱で高さが違う)。
+     44pxにしたのは**iOSの最小タップ領域**で、毎回押す選択ボタンが下回らない値だから(v6.64: 帯の高さとして .seg に持たせた) */
+  rec.push('<div class="row" style="gap:8px">'+
+    '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="flex:1;min-width:0;height:46px">'+
+    '<div style="flex:'+(TYPES.length===3?"1.35":"1")+';min-width:0">'+segHtml(TYPES.length, TYPES.map(([v,l])=>({at:'data-a="etype" data-v="'+v+'"', html:l, cls:(f.type===v?"sel":"")})))+'</div></div>');
+  /* 金額は品目の行にある。振替には品目の行が無いので、ここに置く(交通は③の乗り降りの下) */
+  if(isTr) rec.push(amtInput(0));
+  if(isExp){
+    /* v5.92【修正】**交通で記帳の時も分類を出す**(ユーザー報告: 移動を承認や経費で記録できない。一度支出で記録した後なら変えられる)。
+       以前は「交通=消費」と決めつけて新規の時だけ分類を隠し、保存も消費になっていた。
+       実際は旅行中の移動(承認)・出張(立替)・雀荘への移動(遊技経費)がある */
+    /* v5.73: 5つが1行に収まる幅。v6.64: つながった帯に(5つで1行) */
+    rec.push('<div class="fxl">分類</div>'+
+      segHtml(EXPENSE_CATS.length, EXPENSE_CATS.map(c=>({at:'data-a="ecat" data-v="'+esc(c)+'"', html:esc(c), cls:(f.category===c?"sel":"")}))));
+  } else if(isInc){
+    rec.push('<div class="fxl">分類'+
+      infoBtn("<b>給与・賞与・副業・臨時</b>: 自分の収入です。<br><br><b>家庭内</b>: 家族から受け取る生活費など。生活の予算で払う支出の元手になるので、収入として数えます。<br><br><b>一部負担</b>: 旅行費のように<b>貯金の箱から払った支出</b>を、家族などに一部負担してもらったお金。箱から出た支出は可処分(自由に配分できるお金)の外なので、その負担分も可処分には数えません。収入で入れると、貯金へ回す額がずれます。<br><br><b>立替精算</b>: 全額を立て替えたお金(支出の分類「立替」)を返してもらったもの。<br><br>生活の支出(消費など)の一部を家族に出してもらった時は、一部負担ではなく家庭内にします。")+'</div>'+
+      /* 収入の分類は7つあるので、帯にせずチップのまま(折り返す) */
+      '<div class="row" style="flex-wrap:wrap;gap:6px">'+
+      INCOME_CATS.map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>'+
+      /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
+         日付はフォームの値を引き継ぐ */
+      (isNew?'<button class="btn full" style="margin-top:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''));
+  }
+  const plate = parts => parts.length ? '<div class="card" style="margin-bottom:12px;padding:14px 16px">'+
+    parts.map((p,i)=>'<div'+(i?' style="margin-top:12px"':'')+'>'+p+'</div>').join("")+'</div>' : '';
+  /* ---------- ③ 中身 ---------- */
+  const body = isTr ? trHtml : (transHtml + (composerHtml || (fieldsHtml + extraHtml)));
+  /* 上の見出し。タブの時は、ほかのタブと同じ形(大きい題・右に同期の丸)。左に「クリア」(書きかけがある時だけ見える) */
+  const hdr = tabbed
+    ? tabHdrHtml("記録", '<button class="navbtn" id="e-clear" data-a="eclear" aria-label="書きかけを消す" style="position:absolute;left:0;top:50%;transform:translateY(-50%);white-space:nowrap;padding:12px 10px 12px 4px'+
+        (entryHasDraft(f, UI.entryDraftDay)?'':';visibility:hidden')+'">クリア</button>', 12)
+    : '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
+      '<div style="font-size:14px;font-weight:700">'+(!isNew?"記録を編集":isTr?"振替":"記録を追加")+'</div>'+
+      /* v4.39: 削除はヘッダ右端に統一(ユーザー設計)。**滅多に触らない操作のために最下部まで
+         スクロールさせるのは無駄**で、位置が画面ごとに違うのも覚える対象を増やす。
+         .navbtn と同じ見た目にして、色だけ赤にする */
+      (!isNew?'<button class="navbtn" style="color:var(--red);font-weight:700" data-a="edel">削除</button>':'<div style="width:44px"></div>')+'</div>';
+  return hdr+
     /* v6.18: 銀行の明細から開いた時は、その行を上に出す(記録には書かない。フォームを開き直すと消える) */
     (f.bankHint ? '<div class="card" style="margin-bottom:12px;padding:9px 16px;border-color:var(--amber)">'+
       '<div class="muted" style="font-size:11px;margin-bottom:2px">'+(f.bankHintSrc==="mail" ? 'デビットの通知' : '銀行の明細')+'</div><div class="mono" style="font-size:12px">'+esc(f.bankHint)+'</div></div>' : '')+
-    '<input class="input" type="date" id="e-date" value="'+esc(f.date)+'" style="width:100%;margin-bottom:12px">'+
-    '<div class="row" style="gap:8px;margin-bottom:12px">'+
-    TYPES.map(([v,l])=>
-      /* v4.70: **選択の段は3行とも44pxに揃える**(ユーザー指摘: 支出収入振替の箱と消費・ソニー銀行の箱で高さが違う)。
-         原因は行ごとに padding をその場で決めていたこと——種別は .btn の既定(9px)、分類は12px、
-         財布は6px+2行。**中身の行数もフォントも違うので、paddingを合わせても高さは揃わない**。
-         min-height で外側の寸法を直接決める(box-sizing:border-boxなので枠込み44px)。
-         44pxにしたのは**iOSの最小タップ領域**で、毎回押す選択ボタンが下回らない値だから */
-      '<button class="btn '+(f.type===v?"sel":"")+'" style="flex:1;min-height:44px" data-a="etype" data-v="'+v+'">'+l+'</button>').join("")+'</div>'+
-    ((isTr || f.tmode) ? '<input class="input mono r" type="number" inputmode="numeric" id="e-amount" placeholder="金額" value="'+esc(f.amount)+'" style="width:100%;margin-bottom:12px">' : '')+
-    (isTr ? trHtml
-      : f.type==="expense"
-      /* v5.92【修正】**交通で記帳の時も分類を出す**(ユーザー報告: 移動を承認や経費で記録できない。一度支出で記録した後なら変えられる)。
-         以前は「交通=消費」と決めつけて新規の時だけ分類を隠し、保存も消費になっていた。
-         実際は旅行中の移動(承認)・出張(立替)・雀荘への移動(遊技経費)がある */
-      ? (
-        '<div class="muted" style="font-size:11px;margin:0 0 6px">支出の分類</div>'+
-        /* v5.71: 分類が6つになったので**折り返す等幅グリッド**へ(財布・箱と同じ仕組み・v4.38)。
-           1行に詰めると「パチスロ」が潰れ、押す位置も毎回ずれる */
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(60px,1fr));gap:8px;margin-bottom:12px">'+   /* v5.73: 5つが1行に収まる幅 */
-        EXPENSE_CATS.map(c=>'<button class="btn '+(f.category===c?"sel":"")+'" style="padding:2px;font-size:13px;min-height:44px" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>')
-      : '<div class="muted" style="font-size:11px;margin:0 0 6px">収入の分類'+
-        infoBtn("<b>給与・賞与・副業・臨時</b>: 自分の収入です。<br><br><b>家庭内</b>: 家族から受け取る生活費など。生活の予算で払う支出の元手になるので、収入として数えます。<br><br><b>一部負担</b>: 旅行費のように<b>貯金の箱から払った支出</b>を、家族などに一部負担してもらったお金。箱から出た支出は可処分(自由に配分できるお金)の外なので、その負担分も可処分には数えません。収入で入れると、貯金へ回す額がずれます。<br><br><b>立替精算</b>: 全額を立て替えたお金(支出の分類「立替」)を返してもらったもの。<br><br>生活の支出(消費など)の一部を家族に出してもらった時は、一部負担ではなく家庭内にします。")+'</div>'+
-        '<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">'+
-        INCOME_CATS.map(c=>'<button class="chip '+(f.category===c?"sel":"")+'" data-a="ecat" data-v="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>'+
-        /* v3.54: 代打はセッションが真実の所在(家計簿の行は派生物)。ここでエントリを作らせず、セッション作成へ routing する。
-           日付はフォームの値を引き継ぐ */
-        (UI.editEntryId===null?'<button class="btn full" style="margin-bottom:12px;font-size:12px;padding:9px 0;color:var(--teal)" data-a="todai">代打の記録はセッションで入力 →</button>':''))+
-    (isTr ? '' : walHtml + inHtml + svHtml + pasteHtml + transHtml + (composerHtml || (fieldsHtml + extraHtml))) +
+    impHtml +
+    plate(rec.concat(src)) +
+    (body ? '<div class="card" style="margin-bottom:12px;padding:14px 16px">'+body+'</div>' : '') +
     /* v4.40: 保存は下バー(display:noneの担い手経由)、削除はヘッダ右端。
        固定費への登録は稀なので、ボタンの箱を持たない**テキストリンク**で本文の末尾に置く */
-    (UI.editEntryId!==null?'<div class="row" style="justify-content:center;gap:20px;margin-top:18px">'+
+    (!isNew?'<div class="row" style="justify-content:center;gap:20px;margin-top:18px">'+
       '<button class="navbtn" style="color:var(--teal);font-size:11px;text-decoration:underline" data-a="edup">複製して新規に</button>'+
       '<button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-a="tofixed">この内容で固定費に登録</button>'+
       '</div>':'')+
@@ -12194,10 +12402,11 @@ function viewEntry(){
 }
 function bindEntry(){
   const f = UI.entryForm;
-  document.getElementById("e-date").oninput = e=>f.date=e.target.value;
+  /* v6.64: 打つたびに、合計の字(上の要約・下の「N件の合計」)と「クリア」の出し入れを差し替える(entryPaint。描き直しはしない) */
+  document.getElementById("e-date").oninput = e=>{ f.date=e.target.value; entryPaint(); };
   /* v5.98: 日付を決めた時に、旅行の期間なら箱の分に(期間から外れたら自動で付けた分を外す)。日付の選択は打鍵ではないので描き直してよい */
-  document.getElementById("e-date").onchange = e=>{ f.date=e.target.value; const was=f.svPot; svAutoPick(f); if(f.svPot!==was) render(); };
-  { const ea=document.getElementById("e-amount"); if(ea) ea.oninput = e=>f.amount=e.target.value; }
+  document.getElementById("e-date").onchange = e=>{ f.date=e.target.value; const was=f.svPot; svAutoPick(f); if(f.svPot!==was) render(); else entryPaint(); };
+  { const ea=document.getElementById("e-amount"); if(ea) ea.oninput = e=>{ f.amount=e.target.value; entryPaint(); }; }
   /* v4.35: 追加した品目行。**再描画で消えないようUI側に保持**する(入力のたびにrenderはしない) */
   { const pt=document.getElementById("e-paste"); if(pt){ pt.oninput = e=>{ UI.pasteText=e.target.value; };
     /* v6.27: **iPhoneでは、共有シートの「コピー」で入れたPDFは、この欄に貼っても来なかった**(ユーザー確認 11/01)ので画面の案内は外した。
@@ -12220,19 +12429,35 @@ function bindEntry(){
   { const ph=document.getElementById("e-photo"); if(ph) ph.onchange = e=>{ const fs=[...((e.target && e.target.files) || [])]; e.target.value=""; if(fs.length) rcptFromFiles(fs); }; }
   (f.extra||[]).forEach((x,i)=>{
     const ei=document.getElementById("e-xi-"+i); if(ei) ei.oninput = e=>{ x.item=e.target.value; };
-    const ea=document.getElementById("e-xa-"+i); if(ea) ea.oninput = e=>{ x.amount=e.target.value; };
+    const ea=document.getElementById("e-xa-"+i); if(ea) ea.oninput = e=>{ x.amount=e.target.value; entryPaint(); };
   });
   const es=document.getElementById("e-store"); if(es) es.oninput = e=>{ f.store=e.target.value;
     const dl=document.getElementById("e-itemlist");
-    if(dl) dl.innerHTML = entryItemHintsFor(f.store).map(v=>'<option value="'+esc(v)+'"></option>').join(""); };
-  const ei=document.getElementById("e-item"); if(ei) ei.oninput = e=>f.item=e.target.value;
-  const tf=document.getElementById("t-from"); if(tf) tf.oninput = e=>f.tfrom=e.target.value;
-  const tt=document.getElementById("t-to"); if(tt) tt.oninput = e=>f.tto=e.target.value;
-  const tp=document.getElementById("t-place"); if(tp) tp.oninput = e=>f.tplace=e.target.value;
+    if(dl) dl.innerHTML = entryItemHintsFor(f.store).map(v=>'<option value="'+esc(v)+'"></option>').join("");
+    entryPaint(); };
+  const ei=document.getElementById("e-item"); if(ei) ei.oninput = e=>{ f.item=e.target.value; entryPaint(); };
+  const tf=document.getElementById("t-from"); if(tf) tf.oninput = e=>{ f.tfrom=e.target.value; entryPaint(); };
+  const tt=document.getElementById("t-to"); if(tt) tt.oninput = e=>{ f.tto=e.target.value; entryPaint(); };
+  const tp=document.getElementById("t-place"); if(tp) tp.oninput = e=>{ f.tplace=e.target.value; entryPaint(); };
   document.querySelectorAll("[data-a]").forEach(el=>{
     el.onclick = ()=>{
       const a=el.dataset.a, v=el.dataset.v;
-      if(a==="back"){ rcptCancel(f); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }   /* v6.23: 読み取り中なら止める(費用だけかかるので) */
+      /* v6.64: タブとして出した時の、下のメニューと上の見出し(どちらも [data-a] なので、ここで受ける)。
+         ほかのタブへ移っても**書きかけは捨てない**(UI.entryDraft に残り、「記録」を押せば続きから)。読み取り中でも止めない(結果は預かる・rcptSend) */
+      if(a==="tab"){ entryLeaveTab(); goTab(v); }
+      else if(a==="add"){ if(!entryOnResume()){ const sc=document.getElementById("app"); if(sc) sc.scrollTop=0; } }   /* もう記録のタブにいる: 先頭へ戻すだけ(書きかけは消さない。触っていない形が昨日の日付なら今日に) */
+      else if(a==="syncnow"){ syncNow(); }
+      /* 書きかけを捨てる(前は「戻る」がこの役だった)。中身がある時だけ確かめる。読み取り中なら止める */
+      else if(a==="eclear"){
+        if(entryHasDraft(f, UI.entryDraftDay) && !confirm("書きかけの内容を消しますか?")) return;
+        rcptCancel(f); UI.pasteOpen=false; UI.pasteText=""; UI.chipMore=false;
+        UI.entryDraft=null; entryOpenTab(); render();
+      }
+      /* 「軍資金から出す」「貯金から出す」を開く/閉じる(この端末が覚える) */
+      else if(a==="efold"){ entFoldSet(v, !entFold(v)); render(); }
+      /* 読んだ後の要約から、取り込みの入口に戻す(フォームの中身は消さない。次に読んだものが上書きする=今までと同じ) */
+      else if(a==="rcptagain"){ f.rcptSrc=""; render(); }
+      else if(a==="back"){ rcptCancel(f); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }   /* v6.23: 読み取り中なら止める(費用だけかかるので) */
       else if(a==="etype"){ if(v==="transfer" && rcptCancel(f)) toast("読み取りをやめました");   /* v6.23: 振替ではボタンごと消えるので止める */
         f.type=v; if(v!=="transfer") f.category = v==="expense"?"消費":"給与";
         f.bkSrc=""; f.svPot=""; f.svDraw=undefined;   /* v5.95: 支出の出所が収入の行き先に化けないように */
@@ -12257,6 +12482,7 @@ function bindEntry(){
         const fallback=(txt)=>{ UI.pasteOpen=true; UI.pasteText=txt||""; render(); };
         {
           rcptClip().then(({text, img})=>{
+            if(UI.screen!=="entry" || UI.entryForm!==f) return;   /* v6.64: 「ペースト」の確認の間に、ほかの画面へ移っていたら入れない(取り込みは今見えているフォームに入るため) */
             const t=String(text||"").trim();
             const r=parseReceipt(t);
             if(img && !r.items.length){
@@ -12264,7 +12490,7 @@ function bindEntry(){
               rcptFromFiles([img]); return;
             }
             /* v6.27: iPhoneでは、欄に貼ってもPDFは来なかった(ユーザー確認)→ 確実に読める「ファイルを選択」へ案内する */
-            if(!t){ toast(rcptKey() ? "文字や画像が見つかりません(PDFは「写真・PDFから読む」→「ファイルを選択」から)" : "クリップボードが空です"); fallback(""); return; }
+            if(!t){ toast(rcptKey() ? "文字や画像が見つかりません(PDFは「写真・PDF」→「ファイルを選択」から)" : "クリップボードが空です"); fallback(""); return; }
             if(!r.items.length){ toast("書式が読み取れません"); fallback(t); return; }
             if(!receiptPasteText(t, f)) fallback(t);   /* v6.28: 1枚ならフォーム、まとめてなら1回の確認で保存 */
           }).catch(()=>fallback(""));
@@ -12285,7 +12511,8 @@ function bindEntry(){
       else if(a==="trfrom"){ UI.trFrom=(String(UI.trFrom||"")===String(v))?"":String(v);
         if(String(UI.trTo||"")===String(UI.trFrom)) UI.trTo=""; render(); }
       else if(a==="trto"){ UI.trTo=(String(UI.trTo||"")===String(v))?"":String(v); render(); }
-      else if(a==="todai"){ UI.tab="games"; 
+      else if(a==="todai"){ if(entryTabbed()) UI.entryDraft=null;   /* v6.64: セッションで入れ直すので、この書きかけは残さない(前も、ここで記録の画面を捨てていた) */
+          UI.tab="games"; 
           UI.draft={id:uid(),date:(f.date||todayStr()),store:"",mode:"dai",partnerName:"",fee:"",startAt:"",endAt:"",
             exchange:S.rates.exchange||"",pExchange:S.rates.pExchange||"",pushPayout:S.rates.pushPayout||"",pushDraw:S.rates.pushDraw||"",machines:[],expenses:[],memo:""};
           UI.whoTab="me"; UI.isNewSess=true; UI.screen="session"; render(); }
@@ -12306,6 +12533,8 @@ function bindEntry(){
          元の日付のまま出すと毎回必ず直させることになる。 */
       else if(a==="edup"){
         const f0=UI.entryForm||{};
+        /* v6.64: 複製は、今までどおり「戻る」のある画面のまま(戻る=やめる)。戻る先が空だとタブの記録の扱いになり、やめたつもりの複製が書きかけとして残る */
+        if(!UI.entryReturn) UI.entryReturn="main";
         UI.editEntryId=null;
         UI.entryForm={
           date: todayStr(), type: f0.type, category: f0.category,
@@ -12404,6 +12633,7 @@ function bindEntry(){
           }
           if(!doTransfer(fa.id, ta.id, amt, f.date)) return;
           save(); toast(fa.name+" → "+ta.name+" ¥"+amt.toLocaleString("ja-JP"));
+          if(entryTabbed()) UI.entryDraft=null;   /* v6.64: 保存したので、書きかけは空に */
           UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); return;
         }
         /* v3.31: 交通コンポーザの合成(新規のみ)。表記規約を構造で強制し、データは従来の文字列規約に落とす */
@@ -12502,6 +12732,8 @@ function bindEntry(){
             entrySvInSync(_x, inPot, xa, f.date, wal); setIn(_x);   /* v5.95: 入金も行ごと */
           });
         }
+        /* v6.64: タブの記録を保存したら、書きかけは空に(次に「記録」を押すと新しい形)。保存した後は今までどおり家計簿へ(入ったことが一覧で見える) */
+        if(entryTabbed()) UI.entryDraft=null;
         save(); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
       }
     };
@@ -13892,9 +14124,7 @@ function launchScreen(){
   let play=false; try{ play=mjlInPlay(); }catch(e){ console.error(e); }
   if(play){ UI.tab="games"; UI.screen="mjlog"; return "mjlog"; }
   if(S.openAddOnLaunch){
-    UI.tab="ledger"; UI.editEntryId=null;
-    UI.entryForm=mjlNewEntryForm();
-    UI.screen="entry"; return "entry";
+    entryOpenTab(); return "entry";   /* v6.64: 下のメニューの「記録」を押したのと同じ形で開く */
   }
   return "";
 }
@@ -13905,7 +14135,7 @@ render();
 let _mjlHiddenAt=0;
 document.addEventListener("visibilitychange", ()=>{
   if(document.visibilityState==="hidden"){ _mjlHiddenAt=Date.now(); return; }
-  if(document.visibilityState==="visible"){ const away=_mjlHiddenAt ? Date.now()-_mjlHiddenAt : 0; _mjlHiddenAt=0; mjlOnResume(away); }
+  if(document.visibilityState==="visible"){ const away=_mjlHiddenAt ? Date.now()-_mjlHiddenAt : 0; _mjlHiddenAt=0; if(!mjlOnResume(away)) entryOnResume(); }   /* v6.64: 記録のタブの触っていない形は、今日の日付に */
 });
 setInterval(()=>{ if(document.visibilityState==="visible"){ try{ mjlStRefresh(); }catch(e){ console.error(e); } } }, 20000);
 if ("serviceWorker" in navigator) {
