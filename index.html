@@ -448,7 +448,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.65 (localStorage保存・完全オフライン)
+   Tally 6.66 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1245,7 +1245,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.65";
+const APP_VERSION = "6.66";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -2003,6 +2003,15 @@ function bindBankMatch(){
         if(a==="hide" && !confirm("この支払いを、この一覧に出さないようにしますか?\n\n"+r.date.replace(/-/g,"/")+"  "+(r.merch||"")+"  "+signYen(r.amt)+
           "\n\n記帳はされません(別の形で記録してある時などに使います)。\n一覧の下の「出さないことにした行」から戻せます。")) return;
         dbtHideSet(r, a==="hide"); render(); return;
+      }
+      /* v6.66 読めなかったメールの知らせを消す(いま画面に出ているものだけ。記録は足さない)。消したメールは、次から Google 側でも開かない(amzSkipIds) */
+      if(a==="amzunread"){
+        const list=amzUnreadNew((UI.bm||{}).unread);
+        if(!list.length) return;
+        const md=d=>String(d||"").slice(5).replace("-","/");
+        if(!confirm("読めなかったメール "+list.length+"通の知らせを、もう出さないようにしますか?\n\n"+list.slice(0,6).map(u=>md(u.date)+" "+u.subject).join("\n")+(list.length>6 ? "\nほか"+(list.length-6)+"通" : "")+
+          "\n\n記録は足されません。まだ入れていない買い物があれば、先に入れてください。")) return;
+        amzSeenAdd(list); render(); toast("読めなかったメールの知らせを消しました"); return;
       }
       if(a==="amzget"){
         /* 取り込みは記録の画面の仕事(確認・やめる・Claudeのメモがそこにある)。新しい記録の画面を開いて、そのまま始める。終わるとこの画面に戻る */
@@ -10821,7 +10830,8 @@ function bindRcptSet(){
    **URL は APIキーと同じ扱い**(localStorage だけ・S に入れない=同期・バックアップ・スナップショットに乗らない)。知っている人は買った物の一覧を見られるため。
    **同じメールを二度入れない**: 取り込んだ記録に ref="amz:<メールのid>" を持たせる(S に入るので、ほかの端末でも分かる。編集しても消えない)。
    前から付けてあった記録(ref 無し)は、店が Amazon・金額が同じ・日付が近いものを「そのメールの分」とみなして ref を付ける(=記録済みとして飛ばす。v6.28 と同じ考え)。
-   入れた後で消した記録・0円のメール・読めなかったメールは、この端末の中(tally:amzSeen)に覚えて、次から出さない */
+   入れた後で消した記録・0円のメールは、この端末の中(tally:amzSeen)に覚えて、次から出さない。
+   **読めなかったメール**(金額や品名を読み取れなかった発送・注文のメール)は、v6.66 から、突き合わせの画面で「もう出さない」を押した時にだけ覚える(下の amzUnreadNew) */
 const AMZ_URL_LS="tally:amzUrl", AMZ_FROM_LS="tally:amzFrom", AMZ_SEEN_LS="tally:amzSeen";
 const AMZ_URL_RE=/^https:\/\/script\.google\.com\/(?:a\/macros\/[A-Za-z0-9.\-]+\/|macros\/)s\/([A-Za-z0-9_\-]{20,})\/exec$/;
 const AMZ_REF_RE=/^amz:[A-Za-z0-9_\-]{1,64}$/;
@@ -10843,6 +10853,13 @@ function amzSeenAdd(list){
   Object.keys(o).forEach(k=>{ if(String(o[k])<lo) delete o[k]; });   /* 見る範囲(60日)を過ぎたものは忘れる(増え続けないように) */
   rcptLS(AMZ_SEEN_LS, JSON.stringify(o));
 }
+/* v6.66 読めなかった Amazon のメールのうち、まだ知らせるもの(「もう出さない」にしていない・「いつのメールから」より後)。
+   ユーザー(11/14 07:17):「出すようにしましょう、お願いします」——v6.65 で記録のタブの「Amazon」を外した(自動の確認が入っている間)ので、
+   読めないメールしか無い時に、知らせの出る場所が無くなっていた。自動の確認の結果(家計簿タブの板・下の行・突き合わせの画面)に出す。
+   取り込みの確認(amzRun)も同じ関数で数える(同じ数を2か所で数えない)。
+   **消すのは、突き合わせの画面の「もう出さない」だけ**(bindBankMatch の amzunread → amzSeenAdd)。
+   v6.65 までは、取り込みの確認に1回出したら覚えていた(=次から出さない)が、板に出すようにしたので、取り込みを押しただけで板から消えると入れ忘れる */
+function amzUnreadNew(list){ const seen=amzSeen(), from=amzFrom(); return (Array.isArray(list) ? list : []).filter(u=>u && u.id && !seen[u.id] && String(u.date||"")>=from); }
 function amzIsStore(s){ return /^(?:amazon|アマゾン)/i.test(String(s||"").trim()); }
 /* Amazon の記録か。店名が Amazon、または**固定費から作った記録**で名前に Amazon・定期便 とあるもの
    (定期おトク便を固定費に入れていると、店名が空で、名前が「Amazon定期便 ○○」のことがある) */
@@ -11071,17 +11088,18 @@ async function amzRun(f, t, url){
   if(!got.ok){ dbtMark(got); UI.rcptBusy=null; render(); alert(t.timeout ? "時間がかかりすぎたので止めました。少し待ってから、もう一度。" : got.msg); return; }
   try{ dbtStore(got); UI.dbtAt=Date.now(); dbtMark(got); }catch(e){ console.error(e); }   /* v6.59: 同じ返事にデビットの通知も入っている(取り込みの後で突き合わせの画面に戻った時、新しい中身になる) */
   const md=d=>String(d||"").slice(5).replace("-","/"), yen=v=>"¥"+num(v).toLocaleString("ja-JP");
-  const tri=amzTriage(got.mails), store=amzStore(), seen0=amzSeen();
-  const unread=got.unread.filter(u=>!seen0[u.id] && u.date>=amzFrom());
+  const tri=amzTriage(got.mails), store=amzStore();
+  const unread=amzUnreadNew(got.unread);
   const linkedLines=tri.linked.map(x=>md(x.m.date)+" "+store+" "+yen(x.m.total)+"("+md(x.es[0].date)+"の記録)");
   const side=[];
   if(tri.zero.length) side.push("0円のメール(ポイントなどで払った注文)"+tri.zero.length+"通は入れていません");
-  if(unread.length) side.push("⚠ 読めなかったメールが"+unread.length+"通あります(「写真・PDF」で入れてください)\n"+unread.map(u=>md(u.date)+" "+u.subject).join("\n"));
+  /* v6.66: 読めなかったメールは、ここでは覚えない(家計簿のタブの板と突き合わせの画面に出し続け、そこの「もう出さない」で消す) */
+  if(unread.length) side.push("⚠ 読めなかったメールが"+unread.length+"通あります(「写真・PDF」で入れてください。この知らせは、家計簿のタブの板を開いた画面で消せます)\n"+unread.map(u=>md(u.date)+" "+u.subject).join("\n"));
   /* 確認に「はい」と答えた時と、入れるものが無い時にだけ、記録済みの印と「もう出さない」を残す(「いいえ」なら何も残さない=次も同じ一覧が出る) */
   const settle=()=>{
     tri.linked.forEach(x=>x.es.forEach(e=>{ e.ref="amz:"+x.m.id; }));
     if(tri.linked.length) save();
-    amzSeenAdd(tri.linked.map(x=>x.m).concat(tri.zero, unread));
+    amzSeenAdd(tri.linked.map(x=>x.m).concat(tri.zero));
   };
   if(!tri.fresh.length){
     UI.rcptBusy=null; render();
@@ -11186,7 +11204,7 @@ function dbtBm(got){
     return {i:i, id:d.id, date:d.date, amt:-d.amount, bal:null, desc:"Visaデビット "+merch, merch:merch, appr:((d.appr && !/^0+$/.test(d.appr)) ? d.appr : ""), memo:""};
   });
   return {mail:true, walId:W, rows:rows, from:(rows.length && rows[0].date<from ? rows[0].date : from), to:today, src:"メール",
-    mails:(got.mails||[]), dunread:(got.dunread||[]).filter(inWin), old:!got.hasDebits, v:(Number(got.v)||0), at:Date.now()};
+    mails:(got.mails||[]), unread:(got.unread||[]), dunread:(got.dunread||[]).filter(inWin), old:!got.hasDebits, v:(Number(got.v)||0), at:Date.now()};
 }
 function dbtHide(){ let o=null; try{ o=JSON.parse(rcptLS(DBT_HIDE_LS)||"{}"); }catch(e){ o=null; } return (o && typeof o==="object" && !Array.isArray(o)) ? o : {}; }
 function dbtHideSet(r, on){
@@ -11197,10 +11215,11 @@ function dbtHideSet(r, on){
 }
 /* 突き合わせの結果(R)の「通知にあってTallyに無い」を、4つに分ける:
    open=未記帳 / ready=Amazon の発送メールが届いていて、取り込めば合う / wait=Amazon の発送メール待ち / hidden=出さないことにした行
-   fresh=まだ取り込んでいない Amazon のメール(通知と合わないものも含む)。gap=まだ記録していない支払いの合計(出さない行は除く) */
+   fresh=まだ取り込んでいない Amazon のメール(通知と合わないものも含む)。gap=まだ記録していない支払いの合計(出さない行は除く)
+   unread=読めなかった Amazon のメール(v6.66。「もう出さない」にしていないもの。金額が分からないので gap には入らない) */
 function dbtSplit(R, bm){
   const hide=dbtHide(), today=todayStr(), tri=amzTriage(bm.mails||[]), usedF=new Set();
-  const out={open:[], ready:[], wait:[], hidden:[], fresh:tri.fresh, gap:0};
+  const out={open:[], ready:[], wait:[], hidden:[], fresh:tri.fresh, unread:amzUnreadNew(bm.unread), gap:0};
   R.bankOnly.forEach(r=>{
     if(hide[r.id]){ out.hidden.push(r); return; }
     out.gap+=r.amt;
@@ -11249,6 +11268,8 @@ function dbtStatusInner(){
     const v=dbtState(), sp=v ? v.sp : null;
     if(sp && sp.open.length){ s='メール照合 <span class="mono">'+hm(L.at)+'</span> 未記帳 '+sp.open.length+'件'; c="amber"; }
     else if(sp && sp.fresh.length){ s='メール照合 <span class="mono">'+hm(L.at)+'</span> 発送メール '+sp.fresh.length+'件'; c="amber"; }
+    /* v6.66 読めなかった Amazon のメール(自分で入れるもの)がある間も、✓ にしない。下の行は狭いので「読めない N通」と短く */
+    else if(sp && sp.unread.length){ s='メール照合 <span class="mono">'+hm(L.at)+'</span> 読めない '+sp.unread.length+'通'; c="amber"; }
     else s='✓ メール照合 <span class="mono">'+hm(L.at)+'</span>';
   }
   return ' ・ <span'+(c ? ' class="'+c+'"' : '')+'>'+s+'</span>';
@@ -11308,7 +11329,7 @@ function dbtInfo(){
     "<b>突き合わせ方</b>: 銀行の明細の突き合わせと同じです。金額が同じで、日付が近いもの(通知の日付がTallyより3日早い〜10日遅い)を同じ取引とみなします。1枚のレシートを品目ごとに分けて記録していても、同じ日・同じ店の合計で突き合わせます。一致した記録には、照合の✓が付きます。<br><br>"+
     "<b>差し引いた残高</b> = Tallyの残高から、まだ記録していないデビットの支払いを引いた額です。銀行のアプリの残高がこの額なら、ずれの原因はこの画面に出ている支払いだけです。違う時は、デビット以外(ATM・振込・口座振替)か、見ている期間より前の分です。その時は、銀行の明細(CSV)の突き合わせで調べられます。<br><br>"+
     "<b>見ている期間</b>: デビットの通知は、14日前から今日まで(「いつのメールから」の方が新しければ、その日から)。それより古い記録漏れは、この画面にも「差し引いた残高」にも入りません(Gmailには読む量の上限があり、通知は毎日増えるので、読む分を絞っています)。Amazonの発送メールは「いつのメールから」の日から。<br><br>"+
-    "<b>自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏で確かめます(10分に1回まで)。記録していない支払いがあった時だけ、家計簿のタブに「デビットの未記帳」が出ます。画面の一番下の行にも「メール照合 時刻 未記帳 N件」と出ます(何も無ければ「✓ メール照合 時刻」)。切るのは、管理 → レシートの読み取り。<br><br>"+
+    "<b>自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏で確かめます(10分に1回まで)。記録していない支払いがあった時だけ、家計簿のタブに「デビットの未記帳」が出ます。画面の一番下の行にも「メール照合 時刻 未記帳 N件」と出ます(何も無ければ「✓ メール照合 時刻」)。取り込めるAmazonの発送メールや、読めなかったAmazonのメールがある時も、板と下の行に出ます。切るのは、管理 → レシートの読み取り。<br><br>"+
     "通知のメールの中身は、Tallyに保存しません。";
 }
 /* 「差し引いた残高」= Tallyの残高 + まだ記録していないデビット(出さないことにした行は除く)。銀行のアプリの残高と見比べる数字。
@@ -11316,21 +11337,26 @@ function dbtInfo(){
 function dbtNet(bm, sp){ const bal=walletBalance(null, String(bm.walId)); return {bal:bal, net:bal+sp.gap}; }
 /* 残高はマイナスにもなりうる(記録が足りない時)。yen() は符号を落とすので、「−」を付ける(色だけに頼らない) */
 function dbtBalYen(v){ return (v<0 ? "−" : "")+yen(v); }
-/* 家計簿タブの板。**言うことがある時だけ出す**(未記帳がある・取り込める発送メールがある・発送メール待ちがある)。押すと突き合わせの画面 */
+/* 家計簿タブの板。**言うことがある時だけ出す**(未記帳がある・取り込める発送メールがある・読めなかったメールがある(v6.66)・発送メール待ちがある)。押すと突き合わせの画面。
+   見出しは、手を動かすものを先に: 未記帳 → 取り込める発送メール → 読めないメール(自分で入れる)→ 発送メール待ち(待つだけ)。
+   読めないメールは金額が分からないので、右の琥珀色の数字は通数にする(ほかの見出しと同じ「左に名前・右に琥珀色の数字」の形。右に何も無いと、目を引く色が板から無くなる)。
+   「通」の字は小さく(12px)する: 17px のまま漢字を入れると、行の箱が高くなって、板が金額の時より 3px 高くなる(実ブラウザで測って分かった) */
 function dbtCardHtml(){
   if(!amzUrl()) return "";
   let st=null; try{ st=dbtState(); }catch(e){ st=null; }
   if(!st) return "";
-  const sp=st.sp, nO=sp.open.length, nF=sp.fresh.length, nW=sp.wait.length;
-  if(!nO && !nF && !nW) return "";
+  const sp=st.sp, nO=sp.open.length, nF=sp.fresh.length, nW=sp.wait.length, nU=sp.unread.length;
+  if(!nO && !nF && !nW && !nU) return "";
   const sum=a=>a.reduce((x,r)=>x+r.amt,0);
   let title, val, cls="amber";
   if(nO){ title="デビットの未記帳 "+nO+"件"; val=signYen(sum(sp.open)); }
   else if(nF){ title="Amazonの発送メール "+nF+"件"; val=yen(sp.fresh.reduce((x,m)=>x+m.total,0)); }
+  else if(nU){ title="Amazonの読めないメール"; val=nU+'<span style="font-size:12px;margin-left:1px">通</span>'; }
   else { title="Amazonの発送メール待ち "+nW+"件"; val=signYen(sum(sp.wait)); cls="muted"; }
   const sub=[];
   if(nO && nF) sub.push("Amazonの発送メール "+nF+"件(取り込めます)");
-  if((nO || nF) && nW) sub.push("Amazonの発送メール待ち "+nW+"件 "+signYen(sum(sp.wait)));
+  if((nO || nF) && nU) sub.push("Amazonの読めないメール "+nU+"通(自分で入れてください)");
+  if((nO || nF || nU) && nW) sub.push("Amazonの発送メール待ち "+nW+"件 "+signYen(sum(sp.wait)));
   /* 銀行のアプリの残高と見比べる数字(画面を開かなくても、合っているかが分かる) */
   if(sp.gap) sub.push("差し引いた残高("+walName(String(UI.dbt.bm.walId))+") "+dbtBalYen(dbtNet(UI.dbt.bm, sp).net));
   return '<div class="card" style="margin-bottom:12px;padding:11px 16px;cursor:pointer" data-a="dbtopen">'+
@@ -11393,12 +11419,14 @@ function viewDbt(bm){
     if(unk.length) h+='<div style="text-align:right;margin:-6px 2px 14px"><button class="navbtn" style="color:var(--teal);font-size:12px;text-decoration:underline" data-bm="copyunk">分からない行をClaude用にコピー('+unk.length+'件)</button></div>';
   }
   /* ── Amazon(引き落としが先・発送メールが後) ── */
-  if(sp.fresh.length || sp.wait.length){
+  if(sp.fresh.length || sp.wait.length || sp.unread.length){
     h+=band("Amazon", "",
       "Amazonは、<b>引き落としが先で、発送の時にメールが届きます</b>(数分〜1日ほど後)。その間は、銀行の残高だけが先に減っています。<br><br>"+
       "<b>発送メール</b>: 届いていて、まだ取り込んでいないメールです。「Amazonのメールから取り込む」を押すと、品名と分類を付けて記録します。引き落としの通知と金額が合うものには「○/○ に引き落とし済み」と出ます。<br><br>"+
       "<b>発送メール待ち</b>: 引き落としの通知は来たけれど、発送メールがまだ届いていない支払いです。メールが届いたら取り込めば合うので、<b>そのまま待つ</b>のがおすすめです(行を押すと、待たずに記録することもできます。その時は、後で届いたメールを記録済みとして飛ばします)。<br>"+
-      AMZ_WAIT+"日たっても届かない時は、上の「デビットで払ってTallyに無い」に移ります(プライムの会費のように、発送メールが来ない支払いです)。");
+      AMZ_WAIT+"日たっても届かない時は、上の「デビットで払ってTallyに無い」に移ります(プライムの会費のように、発送メールが来ない支払いです)。<br><br>"+
+      "<b>読めなかったメール</b>: Amazonの発送・注文のメールのうち、金額や品名を読み取れなかったものです(メールの形がいつもと違う時)。<b>Tallyには入っていません。</b>メールを開いて確かめ、記録の「写真・PDF」(メールの画面の写真)か、手で入れてください。入れたら「もう出さない」を押すと、この知らせが消えます(記録が足されるわけではありません)。<br>"+
+      "続けて何通も出る時は、Amazonのメールの形が変わったのかもしれません。");
     if(sp.fresh.length){
       const pay={}; sp.ready.forEach(x=>{ pay[x.m.id]=x.r; });
       h+='<div class="card" style="margin-bottom:14px;padding:11px 16px">'+
@@ -11412,6 +11440,15 @@ function viewDbt(bm){
           (pay[m.id] ? '<div class="muted" style="font-size:11px;margin-top:2px">'+md(pay[m.id].date)+' に引き落とし済み</div>' : '')+'</div>').join("")+
         (sp.fresh.length>12 ? '<div class="muted" style="font-size:11px;padding-top:5px">ほか'+(sp.fresh.length-12)+'件</div>' : '')+
         '<button class="btn full" style="padding:10px 0;font-size:12px;margin-top:12px;color:var(--teal);font-weight:700" data-bm="amzget">Amazonのメールから取り込む</button></div>';
+    }
+    /* v6.66 読めなかったメール(取り込めない=自分で入れる)。件名は長いので1行に切る。消すのは下のボタンだけ */
+    if(sp.unread.length){
+      h+='<div class="card" style="margin-bottom:14px;padding:11px 16px;border-color:var(--amber)">'+
+        '<div class="amber" style="font-size:12px;font-weight:700">読めなかったメール '+sp.unread.length+'通(Tallyには入っていません)</div>'+
+        sp.unread.slice(0,12).map(u=>'<div class="ellip muted" style="font-size:12px;padding:6px 0 0"><span class="mono" style="margin-right:8px">'+md(u.date)+'</span>'+esc(u.subject||"(件名なし)")+'</div>').join("")+
+        (sp.unread.length>12 ? '<div class="muted" style="font-size:11px;padding-top:5px">ほか'+(sp.unread.length-12)+'通</div>' : '')+
+        '<div class="muted" style="font-size:11px;margin-top:8px;line-height:1.6">金額や品名を読み取れませんでした。メールを開いて確かめ、記録の「写真・PDF」か、手で入れてください。</div>'+
+        '<button class="btn full" style="padding:10px 0;font-size:12px;margin-top:12px" data-bm="amzunread">入れた・確かめた(もう出さない)</button></div>';
     }
     if(sp.wait.length){
       h+='<div class="card" style="margin-bottom:14px;padding:11px 16px 6px">'+
@@ -11441,7 +11478,7 @@ function viewDbt(bm){
 function amzSetHtml(){
   const au=amzUrl(), T=UI.amzTest;
   const info="Googleに置いた小さなプログラムを通して、2種類のメールを見ます。領収書のPDFや、銀行の明細のファイルは要りません。<br><br>"+
-    "<b>Amazon</b>: <b>発送済み</b>のメールと、Kindleなど<b>デジタルの注文</b>のメールから、買った物と金額を取り込みます。新しい発送メールがあると、家計簿のタブに「Amazonの発送メール N件」と出ます(デビットの未記帳がある時は、その板の中に出ます)。押して開いた画面の「Amazonのメールから取り込む」を押すと、新しい発送が、品名を短く整えて分類を付けた形で出るので、確かめて保存します。<b>同じメールを二度入れません。</b>前から付けてあった記録(店がAmazon・同じ金額・日付が近い)も、記録済みとして飛ばします。入れたくない注文は、保存した後でその記録を消せば、次からは出ません。<br><br>"+
+    "<b>Amazon</b>: <b>発送済み</b>のメールと、Kindleなど<b>デジタルの注文</b>のメールから、買った物と金額を取り込みます。新しい発送メールがあると、家計簿のタブに「Amazonの発送メール N件」と出ます(デビットの未記帳がある時は、その板の中に出ます)。押して開いた画面の「Amazonのメールから取り込む」を押すと、新しい発送が、品名を短く整えて分類を付けた形で出るので、確かめて保存します。金額や品名を読み取れなかったメールは「Amazonの読めないメール N通」と出ます(取り込めないので、自分で入れます)。<b>同じメールを二度入れません。</b>前から付けてあった記録(店がAmazon・同じ金額・日付が近い)も、記録済みとして飛ばします。入れたくない注文は、保存した後でその記録を消せば、次からは出ません。<br><br>"+
     "<b>デビットの通知</b>: ソニー銀行のデビット(Sony Bank WALLET)で払うと届く「ご利用のお知らせ」と、Tallyの記録を突き合わせて、<b>まだ記録していない支払い</b>を見つけます。見つかった時だけ、家計簿のタブに「デビットの未記帳」が出ます。押すと一覧が出て、行を押すと、その日付と金額で記録の画面が開きます。<br><br>"+
     "<b>起動した時に自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏でメールを確かめます(10分に1回まで)。確かめるだけで、記録を足したり直したりはしません。電波が無い時は何もしません。切っている間は、自動では確かめないので、記録の画面の取り込みに「Amazon」が出ます(自分で押して取り込みます)。<br><br>"+
     "<b>はじめに一度だけ</b>(PCかタブレットのブラウザが楽です)<br>"+
