@@ -448,7 +448,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.66 (localStorage保存・完全オフライン)
+   Tally 6.67 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -923,25 +923,47 @@ function load(){
 /* iOSは即killでlocalStorage書込みが飛ぶことがある→離脱シグナルで駄目押し保存 */
 window.addEventListener("pagehide", ()=>{ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} });
 document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="hidden"){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} } });
-let LAST_LOCAL_SAVE = null;
+/* v6.67 最後の保存に失敗したか。下の行に「保存できていません」と出す(次に保存できたら消える)。
+   それまでは、失敗しても下の行は前の時刻のまま「✓ 自動保存」と出ていた(知らせは save() の alert だけ) */
+let SAVE_FAIL = false;
 function saveLocal(){
-  localStorage.setItem(KEY, JSON.stringify(S));
-  const d=new Date();
-  LAST_LOCAL_SAVE = ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)+":"+("0"+d.getSeconds()).slice(-2);
-  document.querySelectorAll(".savets").forEach(el=>{ el.textContent=" "+LAST_LOCAL_SAVE; });
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e){ if(!SAVE_FAIL){ SAVE_FAIL=true; footPaint(); } throw e; }   /* 呼んだ側(save の alert など)の動きは変えない */
+  if(SAVE_FAIL){ SAVE_FAIL=false; footPaint(); }
 }
-/* v6.60: 下の行は1か所で作る(全画面で同じ文言=v3.94)。自動保存の時刻・メール照合の状態(dbtStatusInner)・版。
-   起動してまだ保存していない時は時刻を出さない(以前は「—」で、何のことか分かりにくかった)。
-   時刻とメール照合の部分は、描き直さずに中身だけ差し替える(.savets / .dbtst) */
+/* v6.67 **下の行は、知らせることがある時だけ出す**。ユーザー(11/14 08:02・家計簿タブの写真つき):
+   「下の部分ですが、なんか異常値というかエラーが出た時にだけ出す方がいい気がして来ました。美しく無い」。
+   それまでは、いつも「✓ 自動保存 時刻 ・ ✓ メール照合 時刻 ・ v6.66」と出していた(v3.93 版の数字・v3.94 全画面で同じ文言・v6.60 メール照合。どれもユーザーの要望で足したもの)。
+   いつも ✓ の行は読まなくなる(毎回出す警告と同じ)。メール照合が動くことを確かめる役目は済んだ。
+   出すもの: 保存に失敗している(赤)・メール照合の知らせ(dbtStatusInner=未記帳・発送メール・読めない・失敗・要更新・オフライン)。
+   「オフライン」も出す: 行が無い=「確かめて、することが無かった」と読まれるので、確かめられなかった時まで黙ると見分けが付かない。
+   **いつも出す字(✓・時刻・版)を、この行に足さないこと**(足すと元に戻る)。
+   **何も無ければ、行ごと出さない**(display:none。下の棒がその分低くなる)。版の数字は管理タブの一番下へ(viewTool)。
+   作るのはここ1か所(全画面で同じ=v3.94 のまま)。中身だけを差し替える時は footPaint(棒の高さ --navh も測り直す=行が出入りすると高さが変わる) */
+function footInner(){
+  const a=[];
+  if(SAVE_FAIL) a.push('<span class="red">保存できていません</span>');
+  const m=dbtStatusInner(); if(m) a.push(m);
+  return a.join(' ・ ');
+}
 function footHtml(pad){
-  return '<div class="muted" style="font-size:11px;text-align:center;padding:'+pad+'">✓ 自動保存<span class="savets mono">'+(LAST_LOCAL_SAVE ? " "+LAST_LOCAL_SAVE : "")+'</span>'+
-    '<span class="dbtst">'+dbtStatusInner()+'</span> ・ v'+APP_VERSION+'</div>';
+  const inner=footInner();
+  return '<div class="foot muted" style="font-size:11px;text-align:center;padding:'+pad+(inner ? '' : ';display:none')+'">'+inner+'</div>';
+}
+function footPaint(){
+  try{
+    const inner=footInner();
+    document.querySelectorAll(".foot").forEach(el=>{ el.innerHTML=inner; el.style.display = inner ? "" : "none"; });
+    const nb=document.getElementById("navbar");
+    if(nb) document.documentElement.style.setProperty("--navh", (nb.offsetHeight||0)+"px");
+  }catch(e){}
 }
 /* v3.94: 保存インジケーターは**全画面で同一の文言**に統一(ユーザー指摘)。
    画面によって出たり出なかったり書式が違うと、時刻を出している意味自体が失われる。
    作業中(スコア表・記帳・各台帳)が最も不安な瞬間なので、そこにこそ常時出す。
    navbar版と同じ短形+バージョン。挿入は_renderBodyが一元的に行うので、
-   **view関数の中でこれを呼ばないこと**(二重表示になる) */
+   **view関数の中でこれを呼ばないこと**(二重表示になる)。
+   v6.67: 出すのは知らせることがある時だけになった(上の footInner)。全画面で同じ中身・1か所で作る、は変わらない */
 const saveIndicatorHtml = () => footHtml("10px 0 2px");
 /* ---------- 自動スナップショット(ローカル3世代) ----------
    起動時(日次)・復元前・同期上書き前に全データを退避。誤操作からの復旧用 */
@@ -1245,7 +1267,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.66";
+const APP_VERSION = "6.67";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1272,7 +1294,8 @@ function navHtml(){
   /* v3.93: navbarの「通信不要」をバージョン表記に置換(ユーザー要望)。
      常時見えるのはバージョンの方が実用的——更新が反映されたかを画面を移らずに確認できる。
      v3.94: saveIndicatorHtml()も同じ文言に統一したため、オフライン保証の断言は
-     文言でなくバックアップ画面の説明が担う(同じ行を2つの書式で持たない) */
+     文言でなくバックアップ画面の説明が担う(同じ行を2つの書式で持たない)
+     v6.67: 版はメニューの下から外した(管理タブの一番下へ)。メニューの下の行は、知らせることがある時だけ出す(footHtml) */
   return tabBar() + footHtml("4px 0 1px");
 }
 /* v3.95: **navbarの無い画面に「戻る」バーを出す**(ユーザー設計・案B)。
@@ -4299,6 +4322,10 @@ function viewTool(){
     _row('data-a="monthly"', "月別の収支"),
     _row('data-a="summary"', "収支サマリを書き出す"),
   ]);
+  /* v6.67: 版の数字。下の行(全画面)から外したので、ここに置く(言い方はバックアップの画面の一番下と同じ)。
+     版を確かめる場所はここになったので、**薄めない**(バックアップの画面の方は opacity .7 のまま=灰色をさらに薄めると 11px では読みにくい)。
+     新しい版になったかは、右上の丸(「最新です(版)」)でも分かる */
+  h += '<div class="muted" id="tool-ver" style="text-align:center;font-size:11px;margin-top:24px">Tally バージョン '+APP_VERSION+'</div>';
   return h;
 }
 
@@ -11249,15 +11276,16 @@ function dbtAutoOn(){ return rcptLS(DBT_AUTO_LS)!=="0"; }
 function dbtMark(got){
   UI.dbtLast = (got && got.ok) ? {at:Date.now(), ok:true, old:(!got.hasDebits || (Number(got.v)||0) < AMZ_GAS_V)}
     : {at:Date.now(), ok:false, off:!!(got && got.off), msg:String((got && got.msg) || "")};
-  dbtStatusPaint();
+  footPaint();
 }
-/* 下の行の「メール照合」の部分。URLが無ければ出さない。まだ一度も確かめていなければ出さない(起動して数秒の間・自動がオフ) */
+/* 下の行の「メール照合」の部分。URLが無ければ出さない。まだ一度も確かめていなければ出さない(起動して数秒の間・自動がオフ)。
+   v6.67: **知らせることがある時だけ**返す(無ければ "")。「✓ メール照合 時刻」(成功して、することが無い)は出さない。
+   「メール照合中…」も出さない——確かめている間は、前の結果のままにする(確かめるたびに行が出たり消えたりして、下の棒が上下しないように) */
 function dbtStatusInner(){
   if(!amzUrl()) return "";
   const L=UI.dbtLast, hm=t=>{ const d=new Date(t); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); };
   let s="", c="";
-  if(UI.dbtRun) s="メール照合中…";
-  else if(!L) return "";
+  if(!L) return "";
   else if(L.off) s="メール照合 オフライン";
   else if(!L.ok){ s='メール照合 <span class="mono">'+hm(L.at)+'</span> 失敗'; c="amber"; }
   else if(L.old){ s="メール照合 要更新"; c="amber"; }   /* Googleに置いたプログラムが古い(版1=通知を返さない・版2=上限に当たりやすい) */
@@ -11270,11 +11298,10 @@ function dbtStatusInner(){
     else if(sp && sp.fresh.length){ s='メール照合 <span class="mono">'+hm(L.at)+'</span> 発送メール '+sp.fresh.length+'件'; c="amber"; }
     /* v6.66 読めなかった Amazon のメール(自分で入れるもの)がある間も、✓ にしない。下の行は狭いので「読めない N通」と短く */
     else if(sp && sp.unread.length){ s='メール照合 <span class="mono">'+hm(L.at)+'</span> 読めない '+sp.unread.length+'通'; c="amber"; }
-    else s='✓ メール照合 <span class="mono">'+hm(L.at)+'</span>';
+    else return "";   /* v6.67: 成功して、することが無い時は出さない(v6.66 までは「✓ メール照合 時刻」) */
   }
-  return ' ・ <span'+(c ? ' class="'+c+'"' : '')+'>'+s+'</span>';
+  return '<span'+(c ? ' class="'+c+'"' : '')+'>'+s+'</span>';
 }
-function dbtStatusPaint(){ try{ document.querySelectorAll(".dbtst").forEach(el=>{ el.innerHTML=dbtStatusInner(); }); }catch(e){} }
 /* 結果を覚える(UI だけ)。突き合わせの画面を開いていれば、その画面の中身も新しい結果に替える */
 function dbtStore(got){
   const was=!!(UI.bm && UI.bm.mail);
@@ -11298,7 +11325,6 @@ async function dbtCheck(manual){
   if(typeof navigator!=="undefined" && navigator.onLine===false){ if(manual){ UI.dbtErr="オフラインです。電波のある所で、もう一度。"; dbtMark({ok:false, off:true}); dbtRepaint(); } return; }
   const ctl=(typeof AbortController==="function") ? new AbortController() : null, timer=ctl ? setTimeout(()=>ctl.abort(), 45000) : 0;
   const run=UI.dbtRun={manual:!!manual}; UI.dbtAt=Date.now();
-  dbtStatusPaint();
   if(run.manual){ UI.dbtErr=""; dbtRepaint(); }
   let got=null;
   try{ got=await amzFetch(url, amzFrom(), ctl); }catch(e){ got={ok:false, msg:"確かめている途中で失敗しました。もう一度試してください。"}; }
@@ -11329,7 +11355,7 @@ function dbtInfo(){
     "<b>突き合わせ方</b>: 銀行の明細の突き合わせと同じです。金額が同じで、日付が近いもの(通知の日付がTallyより3日早い〜10日遅い)を同じ取引とみなします。1枚のレシートを品目ごとに分けて記録していても、同じ日・同じ店の合計で突き合わせます。一致した記録には、照合の✓が付きます。<br><br>"+
     "<b>差し引いた残高</b> = Tallyの残高から、まだ記録していないデビットの支払いを引いた額です。銀行のアプリの残高がこの額なら、ずれの原因はこの画面に出ている支払いだけです。違う時は、デビット以外(ATM・振込・口座振替)か、見ている期間より前の分です。その時は、銀行の明細(CSV)の突き合わせで調べられます。<br><br>"+
     "<b>見ている期間</b>: デビットの通知は、14日前から今日まで(「いつのメールから」の方が新しければ、その日から)。それより古い記録漏れは、この画面にも「差し引いた残高」にも入りません(Gmailには読む量の上限があり、通知は毎日増えるので、読む分を絞っています)。Amazonの発送メールは「いつのメールから」の日から。<br><br>"+
-    "<b>自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏で確かめます(10分に1回まで)。記録していない支払いがあった時だけ、家計簿のタブに「デビットの未記帳」が出ます。画面の一番下の行にも「メール照合 時刻 未記帳 N件」と出ます(何も無ければ「✓ メール照合 時刻」)。取り込めるAmazonの発送メールや、読めなかったAmazonのメールがある時も、板と下の行に出ます。切るのは、管理 → レシートの読み取り。<br><br>"+
+    "<b>自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏で確かめます(10分に1回まで)。記録していない支払いがあった時だけ、家計簿のタブに「デビットの未記帳」が出ます。画面の一番下にも「メール照合 時刻 未記帳 N件」と出ます(知らせることが無い時は、何も出ません)。取り込めるAmazonの発送メールや、読めなかったAmazonのメールがある時も、板と画面の一番下に出ます。切るのは、管理 → レシートの読み取り。<br><br>"+
     "通知のメールの中身は、Tallyに保存しません。";
 }
 /* 「差し引いた残高」= Tallyの残高 + まだ記録していないデビット(出さないことにした行は除く)。銀行のアプリの残高と見比べる数字。
@@ -11496,7 +11522,7 @@ function amzSetHtml(){
     "④ 右上の「デプロイ」→「デプロイを管理」→ 鉛筆のマーク →「バージョン」を「新バージョン」にして「デプロイ」<br>"+
     "URLは変わらないので、貼り直しは要りません。権限の確認も、もう一度は出ません(読むだけのまま)。<br><br>"+
     "<b>Gmailを読む量の上限</b>: Gmailには、1分に読める量の上限があります(1人 1分に 6,000。メール1通を開くと 60)。Tallyは、取り込み済みのAmazonのメールは開かず、デビットの通知は14日前からの分だけを読む(1通 20)ので、1回に使うのは多くても2,000ほどです。"+
-    "上限に当たった時は、下の行に「メール照合 失敗」と出ます(記録していない支払いがある時は「未記帳 N件」、何も無ければ「✓」)。1分ほど待てば元に戻ります。「つながるか確かめる」を押すと、使った量が出ます。<br><br>"+
+    "上限に当たった時は、画面の一番下に「メール照合 失敗」と出ます(記録していない支払いがある時は「未記帳 N件」。知らせることが無い時は、何も出ません)。1分ほど待てば元に戻ります。「つながるか確かめる」を押すと、使った量が出ます。<br><br>"+
     "<b>URLは秘密にしてください</b>: 知っている人は、Amazonで買った物と金額、デビットで払った店と金額の一覧を見られます(名前・住所・注文番号・口座の残高・メールの本文は返しません)。チャットやメモに貼らないでください。置き場所はこの端末の中だけで、同期・バックアップには入りません。漏れたと思ったら、Apps Script の「デプロイを管理」でアーカイブすれば止まります。<br><br>"+
     "<b>金額</b>: 発送メールの「合計」(割引を引いた後の、その発送で引き落とされる額)をそのまま使います。Kindleなどでポイントを使った時は、メールの金額と引き落としが違うことがあります(Amazonのメールにそう書いてあります)。<br><br>"+
     "<b>Claudeに送るもの</b>: Amazonの品名と金額、これまでのAmazonの品目名と分類(表記を揃えるため)。デビットの通知は送りません。APIキーが無い時や圏外の時は、品名は長いまま・分類は消費で取り込みます。";
