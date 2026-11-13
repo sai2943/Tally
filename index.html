@@ -448,7 +448,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.64 (localStorage保存・完全オフライン)
+   Tally 6.65 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1245,7 +1245,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.64";
+const APP_VERSION = "6.65";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -10334,7 +10334,7 @@ function receiptPasteText(raw, f){
   const res=receiptImportMany(list, "");
   if(res.saved){
     UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";
-    UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
+    entryAfterSave("取り込んで保存しました", res.saved+"件", "", false);   /* v6.65: タブの記録なら記録に残る */
     toast("取り込んで保存しました"+(res.skipped.length ? "(記録済みの"+res.skipped.length+"件は飛ばしました)" : ""));
     return true;
   }
@@ -10682,7 +10682,7 @@ function rcptFinish(f, r){
       : out.saved ? "読み取りました(履歴の"+out.saved+"件は保存済み)" : "読み取りました。確かめて保存してください");
     return;
   }
-  if(out.saved){ UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); toast("取り込んで保存しました"); return; }
+  if(out.saved){ entryAfterSave("取り込んで保存しました", out.saved+"件", "", false); toast("取り込んで保存しました"); return; }   /* v6.65: タブの記録なら記録に残る */
   render(); toast("取り込みをやめました");
 }
 /* v6.64: 記録のタブを離れている間に終わった読み取りを、戻った時に当てる(下のメニューの「記録」を押した時に呼ぶ) */
@@ -11117,7 +11117,7 @@ async function amzRun(f, t, url){
   const res=receiptImportMany(drafts.map(r=>({r:r})), (pol.ok && pol.memo) || "", {skipped:linkedLines, notes:notes.concat(side)});
   if(res.saved){
     settle(); amzSeenAdd(tri.fresh);
-    UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
+    entryAfterSave("Amazonの"+tri.fresh.length+"件を保存しました", "", "", false);   /* v6.65: タブの記録なら記録に残る(突き合わせの画面から開いた時は、今までどおりそこへ戻る) */
     toast("Amazonの"+tri.fresh.length+"件を保存しました"+(linkedLines.length ? "(記録済みの"+linkedLines.length+"件は飛ばしました)" : ""));
     return;
   }
@@ -11138,7 +11138,7 @@ async function amzTest(){
       (got.hasDebits ? "\n"+String(got.dfrom).slice(5).replace("-","/")+" からのデビットの通知 "+got.debits.filter(d=>(Number(got.v)||0)>=AMZ_GAS_V || d.date>=got.dfrom).length+"通"+(got.dunread.length ? "・読めない "+got.dunread.length+"通" : "")+
         (st ? "(一覧で "+st.tsnip+"・1通ずつ "+st.msnip+"・本文 "+st.full+")" : "") : "")+
       (got.used!=null ? "\nGmailの読み取り 約 "+got.used.toLocaleString("ja-JP")+"(上限は1分に 6,000)" : "")+
-      "\n記録の画面から取り込めます。"};
+      "\n新しい発送メールや未記帳があれば、家計簿のタブに出ます。"};
     try{ dbtStore(got); UI.dbtAt=Date.now(); dbtMark(got); }catch(e){ console.error(e); }
   } else { UI.amzTest={ok:false, msg:got.msg}; dbtMark(got); }
   if(UI.screen==="rcptset") render();
@@ -11441,9 +11441,9 @@ function viewDbt(bm){
 function amzSetHtml(){
   const au=amzUrl(), T=UI.amzTest;
   const info="Googleに置いた小さなプログラムを通して、2種類のメールを見ます。領収書のPDFや、銀行の明細のファイルは要りません。<br><br>"+
-    "<b>Amazon</b>: <b>発送済み</b>のメールと、Kindleなど<b>デジタルの注文</b>のメールから、買った物と金額を取り込みます。記録の画面の「Amazon」を押すと、新しい発送が、品名を短く整えて分類を付けた形で出るので、確かめて保存します。<b>同じメールを二度入れません。</b>前から付けてあった記録(店がAmazon・同じ金額・日付が近い)も、記録済みとして飛ばします。入れたくない注文は、保存した後でその記録を消せば、次からは出ません。<br><br>"+
+    "<b>Amazon</b>: <b>発送済み</b>のメールと、Kindleなど<b>デジタルの注文</b>のメールから、買った物と金額を取り込みます。新しい発送メールがあると、家計簿のタブに「Amazonの発送メール N件」と出ます(デビットの未記帳がある時は、その板の中に出ます)。押して開いた画面の「Amazonのメールから取り込む」を押すと、新しい発送が、品名を短く整えて分類を付けた形で出るので、確かめて保存します。<b>同じメールを二度入れません。</b>前から付けてあった記録(店がAmazon・同じ金額・日付が近い)も、記録済みとして飛ばします。入れたくない注文は、保存した後でその記録を消せば、次からは出ません。<br><br>"+
     "<b>デビットの通知</b>: ソニー銀行のデビット(Sony Bank WALLET)で払うと届く「ご利用のお知らせ」と、Tallyの記録を突き合わせて、<b>まだ記録していない支払い</b>を見つけます。見つかった時だけ、家計簿のタブに「デビットの未記帳」が出ます。押すと一覧が出て、行を押すと、その日付と金額で記録の画面が開きます。<br><br>"+
-    "<b>起動した時に自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏でメールを確かめます(10分に1回まで)。確かめるだけで、記録を足したり直したりはしません。電波が無い時は何もしません。<br><br>"+
+    "<b>起動した時に自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏でメールを確かめます(10分に1回まで)。確かめるだけで、記録を足したり直したりはしません。電波が無い時は何もしません。切っている間は、自動では確かめないので、記録の画面の取り込みに「Amazon」が出ます(自分で押して取り込みます)。<br><br>"+
     "<b>はじめに一度だけ</b>(PCかタブレットのブラウザが楽です)<br>"+
     "① script.google.com を開き、「新しいプロジェクト」<br>"+
     "② 下の「プログラムをコピー」を押し、エディタの中の3行の雛形の下の空いた所を押して、改行してから貼る(雛形の { } の中には貼らない。雛形は残っていても動きます)<br>"+
@@ -12005,6 +12005,7 @@ function entryDraftLive(){
 /* 下のメニューの「記録」を押した時・起動時に開く設定の時。書きかけがあれば続きから、無ければ今日の日付の新しい形(v3.39: 中央のボタンはいつも家計簿の記帳) */
 function entryOpenTab(){
   UI.tab="ledger"; UI.editEntryId=null; UI.entryReturn=null;
+  UI.entrySaved=null;   /* v6.65: 「✓ 記録しました」の1行は、記録のタブを開き直すたびに消す(ほかのタブから戻った時・クリア・日付をまたいだ時。保存の直後だけ entryAfterSave が入れ直す) */
   if(!entryDraftLive()){ UI.entryDraft=mjlNewEntryForm(); UI.entryDraftDay=todayStr(); }
   const f=UI.entryForm=UI.entryDraft;
   if(f.type==="transfer" && f.trFrom!=null){ UI.trFrom=f.trFrom; UI.trTo=f.trTo||""; }
@@ -12025,6 +12026,35 @@ function entryLeaveTab(){
   const f=UI.entryDraft;
   if(f && f.type==="transfer"){ f.trFrom=String(UI.trFrom||""); f.trTo=String(UI.trTo||""); }
 }
+/* v6.65: **保存した後の行き先**。ユーザー(11/14 03:40)「記録しても残って欲しいですね」——v6.64 は、保存すると今までどおり家計簿のタブへ移していた
+   (Claude が「入ったことが一覧で見えるから」と決め、作る前の 02:42 に「違ったら変えられる」と伝えていた)。
+   **タブの記録なら、記録のタブに残る**。fresh=true(1件ずつの保存・振替)なら今日の日付の新しい形にして、何を記録したかを上に1行出す(UI.entrySaved = {head, body, amt})。
+   body は長ければ右を「…」で切り、**amt(金額)はいつも見える**(店名が長い時に、確かめたい金額の方が切れないように、2つに分けて持つ)。
+   fresh=false(まとめて取り込んで保存した時)は、フォームはそのまま(その取り込みはフォームを使っていない)。
+   1行は、次を打ち始めると見えなくなる(entryPaint)。**場所は次の保存まで空けておく**(詰めると、打ち始めた瞬間や区分を押した瞬間に、画面が1行ぶん上へずれて指の下が動く)。
+   記録のタブを開き直すと消える(entryOpenTab)。2秒で消える知らせだけだと、続けて入れる時に「今のは入ったか」が残らないため。
+   **戻る先のある画面(編集・突き合わせから・資産からの振替・複製)は、今までどおり戻る**。タブに残ったら true */
+function entryAfterSave(head, body, amt, fresh){
+  if(entryTabbed()){
+    const stopped = fresh ? entryFresh() : false;
+    UI.entrySaved={head:String(head||""), body:String(body||""), amt:String(amt||"")};
+    render();
+    const sc=document.getElementById("app"); if(sc) sc.scrollTop=0;   /* 1行と取り込みの板が見える所へ(同じ画面の描き直しは、位置を保つ作りなので) */
+    /* 読んでいる途中で保存した時。その読み取りは保存した形のためのものなので、新しい形には入れない(前は画面を離れるので、後から「結果は使いませんでした」と知らせていた) */
+    if(stopped) toast("保存したので、読み取りをやめました");
+    return true;
+  }
+  UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
+  return false;
+}
+/* タブの記録を、何も触っていない形(今日の日付)に戻す。「クリア」と、保存した後(v6.65)が同じ関数を使う。
+   読み取りの途中なら止め(止めたら true)、貼り付け欄・店の候補の「＋他」も閉じる(前の中身が、新しい形に残らないように) */
+function entryFresh(){
+  const stopped=rcptCancel(UI.entryForm);
+  UI.pasteOpen=false; UI.pasteText=""; UI.chipMore=false;
+  UI.entryDraft=null; entryOpenTab();
+  return stopped;
+}
 /* フォームの品目の数と合計。上の要約(読んだ後)と下の「N件の合計」が同じ関数を使う。**保存される行**(金額が0より大きい行)だけを数える */
 function entryTotals(f){
   const a=[num(f.amount)].concat((f.extra||[]).map(x=>num(x.amount))).filter(v=>v>0);
@@ -12041,7 +12071,9 @@ function entryPaint(){
   const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
   set("e-sum-total", y); set("e-sum-n", String(t.n)); set("e-sum-store", entrySumName(f));
   set("e-tot", y); set("e-tot-n", String(t.n));
-  const c=document.getElementById("e-clear"); if(c) c.style.visibility = entryHasDraft(f, UI.entryDraftDay) ? "" : "hidden";
+  const has=entryHasDraft(f, UI.entryDraftDay);
+  const c=document.getElementById("e-clear"); if(c) c.style.visibility = has ? "" : "hidden";
+  const sv=document.getElementById("e-saved"); if(sv) sv.style.visibility = has ? "hidden" : "";   /* v6.65: 「✓ 記録しました」は、次を打ち始めたら見えなくする(場所は空けたまま=画面をずらさない) */
 }
 /* 「軍資金から出す」「貯金から出す」を開いておくか。**この端末で覚える**(同期・バックアップには入れない。画面の好みは端末ごと) */
 const ENT_FOLD_LS="tally:entFold";
@@ -12312,7 +12344,10 @@ function viewEntry(){
     if(rcptKey()) cells.push('<label class="imp" style="cursor:pointer" aria-label="写真・PDFから読む">'+IMP_ICONS.cam+'<span>写真・PDF</span>'+
       '<input type="file" id="e-photo" accept="image/*,application/pdf,.pdf" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none"></label>');
     cells.push('<button class="imp" style="cursor:pointer" data-a="popen" aria-label="レシートを取り込む(コピーした文字や画像を貼り付ける)">'+IMP_ICONS.clip+'<span>貼り付け</span></button>');
-    if(amzUrl()) cells.push('<button class="imp" style="cursor:pointer" data-a="amzget" aria-label="Amazonのメールから取り込む">'+IMP_ICONS.mail+'<span>Amazon</span></button>');
+    /* v6.65: **Amazon のマスは、起動した時の自動の確認(v6.59)を切っている間だけ出す**。ユーザー(11/14 03:40)「メールの自動検証機能がついた今Amazonのボタンってもはや不用では？」
+       ——自動の確認が家計簿のタブの板で知らせ(「Amazonの発送メール N件」)、押した先の画面に「Amazonのメールから取り込む」があるので、ここのは二つ目の入口になっていた。
+       切っている間は自動では確かめない(板が出るのは、手で確かめた時だけ)ので、自分で押して取り込む入口としてここに残す。押した時の動き(amzImport)は同じ */
+    if(amzUrl() && !dbtAutoOn()) cells.push('<button class="imp" style="cursor:pointer" data-a="amzget" aria-label="Amazonのメールから取り込む">'+IMP_ICONS.mail+'<span>Amazon</span></button>');
     const rBtns = '<div class="card imps" style="margin-bottom:12px;grid-template-columns:repeat('+cells.length+',1fr)">'+
       (cells.length>1 ? cells.join("") : cells[0].replace('class="imp"','class="imp one"').replace('<span>貼り付け</span>','<span>レシートを貼り付け</span>'))+'</div>';
     /* v6.64: 1枚のレシートを読んでフォームに入れた後は、入口の代わりに**何を読んだか**(店・品数・合計)を出す。
@@ -12376,16 +12411,34 @@ function viewEntry(){
   /* ---------- ③ 中身 ---------- */
   const body = isTr ? trHtml : (transHtml + (composerHtml || (fieldsHtml + extraHtml)));
   /* 上の見出し。タブの時は、ほかのタブと同じ形(大きい題・右に同期の丸)。左に「クリア」(書きかけがある時だけ見える) */
+  const hasDraft = entryHasDraft(f, UI.entryDraftDay);
+  /* v6.65: 保存した直後の1行を出す時は、見出しとの間を詰める(12 → 2px。1行の下は 6px)。**1行ぶんで増える高さは 13px だけ**にする
+     (次を打ち始めて1行が見えなくなった後も、場所は空けたままなので、空きが目立たない大きさに) */
+  const savedOn = !!(tabbed && UI.entrySaved && UI.entrySaved.head);
   const hdr = tabbed
     ? tabHdrHtml("記録", '<button class="navbtn" id="e-clear" data-a="eclear" aria-label="書きかけを消す" style="position:absolute;left:0;top:50%;transform:translateY(-50%);white-space:nowrap;padding:12px 10px 12px 4px'+
-        (entryHasDraft(f, UI.entryDraftDay)?'':';visibility:hidden')+'">クリア</button>', 12)
+        (hasDraft?'':';visibility:hidden')+'">クリア</button>', savedOn ? 2 : 12)
     : '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
       '<div style="font-size:14px;font-weight:700">'+(!isNew?"記録を編集":isTr?"振替":"記録を追加")+'</div>'+
       /* v4.39: 削除はヘッダ右端に統一(ユーザー設計)。**滅多に触らない操作のために最下部まで
          スクロールさせるのは無駄**で、位置が画面ごとに違うのも覚える対象を増やす。
          .navbtn と同じ見た目にして、色だけ赤にする */
       (!isNew?'<button class="navbtn" style="color:var(--red);font-weight:700" data-a="edel">削除</button>':'<div style="width:44px"></div>')+'</div>';
-  return hdr+
+  /* v6.65: タブの記録で保存した直後の1行(何を記録したか)。字の左端は板の字と同じ33px。次を打ち始めたら見えなくする(entryPaint。場所は空けたまま)。
+     横に3つ: 見出し(緑)・中身(日付と店・品名。長ければ右を「…」で切る)・金額(切らない)。
+     .nw は念のため(.muted の子は親の nowrap を打ち消す=v6.54 の注意)。はじめの形(灰色の字1つに、長い中身をそのまま入れた形)では、これが無くて3行に折れた。
+     今の形は、切る箱そのものが .ellip なので、.nw が無くても折れない。
+     **3つとも同じ書体(.mono)・同じ大きさ・同じ行の高さ(17px を明示)にして、縦は真ん中でそろえる**(.row の既定)。字の下の線でそろえる指定(baseline)は使わない:
+     「…」で切る箱(overflow:hidden)の下の線の取り方がブラウザで違うことがあり、実機(Safari)で確かめられないので、箱の形をそろえて、どのブラウザでも同じ高さになる形にした。
+     行の高さを明示しないと、和文の入った箱(17px)と数字だけの箱(15px)で高さが変わり、真ん中でそろえた時に金額だけ 1px 下がった(Chromium で測って分かった) */
+  const SVD=UI.entrySaved;
+  const savedLine = savedOn
+    ? '<div class="row nw" id="e-saved" style="font-size:12px;line-height:17px;margin:0 17px 6px'+(hasDraft?';visibility:hidden':'')+'">'+
+      '<span class="mono teal" style="flex:none;font-weight:600">✓ '+esc(SVD.head)+'</span>'+
+      (SVD.body ? '<span class="ellip mono muted" style="min-width:0;margin-left:8px">'+esc(SVD.body)+'</span>' : '')+
+      (SVD.amt ? '<span class="mono muted" style="flex:none;margin-left:6px">'+esc(SVD.amt)+'</span>' : '')+'</div>'
+    : '';
+  return hdr+savedLine+
     /* v6.18: 銀行の明細から開いた時は、その行を上に出す(記録には書かない。フォームを開き直すと消える) */
     (f.bankHint ? '<div class="card" style="margin-bottom:12px;padding:9px 16px;border-color:var(--amber)">'+
       '<div class="muted" style="font-size:11px;margin-bottom:2px">'+(f.bankHintSrc==="mail" ? 'デビットの通知' : '銀行の明細')+'</div><div class="mono" style="font-size:12px">'+esc(f.bankHint)+'</div></div>' : '')+
@@ -12450,8 +12503,7 @@ function bindEntry(){
       /* 書きかけを捨てる(前は「戻る」がこの役だった)。中身がある時だけ確かめる。読み取り中なら止める */
       else if(a==="eclear"){
         if(entryHasDraft(f, UI.entryDraftDay) && !confirm("書きかけの内容を消しますか?")) return;
-        rcptCancel(f); UI.pasteOpen=false; UI.pasteText=""; UI.chipMore=false;
-        UI.entryDraft=null; entryOpenTab(); render();
+        entryFresh(); render();   /* v6.65: 保存した後と同じ関数(読み取りを止め、貼り付け欄も閉じて、今日の日付の新しい形に) */
       }
       /* 「軍資金から出す」「貯金から出す」を開く/閉じる(この端末が覚える) */
       else if(a==="efold"){ entFoldSet(v, !entFold(v)); render(); }
@@ -12633,8 +12685,8 @@ function bindEntry(){
           }
           if(!doTransfer(fa.id, ta.id, amt, f.date)) return;
           save(); toast(fa.name+" → "+ta.name+" ¥"+amt.toLocaleString("ja-JP"));
-          if(entryTabbed()) UI.entryDraft=null;   /* v6.64: 保存したので、書きかけは空に */
-          UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); return;
+          /* v6.64: タブの記録なら書きかけは空に。v6.65: 保存した後も記録のタブに残る(戻る先のある振替は、今までどおり戻る) */
+          entryAfterSave("振り替えました", fa.name+" → "+ta.name, "¥"+amt.toLocaleString("ja-JP"), true); return;
         }
         /* v3.31: 交通コンポーザの合成(新規のみ)。表記規約を構造で強制し、データは従来の文字列規約に落とす */
         if(f.type==="expense" && f.tmode && UI.editEntryId===null){
@@ -12732,9 +12784,11 @@ function bindEntry(){
             entrySvInSync(_x, inPot, xa, f.date, wal); setIn(_x);   /* v5.95: 入金も行ごと */
           });
         }
-        /* v6.64: タブの記録を保存したら、書きかけは空に(次に「記録」を押すと新しい形)。保存した後は今までどおり家計簿へ(入ったことが一覧で見える) */
-        if(entryTabbed()) UI.entryDraft=null;
-        save(); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render();
+        /* v6.64: タブの記録を保存したら、書きかけは空に。v6.65: **保存した後も記録のタブに残り**、何を記録したかを上に1行出す(entryAfterSave)。
+           1行の中身は、保存した行の数と合計(entryTotals = 上の要約・下の合計と同じ数え方)。編集・戻る先のある記録は、今までどおり戻る */
+        { const tt=entryTotals(f);
+          const body=(String(f.date||"").slice(5).replace("-","/")+" "+[store, tt.n>1 ? tt.n+"品" : item].filter(Boolean).join("・")).trim();
+          save(); entryAfterSave("記録しました", body, (f.type==="income"?"+":"")+"¥"+tt.sum.toLocaleString("ja-JP"), true); }
       }
     };
   });
