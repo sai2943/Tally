@@ -417,7 +417,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.59 (localStorage保存・完全オフライン)
+   Tally 6.60 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -897,14 +897,21 @@ function saveLocal(){
   localStorage.setItem(KEY, JSON.stringify(S));
   const d=new Date();
   LAST_LOCAL_SAVE = ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)+":"+("0"+d.getSeconds()).slice(-2);
-  document.querySelectorAll(".savets").forEach(el=>{ el.textContent=LAST_LOCAL_SAVE; });
+  document.querySelectorAll(".savets").forEach(el=>{ el.textContent=" "+LAST_LOCAL_SAVE; });
+}
+/* v6.60: 下の行は1か所で作る(全画面で同じ文言=v3.94)。自動保存の時刻・メール照合の状態(dbtStatusInner)・版。
+   起動してまだ保存していない時は時刻を出さない(以前は「—」で、何のことか分かりにくかった)。
+   時刻とメール照合の部分は、描き直さずに中身だけ差し替える(.savets / .dbtst) */
+function footHtml(pad){
+  return '<div class="muted" style="font-size:11px;text-align:center;padding:'+pad+'">✓ 自動保存<span class="savets mono">'+(LAST_LOCAL_SAVE ? " "+LAST_LOCAL_SAVE : "")+'</span>'+
+    '<span class="dbtst">'+dbtStatusInner()+'</span> ・ v'+APP_VERSION+'</div>';
 }
 /* v3.94: 保存インジケーターは**全画面で同一の文言**に統一(ユーザー指摘)。
    画面によって出たり出なかったり書式が違うと、時刻を出している意味自体が失われる。
    作業中(スコア表・記帳・各台帳)が最も不安な瞬間なので、そこにこそ常時出す。
    navbar版と同じ短形+バージョン。挿入は_renderBodyが一元的に行うので、
    **view関数の中でこれを呼ばないこと**(二重表示になる) */
-const saveIndicatorHtml = () => '<div class="muted" style="font-size:11px;text-align:center;padding:10px 0 2px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
+const saveIndicatorHtml = () => footHtml("10px 0 2px");
 /* ---------- 自動スナップショット(ローカル3世代) ----------
    起動時(日次)・復元前・同期上書き前に全データを退避。誤操作からの復旧用 */
 const SNAP_KEY = KEY + ":snaps";
@@ -1207,7 +1214,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.59";
+const APP_VERSION = "6.60";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1235,7 +1242,7 @@ function navHtml(){
      常時見えるのはバージョンの方が実用的——更新が反映されたかを画面を移らずに確認できる。
      v3.94: saveIndicatorHtml()も同じ文言に統一したため、オフライン保証の断言は
      文言でなくバックアップ画面の説明が担う(同じ行を2つの書式で持たない) */
-  return tabBar() + '<div class="muted" style="font-size:11px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
+  return tabBar() + footHtml("4px 0 1px");
 }
 /* v3.95: **navbarの無い画面に「戻る」バーを出す**(ユーザー設計・案B)。
    従来は戻るがヘッダー左上にしか無く、下へスクロールすると一度上まで戻らないと画面を出られなかった。
@@ -1316,7 +1323,7 @@ function subNavHtml(){
     extra.map(x=>sep+'<button data-nav="app:'+esc(x[0])+'" style="flex:1;'+(x[2]||'')+'"><span>'+x[1]+'</span></button>').join("")+
     (withTr?sep+'<button data-nav="transfer" aria-label="振替する" style="flex:1;color:var(--teal)"><span style="font-weight:700">振替</span></button>':'')+
     '</div>'+
-    '<div class="muted" style="font-size:11px;text-align:center;padding:4px 0 1px">✓ 自動保存 <span class="savets mono">'+(LAST_LOCAL_SAVE||"—")+'</span> ・ v'+APP_VERSION+'</div>';
+    footHtml("4px 0 1px");
 }
 /* 戻る先の判定は各画面の既存ハンドラに任せ、**ヘッダーの戻るボタンをclick()するだけ**にする。
    属性名は画面ごとにdata-a/wa/sa/mt/lk/iv/fa/bu/baとバラバラだが、全て.navbtnで先頭が「‹」。
@@ -10718,7 +10725,7 @@ function bindRcptSet(){
   /* v6.58: いつのメールから見るか(日付を選んだら、その場で覚える) */
   { const af=document.getElementById("rs-amzfrom"); if(af) af.onchange = e=>{
       const d=normDate(e && e.target && e.target.value);
-      if(d){ rcptLS(AMZ_FROM_LS, d); UI.amzTest=null; UI.dbt=null; UI.dbtAt=0; if(UI.bm && UI.bm.mail) UI.bm=null; }   /* v6.59: 覚えている突き合わせの結果は前の範囲のものなので捨てる */
+      if(d){ rcptLS(AMZ_FROM_LS, d); UI.amzTest=null; UI.dbt=null; UI.dbtAt=0; UI.dbtLast=null; if(UI.bm && UI.bm.mail) UI.bm=null; }   /* v6.59: 覚えている突き合わせの結果は前の範囲のものなので捨てる */
       render(); if(d) toast(String(amzFrom()).slice(5).replace("-","/")+" からのメールを見ます");
     }; }
 }
@@ -10799,7 +10806,14 @@ async function amzFetch(url, from, ctl){
   if(!res.ok) return {ok:false, msg:"Googleに置いたプログラムから返事がありません("+res.status+")。\nデプロイをやり直して、URLを貼り直してください。"};
   try{ js=await res.json(); }catch(e){ js=null; }
   if(!js || typeof js!=="object") return {ok:false, msg:"プログラムの返事が読めません。\nデプロイの「アクセスできるユーザー」が「全員」になっているか確かめてください(ログインの画面が返ってきているかもしれません)。"};
-  if(js.ok!==true) return {ok:false, msg:"プログラムの中で失敗しました。\n"+String(js.err||"(理由が返ってきませんでした)").slice(0,300)};
+  if(js.ok!==true){
+    const raw=String(js.err||"");
+    /* v6.60: Gmail を読む回数の上限(2026-05 から 1人あたり 6,000単位/分。本文を開くと1通 60〜120)。英語のままだと何をすればいいか分からない */
+    if(/quota exceeded|rate ?limit|too many/i.test(raw))
+      return {ok:false, msg:"Gmailを読む回数の上限に当たりました"+(/one day|per day/i.test(raw) ? "(1日あたり)。\n明日になってから、もう一度試してください。"
+        : /per minute|rate ?limit/i.test(raw) ? "(1分あたり)。\n1分ほど待ってから、もう一度試してください。" : "。\n少し時間をおいてから、もう一度試してください。")};
+    return {ok:false, msg:"プログラムの中で失敗しました。\n"+(raw||"(理由が返ってきませんでした)").slice(0,300)};
+  }
   /* v6.59: 版2のプログラムは、ソニー銀行のデビットの通知(debits)も返す。版1(debits が無い)のままでも Amazon の取り込みは動く——hasDebits で見分ける */
   return {ok:true, v:(Number(js.v)||0), mails:amzClean(js.mails), unread:amzCleanUnread(js.unread),
     hasDebits:Array.isArray(js.debits), debits:dbtClean(js.debits), dunread:amzCleanUnread(js.dunread)};
@@ -10948,8 +10962,8 @@ async function amzRun(f, t, url){
   const got=await amzFetch(url, amzFrom(), t.ctl);
   if(timer) clearTimeout(timer);
   if(left()) return;
-  if(!got.ok){ UI.rcptBusy=null; render(); alert(t.timeout ? "時間がかかりすぎたので止めました。少し待ってから、もう一度。" : got.msg); return; }
-  try{ dbtStore(got); UI.dbtAt=Date.now(); }catch(e){ console.error(e); }   /* v6.59: 同じ返事にデビットの通知も入っている(取り込みの後で突き合わせの画面に戻った時、新しい中身になる) */
+  if(!got.ok){ dbtMark(got); UI.rcptBusy=null; render(); alert(t.timeout ? "時間がかかりすぎたので止めました。少し待ってから、もう一度。" : got.msg); return; }
+  try{ dbtStore(got); UI.dbtAt=Date.now(); dbtMark(got); }catch(e){ console.error(e); }   /* v6.59: 同じ返事にデビットの通知も入っている(取り込みの後で突き合わせの画面に戻った時、新しい中身になる) */
   const md=d=>String(d||"").slice(5).replace("-","/"), yen=v=>"¥"+num(v).toLocaleString("ja-JP");
   const tri=amzTriage(got.mails), store=amzStore(), seen0=amzSeen();
   const unread=got.unread.filter(u=>!seen0[u.id] && u.date>=amzFrom());
@@ -11016,8 +11030,8 @@ async function amzTest(){
     UI.amzTest={ok:true, old:!got.hasDebits, msg:"つながりました。\n"+md+" からのメール: 発送 "+sh+"通・デジタル "+(got.mails.length-sh)+"通"+(got.unread.length ? "・読めない "+got.unread.length+"通" : "")+
       (got.hasDebits ? "\nデビットの通知 "+got.debits.length+"通"+(got.dunread.length ? "・読めない "+got.dunread.length+"通" : "") : "")+
       "\n記録の画面から取り込めます。"};
-    try{ dbtStore(got); UI.dbtAt=Date.now(); }catch(e){ console.error(e); }
-  } else UI.amzTest={ok:false, msg:got.msg};
+    try{ dbtStore(got); UI.dbtAt=Date.now(); dbtMark(got); }catch(e){ console.error(e); }
+  } else { UI.amzTest={ok:false, msg:got.msg}; dbtMark(got); }
   if(UI.screen==="rcptset") render();
 }
 /* ========================= v6.59 デビットの通知メールと突き合わせる =========================
@@ -11098,6 +11112,28 @@ function dbtState(){
   return d._val;
 }
 function dbtAutoOn(){ return rcptLS(DBT_AUTO_LS)!=="0"; }
+/* v6.60 最後に確かめた結果(下の行に出す)。持つのは時刻と成否だけ(通知の中身は持たない)・メモリだけ(保存も同期もしない)。
+   ユーザー:「起動時に照合して成功してるか確認が出来ないのも問題」——板は言うことがある時しか出ないので、何も出ていない時に
+   「全部記録済み」なのか「動いていない・失敗した」のかが分からなかった */
+function dbtMark(got){
+  UI.dbtLast = (got && got.ok) ? {at:Date.now(), ok:true, old:!got.hasDebits}
+    : {at:Date.now(), ok:false, off:!!(got && got.off), msg:String((got && got.msg) || "")};
+  dbtStatusPaint();
+}
+/* 下の行の「メール照合」の部分。URLが無ければ出さない。まだ一度も確かめていなければ出さない(起動して数秒の間・自動がオフ) */
+function dbtStatusInner(){
+  if(!amzUrl()) return "";
+  const L=UI.dbtLast, hm=t=>{ const d=new Date(t); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); };
+  let s="", c="";
+  if(UI.dbtRun) s="メール照合中…";
+  else if(!L) return "";
+  else if(L.off) s="メール照合 オフライン";
+  else if(!L.ok){ s='メール照合 <span class="mono">'+hm(L.at)+'</span> 失敗'; c="amber"; }
+  else if(L.old){ s="メール照合 要更新"; c="amber"; }   /* Googleに置いたプログラムが版1(デビットの通知を返さない) */
+  else s='✓ メール照合 <span class="mono">'+hm(L.at)+'</span>';
+  return ' ・ <span'+(c ? ' class="'+c+'"' : '')+'>'+s+'</span>';
+}
+function dbtStatusPaint(){ try{ document.querySelectorAll(".dbtst").forEach(el=>{ el.innerHTML=dbtStatusInner(); }); }catch(e){} }
 /* 結果を覚える(UI だけ)。突き合わせの画面を開いていれば、その画面の中身も新しい結果に替える */
 function dbtStore(got){
   const was=!!(UI.bm && UI.bm.mail);
@@ -11118,23 +11154,25 @@ function dbtRepaint(){
 async function dbtCheck(manual){
   const url=amzUrl(); if(!url) return;
   if(UI.dbtRun){ if(manual && !UI.dbtRun.manual){ UI.dbtRun.manual=true; UI.dbtErr=""; } return; }
-  if(typeof navigator!=="undefined" && navigator.onLine===false){ if(manual){ UI.dbtErr="オフラインです。電波のある所で、もう一度。"; dbtRepaint(); } return; }
+  if(typeof navigator!=="undefined" && navigator.onLine===false){ if(manual){ UI.dbtErr="オフラインです。電波のある所で、もう一度。"; dbtMark({ok:false, off:true}); dbtRepaint(); } return; }
   const ctl=(typeof AbortController==="function") ? new AbortController() : null, timer=ctl ? setTimeout(()=>ctl.abort(), 45000) : 0;
   const run=UI.dbtRun={manual:!!manual}; UI.dbtAt=Date.now();
+  dbtStatusPaint();
   if(run.manual){ UI.dbtErr=""; dbtRepaint(); }
   let got=null;
   try{ got=await amzFetch(url, amzFrom(), ctl); }catch(e){ got={ok:false, msg:"確かめている途中で失敗しました。もう一度試してください。"}; }
   if(timer) clearTimeout(timer);
   if(UI.dbtRun===run) UI.dbtRun=null;
-  try{ if(got.ok) dbtStore(got); else if(run.manual) UI.dbtErr=got.msg; }
-  catch(e){ if(run.manual) UI.dbtErr="メールの中身を読めませんでした。"; }
+  try{ if(got.ok){ dbtStore(got); dbtMark(got); } else { if(run.manual) UI.dbtErr=got.msg; dbtMark(got); } }
+  catch(e){ const m="メールの中身を読めませんでした。"; if(run.manual) UI.dbtErr=m; dbtMark({ok:false, msg:m}); }
   dbtRepaint();
 }
 /* 裏で確かめる(起動した時・しばらくして戻った時)。確かめ始めたら true */
 function dbtAuto(){
   if(!amzUrl() || !dbtAutoOn() || UI.dbtRun) return false;
-  if(typeof navigator!=="undefined" && navigator.onLine===false) return false;
   if(UI.dbtAt && Date.now()-UI.dbtAt < DBT_EVERY) return false;
+  /* 確かめる時が来ているのに電波が無い: 下の行に「オフライン」と出す(次にアプリに戻った時に、また確かめる) */
+  if(typeof navigator!=="undefined" && navigator.onLine===false){ dbtMark({ok:false, off:true}); return false; }
   dbtCheck(false);
   return true;
 }
@@ -11143,7 +11181,7 @@ function dbtOpen(){
   const have=!!(UI.dbt && UI.dbt.bm);
   UI.bm = have ? UI.dbt.bm : {mail:true, walId:String(rcptBank().id||"")};
   UI.bmOpen={}; UI.screen="bankmatch"; render();
-  if(!have || Date.now()-(UI.dbt.bm.at||0) > DBT_EVERY) dbtCheck(true);
+  if(!have || Date.now()-(UI.dbt.bm.at||0) > DBT_EVERY || (UI.dbtLast && !UI.dbtLast.ok)) dbtCheck(true);   /* 前の回が失敗していたら、開いた時に確かめ直す(理由が画面に出る) */
 }
 function dbtInfo(){
   return "ソニー銀行のデビット(Sony Bank WALLET)で払うと届く<b>「ご利用のお知らせ」</b>のメールと、Tallyの記録を突き合わせて、<b>まだ記録していない支払い</b>を見つけます。<br><br>"+
@@ -11288,7 +11326,7 @@ function amzSetHtml(){
     "<b>起動した時に自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏でメールを確かめます(10分に1回まで)。確かめるだけで、記録を足したり直したりはしません。電波が無い時は何もしません。<br><br>"+
     "<b>はじめに一度だけ</b>(PCかタブレットのブラウザが楽です)<br>"+
     "① script.google.com を開き、「新しいプロジェクト」<br>"+
-    "② 下の「プログラムをコピー」を押し、エディタの中身を全部消して貼る<br>"+
+    "② 下の「プログラムをコピー」を押し、エディタの中の3行の雛形の下の空いた所を押して、改行してから貼る(雛形の { } の中には貼らない。雛形は残っていても動きます)<br>"+
     "③ 左の歯車(プロジェクトの設定)で、「appsscript.json」マニフェスト ファイルをエディタで表示する、に印を付ける<br>"+
     "④ 左の &lt;&gt;(エディタ)に戻って appsscript.json を開き、中身を「設定ファイルをコピー」で貼り替えて、保存する(時計のマークの「履歴」の画面では直せません)<br>"+
     "⑤ コード.gs を開き、上の並びの「doGet ▼」と出ている所を押して test を選び、その左の「実行」を押す → 権限を確認する(「詳細」→「安全ではないページに移動」→ 許可。求められるのは<b>メールを読む権限だけ</b>です)→ 下の実行ログに「読めたメール N通」「デビットの通知 N通」と出れば成功<br>"+
@@ -11296,8 +11334,9 @@ function amzSetHtml(){
     "⑦ 出てきた「ウェブアプリ」のURL(…/exec で終わる)をコピーして、ここに貼って保存する<br><br>"+
     "<b>プログラムを新しくする時</b>(Tallyの更新で、Google側のプログラムも変わった時)<br>"+
     "① 下の「プログラムをコピー」を押す<br>"+
-    "② script.google.com でプロジェクトを開き、コード.gs の中身を全部消して貼り、保存する<br>"+
-    "③ 右上の「デプロイ」→「デプロイを管理」→ 鉛筆のマーク →「バージョン」を「新バージョン」にして「デプロイ」<br>"+
+    "② script.google.com でプロジェクトを開き、左の「ファイル」の コード.gs を「⋮」→「削除」(iPhoneでは全部を選んで消すのが難しいので、ファイルごと消します。公開のURLは変わりません)<br>"+
+    "③「ファイル」の「＋」→「スクリプト」で作り直す(名前は「コード」)。中の3行の雛形の下の空いた所を押し、改行してから貼って、保存する(雛形の { } の中には貼らない)<br>"+
+    "④ 右上の「デプロイ」→「デプロイを管理」→ 鉛筆のマーク →「バージョン」を「新バージョン」にして「デプロイ」<br>"+
     "URLは変わらないので、貼り直しは要りません。権限の確認も、もう一度は出ません(読むだけのまま)。<br><br>"+
     "<b>URLは秘密にしてください</b>: 知っている人は、Amazonで買った物と金額、デビットで払った店と金額の一覧を見られます(名前・住所・注文番号・口座の残高・メールの本文は返しません)。チャットやメモに貼らないでください。置き場所はこの端末の中だけで、同期・バックアップには入りません。漏れたと思ったら、Apps Script の「デプロイを管理」でアーカイブすれば止まります。<br><br>"+
     "<b>金額</b>: 発送メールの「合計」(割引を引いた後の、その発送で引き落とされる額)をそのまま使います。Kindleなどでポイントを使った時は、メールの金額と引き落としが違うことがあります(Amazonのメールにそう書いてあります)。<br><br>"+
@@ -11335,7 +11374,7 @@ function amzSetAct(a, v){
   if(a==="dbtauto"){ rcptLS(DBT_AUTO_LS, dbtAutoOn() ? "0" : null); render(); return true; }   /* v6.59: 既定は入(印が無い)。切った時だけ "0" を置く */
   if(a==="amzdel"){
     if(!confirm("この端末からAmazonのメールのURLを消しますか?\n\n「Amazonのメールから取り込む」が使えなくなります(Googleに置いたプログラムは残ります。止める時は、Apps Script の「デプロイを管理」でアーカイブしてください)。")) return true;
-    rcptLS(AMZ_URL_LS, null); UI.amzTest=null; UI.dbt=null; UI.dbtErr=""; if(UI.bm && UI.bm.mail) UI.bm=null; render(); toast("消しました"); return true;
+    rcptLS(AMZ_URL_LS, null); UI.amzTest=null; UI.dbt=null; UI.dbtErr=""; UI.dbtLast=null; if(UI.bm && UI.bm.mail) UI.bm=null; render(); toast("消しました"); return true;
   }
   if(a==="amztest"){ amzTest(); return true; }
   if(a==="amzgas" || a==="amzjson"){   /* 「プログラムをコピー」「設定ファイルをコピー」 */
