@@ -417,7 +417,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.61 (localStorage保存・完全オフライン)
+   Tally 6.62 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1214,7 +1214,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.61";
+const APP_VERSION = "6.62";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -10801,6 +10801,12 @@ function amzCleanUnread(a){
 /* プログラムを呼ぶ。失敗は「次に何をすればいいか」まで言う */
 /* v6.61 Google に置いたプログラムの版。これより古いと下の行に「要更新」、設定に「古い版です」 */
 const AMZ_GAS_V=3;
+/* v6.62 デビットの通知は14日前から読む(「いつのメールから」の方が新しければ、その日から)。
+   Google 側では通知を1通ずつ読む(一覧の書き出しでは読めなかった=実機で「一覧で 0・1通ずつ 29」)ので、1通 20 かかる。
+   「いつのメールから」のままだと通知が増え続け(1日 6〜7通)、1か月ほどで1回 4,000 を超える(上限は1分に 6,000)。
+   ユーザー(11/13):「お願いします」(14日に絞る案に)。14日より古い記録漏れは、一覧にも「差し引いた残高」にも入らない */
+const DBT_DAYS=14;
+function dbtFrom(from){ const f=from || amzFrom(), lo=amzDay(todayStr(), -DBT_DAYS); return f>lo ? f : lo; }
 /* もう取り込んだ・判断の済んだ Amazon のメール(amzTriage が飛ばすもの)。Google 側で開かないように渡す(1通開くと Gmail の読み取りを 60 使う)。
    「いつから」より後のものだけ・新しい順に200まで(URL を長くしすぎない) */
 function amzSkipIds(from){
@@ -10813,8 +10819,8 @@ function amzSkipIds(from){
 }
 async function amzFetch(url, from, ctl){
   let res=null, js=null;
-  const skip=amzSkipIds(from);
-  try{ res=await fetch(url+"?from="+encodeURIComponent(from)+(skip.length ? "&skip="+skip.join(",") : ""), {method:"GET", credentials:"omit", redirect:"follow", cache:"no-store", signal:(ctl ? ctl.signal : undefined)}); }
+  const skip=amzSkipIds(from), dfrom=dbtFrom(from);
+  try{ res=await fetch(url+"?from="+encodeURIComponent(from)+(dfrom>from ? "&dfrom="+dfrom : "")+(skip.length ? "&skip="+skip.join(",") : ""), {method:"GET", credentials:"omit", redirect:"follow", cache:"no-store", signal:(ctl ? ctl.signal : undefined)}); }
   catch(e){ return {ok:false, msg:"Googleに置いたプログラムにつながりませんでした。\n電波が弱いか、公開の設定が違うかもしれません(デプロイの「アクセスできるユーザー」は「全員」)。"}; }
   if(!res.ok) return {ok:false, msg:"Googleに置いたプログラムから返事がありません("+res.status+")。\nデプロイをやり直して、URLを貼り直してください。"};
   try{ js=await res.json(); }catch(e){ js=null; }
@@ -10837,7 +10843,7 @@ async function amzFetch(url, from, ctl){
   const n=x=>{ const v=Number(x); return (isFinite(v) && v>=0 && v<1e7) ? Math.round(v) : 0; };
   const st=(js.dstat && typeof js.dstat==="object") ? {n:n(js.dstat.n), tsnip:n(js.dstat.tsnip), msnip:n(js.dstat.msnip), full:n(js.dstat.full), hidden:n(js.dstat.hidden)} : null;
   return {ok:true, v:(Number(js.v)||0), mails:amzClean(js.mails), unread:amzCleanUnread(js.unread),
-    hasDebits:Array.isArray(js.debits), debits:dbtClean(js.debits), dunread:amzCleanUnread(js.dunread), stat:st, used:(js.used==null ? null : n(js.used))};
+    hasDebits:Array.isArray(js.debits), debits:dbtClean(js.debits), dunread:amzCleanUnread(js.dunread), stat:st, used:(js.used==null ? null : n(js.used)), dfrom:dfrom};
 }
 /* 前から付けてあった記録の中から、このメールの分を探す。金額がぴったりの1件(日付が近い順)、無ければ、その日のAmazonの記録の合計がぴったりの日 */
 function amzMatch(m, pool, claimed){
@@ -11050,7 +11056,7 @@ async function amzTest(){
     const sh=got.mails.filter(m=>m.kind==="ship").length, md=String(amzFrom()).slice(5).replace("-","/");
     const st=got.stat;
     UI.amzTest={ok:true, old:!got.hasDebits, v:got.v, msg:"つながりました。\n"+md+" からの、まだ取り込んでいないメール: 発送 "+sh+"通・デジタル "+(got.mails.length-sh)+"通"+(got.unread.length ? "・読めない "+got.unread.length+"通" : "")+
-      (got.hasDebits ? "\nデビットの通知 "+got.debits.length+"通"+(got.dunread.length ? "・読めない "+got.dunread.length+"通" : "")+
+      (got.hasDebits ? "\n"+String(got.dfrom).slice(5).replace("-","/")+" からのデビットの通知 "+got.debits.filter(d=>(Number(got.v)||0)>=AMZ_GAS_V || d.date>=got.dfrom).length+"通"+(got.dunread.length ? "・読めない "+got.dunread.length+"通" : "")+
         (st ? "(一覧で "+st.tsnip+"・1通ずつ "+st.msnip+"・本文 "+st.full+")" : "") : "")+
       (got.used!=null ? "\nGmailの読み取り 約 "+got.used.toLocaleString("ja-JP")+"(上限は1分に 6,000)" : "")+
       "\n記録の画面から取り込めます。"};
@@ -11092,13 +11098,16 @@ function dbtClean(a){
 }
 /* 通知を、銀行の明細の行と同じ形にする(amt は銀行から見た向き=支払いはマイナス・払戻はプラス)。先の日付の通知は使わない(時計のずれ) */
 function dbtBm(got){
-  const W=String(rcptBank().id||""), from=amzFrom(), today=todayStr();
-  const rows=(got.debits||[]).filter(d=>d.date<=today).map((d,i)=>{
+  const W=String(rcptBank().id||""), from=got.dfrom || dbtFrom(), today=todayStr();
+  /* v6.62 通知は14日前から(dbtFrom)。版3は dfrom の日から届いた通知だけを返す(利用日がその前日のものもある=期間の初めを広げる。v6.59 と同じ)。
+     版2以下は dfrom を見ないので、ここで利用日で外す */
+  const inWin=d=>(Number(got.v)||0)>=AMZ_GAS_V || d.date>=from;
+  const rows=(got.debits||[]).filter(d=>inWin(d) && d.date<=today).map((d,i)=>{
     const merch=bmNorm(d.shop);
     return {i:i, id:d.id, date:d.date, amt:-d.amount, bal:null, desc:"Visaデビット "+merch, merch:merch, appr:((d.appr && !/^0+$/.test(d.appr)) ? d.appr : ""), memo:""};
   });
   return {mail:true, walId:W, rows:rows, from:(rows.length && rows[0].date<from ? rows[0].date : from), to:today, src:"メール",
-    mails:(got.mails||[]), dunread:(got.dunread||[]), old:!got.hasDebits, v:(Number(got.v)||0), at:Date.now()};
+    mails:(got.mails||[]), dunread:(got.dunread||[]).filter(inWin), old:!got.hasDebits, v:(Number(got.v)||0), at:Date.now()};
 }
 function dbtHide(){ let o=null; try{ o=JSON.parse(rcptLS(DBT_HIDE_LS)||"{}"); }catch(e){ o=null; } return (o && typeof o==="object" && !Array.isArray(o)) ? o : {}; }
 function dbtHideSet(r, on){
@@ -11211,7 +11220,7 @@ function dbtInfo(){
   return "ソニー銀行のデビット(Sony Bank WALLET)で払うと届く<b>「ご利用のお知らせ」</b>のメールと、Tallyの記録を突き合わせて、<b>まだ記録していない支払い</b>を見つけます。<br><br>"+
     "<b>突き合わせ方</b>: 銀行の明細の突き合わせと同じです。金額が同じで、日付が近いもの(通知の日付がTallyより3日早い〜10日遅い)を同じ取引とみなします。1枚のレシートを品目ごとに分けて記録していても、同じ日・同じ店の合計で突き合わせます。一致した記録には、照合の✓が付きます。<br><br>"+
     "<b>差し引いた残高</b> = Tallyの残高から、まだ記録していないデビットの支払いを引いた額です。銀行のアプリの残高がこの額なら、ずれの原因はこの画面に出ている支払いだけです。違う時は、デビット以外(ATM・振込・口座振替)か、見ている期間より前の分です。その時は、銀行の明細(CSV)の突き合わせで調べられます。<br><br>"+
-    "<b>見ている期間</b>: 管理 → レシートの読み取り →「いつのメールから」の日から、今日まで。<br><br>"+
+    "<b>見ている期間</b>: デビットの通知は、14日前から今日まで(「いつのメールから」の方が新しければ、その日から)。それより古い記録漏れは、この画面にも「差し引いた残高」にも入りません(Gmailには読む量の上限があり、通知は毎日増えるので、読む分を絞っています)。Amazonの発送メールは「いつのメールから」の日から。<br><br>"+
     "<b>自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏で確かめます(10分に1回まで)。記録していない支払いがあった時だけ、家計簿のタブに「デビットの未記帳」が出ます。切るのは、管理 → レシートの読み取り。<br><br>"+
     "通知のメールの中身は、Tallyに保存しません。";
 }
@@ -11362,7 +11371,7 @@ function amzSetHtml(){
     "③「ファイル」の「＋」→「スクリプト」で作り直す(名前は「コード」)。中の3行の雛形の下の空いた所を押し、改行してから貼って、保存する(雛形の { } の中には貼らない)<br>"+
     "④ 右上の「デプロイ」→「デプロイを管理」→ 鉛筆のマーク →「バージョン」を「新バージョン」にして「デプロイ」<br>"+
     "URLは変わらないので、貼り直しは要りません。権限の確認も、もう一度は出ません(読むだけのまま)。<br><br>"+
-    "<b>Gmailを読む量の上限</b>: Gmailには、1分に読める量の上限があります(1人 1分に 6,000。メール1通を開くと 60)。Tallyは、取り込み済みのAmazonのメールは開かず、デビットの通知はふつう一覧の書き出しだけで読むので、1回に使うのは数百ほどです。"+
+    "<b>Gmailを読む量の上限</b>: Gmailには、1分に読める量の上限があります(1人 1分に 6,000。メール1通を開くと 60)。Tallyは、取り込み済みのAmazonのメールは開かず、デビットの通知は14日前からの分だけを読む(1通 20)ので、1回に使うのは多くても2,000ほどです。"+
     "上限に当たった時は、下の行に「メール照合 失敗」と出ます。1分ほど待てば元に戻ります。「つながるか確かめる」を押すと、使った量が出ます。<br><br>"+
     "<b>URLは秘密にしてください</b>: 知っている人は、Amazonで買った物と金額、デビットで払った店と金額の一覧を見られます(名前・住所・注文番号・口座の残高・メールの本文は返しません)。チャットやメモに貼らないでください。置き場所はこの端末の中だけで、同期・バックアップには入りません。漏れたと思ったら、Apps Script の「デプロイを管理」でアーカイブすれば止まります。<br><br>"+
     "<b>金額</b>: 発送メールの「合計」(割引を引いた後の、その発送で引き落とされる額)をそのまま使います。Kindleなどでポイントを使った時は、メールの金額と引き落としが違うことがあります(Amazonのメールにそう書いてあります)。<br><br>"+
