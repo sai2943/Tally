@@ -116,6 +116,9 @@
      上の .muted の text-wrap:pretty は「折り返す」も一緒に指定し直すので、**.muted の子は親の nowrap を打ち消す**
      (v6.54 で、灰色の金額のすぐ後ろに置いた矢印だけが次の行へ落ちた)。子にも明示する。**この行は .muted より後ろに置くこと**(同じ強さなので後ろが勝つ) */
   .nw, .nw *{white-space:nowrap;}
+  /* v6.71: **1行で切る行(.ellip)の中の灰色の字も、折り返さない**。上と同じ仕組みで、.ellip の中の .muted は親の nowrap を打ち消していた:
+     行があふれると「…」で切れずに、灰色の字の中の空白で2行に折れた(v6.70 の検査で見つけた。作り物のデータでは、幅 375 の貯金の使い道の候補の行。中身が長ければ幅 402 でも起きる) */
+  .ellip .muted{white-space:nowrap;}
   .fxg{display:flex; gap:8px; margin-bottom:12px;}
   .fxg>div{flex:1; min-width:0;}
   .fxl{font-size:11px; color:var(--muted); margin:0 0 5px;}   /* v6.54: 左右の2pxをやめた(欄の左端・見出しの字と同じ線に。2pxだけ内側だと「着順」「店での精算」だけ他の見出しとずれていた) */
@@ -261,6 +264,13 @@
   .bar{height:5px; background:var(--surface2); border-radius:3px;}
   .bar>div{height:5px; border-radius:3px; opacity:.85;}
   .xbtn{background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:0 2px;}
+  /* v6.71(総点検 B3): **小さい押す所の、押せる範囲だけを広げる**(見た目は1px も変えない)。字の外側に、見えない板(::after)を重ねる。
+     板を押すと、その字を押したのと同じ(板は字の一部として扱われる)。広げる幅は --ht(上)--hr(右)--hb(下)--hl(左)。
+     **となりの押す所・となりの行に掛からない幅を、置く所ごとに測って決めてある**(検査 fix671.js が、板がほかの押す所に重ならないことを見張る)。
+     広げたのは、勧めどおり4種類だけ: 行の右端の ×(軍資金と貯金の「記録」・買い物リスト・突き合わせの「出さない」)・突き合わせの「戻す」・明細の「新しい順」「照合」。
+     入力欄の横の ×(麻雀や稼働の経費の行など)は、すぐ左が入力欄なので広げていない */
+  .hit{position:relative;}
+  .hit::after{content:""; position:absolute; top:calc(-1 * var(--ht,0px)); right:calc(-1 * var(--hr,0px)); bottom:calc(-1 * var(--hb,0px)); left:calc(-1 * var(--hl,0px));}
   .signbtn{width:38px; height:38px; border-radius:6px; font-size:18px; font-weight:700; cursor:pointer;
     flex-shrink:0; line-height:1; background:transparent; font-family:inherit;
     display:flex; align-items:center; justify-content:center; text-align:center; padding:0;}
@@ -448,7 +458,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.70 (localStorage保存・完全オフライン)
+   Tally 6.71 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1274,9 +1284,19 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.70";
+const APP_VERSION = "6.71";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
+/* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
+   v6.70 までは、画面が変わるたびに先頭へ戻していたので、明細の下の方の記録を開いて戻ると、毎回送り直しだった(軍資金・貯金・突き合わせの画面も同じ)。
+   ・**前からある記録を開いた時**(記録・振替・稼働・麻雀の記録の「直す」画面)に、開いた元の画面と、その時の位置を覚える
+   ・**その元の画面へ戻った時**に、覚えた位置へ戻す(保存して戻った時・消して戻った時も)
+   ・ほかの画面へ行ったら忘れる(タブを替えた・別の一覧へ行った)。新しい記録を作る画面は「開いた記録」ではないので、今までどおり先頭から
+   覚えるのは1つだけ(一覧 → 記録 → 一覧)。保存はしない(その場かぎり)。 */
+let _scrollBack = null;        /* {list: 開いた元の画面(タブ/画面), y: その時の位置} */
+let _renderLocEd = false;      /* 今の画面が「前からある記録を直す画面」か */
+const scrollIsEditor = () => (UI.screen==="entry" && UI.editEntryId!=null) || UI.screen==="tredit" ||
+  (UI.screen==="session" && !UI.isNewSess) || (UI.screen==="mahjong-edit" && !UI.mjIsNew);
 function render(){
   /* 清算画面へ「他画面から」入るたび、折りたたみ区画をライフサイクル既定へ戻す。
      同一画面内の再描画(トグル等)では発火しない=操作中に勝手に閉じない */
@@ -1287,14 +1307,21 @@ function render(){
   /* v3.95: 削除モードもエフェメラル(v3.00の思想)。他画面から一覧へ入るたび必ず解除し、
      「前に開いた時の削除モードが生きていた」という最悪の事故を構造的に消す */
   if(UI.screen==="mjtlist" && RENDER_PREV_SCREEN!=="mjtlist") UI.mjtDelMode=false;
+  if(UI.screen==="mahjong-edit" && RENDER_PREV_SCREEN!=="mahjong-edit") UI.mjRawOpen=false;   /* v6.71: 麻雀の記録の「数字を直す」は、開くたびに畳んだ形から */
   RENDER_PREV_SCREEN = UI.screen;
+  const _app0 = document.getElementById("app"), _y0 = _app0 ? _app0.scrollTop : 0;   /* v6.71: 描き直す前の位置(画面が変わる時に、覚える) */
   _renderBody();
   /* タブ・画面・遊技サブタブが変わった時だけ先頭へ。同一画面の再描画は位置を保持 */
   const loc = UI.tab + "/" + UI.screen;
   if(loc !== _renderLoc){
     const app = document.getElementById("app");
-    if(app) app.scrollTop = 0;
-    _renderLoc = loc;
+    const ed = scrollIsEditor();
+    let y = 0;
+    if(_scrollBack && _renderLocEd && !ed && _scrollBack.list===loc){ y=_scrollBack.y; _scrollBack=null; }   /* 開いた記録から、開いた元の画面へ戻った */
+    else if(ed){ if(!_renderLocEd) _scrollBack = _renderLoc ? {list:_renderLoc, y:_y0} : null; }             /* 一覧から記録を開いた(記録から別の記録へ移った時は、覚えたまま) */
+    else _scrollBack = null;                                                                                  /* ほかの画面へ行った */
+    if(app) app.scrollTop = y;
+    _renderLoc = loc; _renderLocEd = ed;
   }
 }
 function navHtml(){
@@ -1844,7 +1871,7 @@ function bmOnlyRow(r, k, W, hide){
   const main='<div class="row between" style="align-items:baseline;cursor:pointer'+(hide?';flex:1;min-width:0':'')+'" data-bm="add" data-v="'+r.i+'">'+
       '<span class="ellip" style="min-width:0;font-size:12px"><span class="mono muted" style="margin-right:8px">'+md(r.date)+'</span>'+esc(r.merch||r.desc||"(摘要なし)")+'</span>'+amtCol(r.amt)+'</div>';
   return '<div style="padding:8px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
-      (hide ? '<div class="row" style="align-items:baseline">'+main+'<button class="xbtn" style="font-size:13px;margin-left:10px;flex-shrink:0" data-bm="hide" data-v="'+r.i+'" aria-label="この一覧に出さない">×</button></div>' : main)+
+      (hide ? '<div class="row" style="align-items:baseline">'+main+'<button class="xbtn hit" style="--ht:8px;--hb:'+(r.hint?'2px':'8px')+';--hl:5px;--hr:17px;font-size:13px;margin-left:10px;flex-shrink:0" data-bm="hide" data-v="'+r.i+'" aria-label="この一覧に出さない">×</button></div>' : main)+
       (r.hint ? '<div class="amber" style="font-size:11px;margin-top:3px;cursor:pointer" data-bm="edit" data-v="'+esc(String((r.hint.u.ms[0].ent||{}).id||""))+'">'+
         esc(r.hint.text)+': '+esc(uLab(r.hint.u))+' '+CHEV_T+'</div>'
         : (()=>{ const sh=bmShape(r, W); return sh ? '<div class="muted" style="font-size:11px;margin-top:3px">'+esc(bmShapeText(sh, r, W))+'</div>' : ''; })())+
@@ -2513,63 +2540,8 @@ function viewMjLog(){
      20半荘を超える卓でも最新の行が画面の外へ押し出されないように(古い順のままなので、最新は表の一番下)。
      畳んだ所から始まる顔ぶれには、ラベル無しの名前の行を足す(列が誰か分からなくならないように) */
   if(rows.length){
-    const stOf=r=> r.st ? r.st : (r.ranks ? ['me'].concat(Object.keys(r.ranks).filter(k=>k!=="me")) : null);
-    const ncol=Math.max(c.seats, ...rows.map(r=>{ const st=stOf(r); return st?st.length:0; }));
-    const RK=ncol>=4 ? ["var(--teal)","var(--amber)","#B39DDB","var(--red)"] : ["var(--teal)","var(--amber)","var(--red)"];
-    const hid=rows.length>MJL_HIST_N ? rows.length-MJL_HIST_N : 0;
-    const all=!hid || !!UI.mjlHistAll, from=all ? 0 : hid;
-    const hidLab=(hid>1 ? '1〜'+hid : '1')+'半荘目';
-    let prev=null, body='';
-    if(hid) body+='<tr class="more"><td colspan="'+(ncol+2)+'" data-ml="histtog">'+
-      (all ? '▾ '+hidLab+'を畳む' : '▸ '+hidLab+'も見る')+'</td></tr>';
-    rows.forEach((r,i)=>{
-      const vis=i>=from;
-      const st=stOf(r), edc=(f.editIdx!=null && num(f.editIdx)===i) ? ' class="ed"' : '';
-      if(!st){
-        /* メンバー無しで入れた古い行: 席が分からないので、自分の着順だけを1行で */
-        if(vis) body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
-          '<td colspan="'+ncol+'" data-ml="edit" data-v="'+i+'" style="font-family:inherit;text-align:left;padding-left:8px">'+
-          '<b>自分 '+(r.rank||'-')+'着</b>'+(c.useUma&&num(r.uma)?' <span class="muted">馬身'+(num(r.uma)>0?'+':'−')+Math.abs(num(r.uma))+'</span>':'')+'</td>'+
-          '<td class="x" data-ml="del" data-v="'+i+'">✕</td></tr>';
-        prev=null; return;
-      }
-      const brk=(!prev || prev.join(",")!==st.join(",") || r.ev==="卓移動");
-      if(brk || (vis && i===from)){
-        /* v5.84: 最初の顔ぶれにもラベルを出す(ユーザー要望: 卓移動と同じく、卓の始まりが見えるように)。
-           v5.85: 「スタート」は4文字で列(34px)に収まらず「スタ…」と切れたので「開始」に(ユーザー提案)。
-           v6.17: brk でない = 畳んだ所の続き。ラベル無しで顔ぶれだけ */
-        let lab='';
-        if(brk){
-          lab='開始';
-          if(prev){
-            if(r.ev) lab=r.ev;   /* v5.82: 実際に行った操作 */
-            else {               /* 印の無い古い行だけ、並びの変化から推測する */
-              const same=prev.length===st.length && prev.slice().sort().join(",")===st.slice().sort().join(",");
-              const others=st.filter(x=>x!=="me"), allNew=others.length && others.every(x=>prev.indexOf(x)<0);
-              lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
-            }
-          }
-        }
-        /* 卓移動と開始は**卓の始まり**なので、どちらも青い太線とラベルで揃える。名前ごとの色付けはしない */
-        const mv=(lab==='卓移動' || lab==='開始');
-        const labCol = mv ? 'var(--blue)' : (lab==='交代' ? 'var(--amber)' : 'var(--muted)');
-        if(vis) body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:11px;font-weight:700;padding-left:0;padding-right:0;white-space:nowrap'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
-          Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
-            if(pid==null) return '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>';
-            const chg=!mv && prev && prev[k]!==pid;
-            return '<td style="'+(pid==="me"?'font-weight:700;color:var(--text)':'')+(chg?';color:var(--amber)':'')+(mv?';border-top:2px solid var(--blue)':'')+'">'+esc(mjlName(pid))+'</td>'; }).join("")+
-          '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td></tr>';
-        prev=st;
-      }
-      if(vis) body+='<tr'+edc+'><td class="no" data-ml="edit" data-v="'+i+'">'+(i+1)+'</td>'+
-        Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
-          if(pid==null) return '<td data-ml="edit" data-v="'+i+'"></td>';
-          const rk=num(r.ranks&&r.ranks[pid]);
-          const col= rk===1 ? RK[0] : (rk===st.length ? RK[RK.length-1] : (RK[rk-1]||"var(--text)"));
-          const oy=(r.oya!=null && num(r.oya)===k);   /* v6.36: その半荘の親の席に「親」(並びが斜めに続かない所が、親が飛んだ所) */
-          return '<td data-ml="edit" data-v="'+i+'"'+(oy?' class="oya"':'')+' style="color:'+col+(pid==="me"?';font-weight:700':'')+'">'+(oy?'<span class="oyl">親</span>':'')+(rk||'')+'</td>'; }).join("")+
-        '<td class="x" data-ml="del" data-v="'+i+'">✕</td></tr>';
-    });
+    /* v6.71: 表の中身は mjlTableParts(締めた記録の画面と同じ関数) */
+    const tb=mjlTableParts({rows:rows, seats:c.seats, name:mjlName, useUma:c.useUma, live:true, all:!!UI.mjlHistAll, editIdx:f.editIdx});
     /* 見出し: 半荘数と着順の回数(v6.16までは一番上の集計カードにあった) */
     histH='<div class="card" style="margin-bottom:12px;padding:10px 10px 2px">'+
       '<div class="row between" style="align-items:baseline;padding:0 6px 4px">'+
@@ -2578,8 +2550,8 @@ function viewMjLog(){
         RANKS.map(k=>'<span class="muted" style="margin-left:8px">'+k+'着 <span style="color:var(--text);font-weight:700">'+(t.rank[k]||0)+'</span></span>').join("")+
       '</span></div>'+
       '<table class="mjl-tbl"><thead><tr><th style="width:34px">回</th>'+
-      MJL_SEATS.slice(0,ncol).map(L=>'<th>'+L+'</th>').join("")+'<th style="width:26px"></th></tr></thead>'+
-      '<tbody>'+body+'</tbody></table></div>';
+      MJL_SEATS.slice(0,tb.ncol).map(L=>'<th>'+L+'</th>').join("")+'<th style="width:26px"></th></tr></thead>'+
+      '<tbody>'+tb.body+'</tbody></table></div>';
   }
   /* v5.77: **リセット**(ユーザー要望: 途中で間違えて記録をやめた時に消せないと厳しい)。
      何か記録がある時だけ出す。押すと確かめてから、半荘・チップ・飛び・精算・差し馬を消す(メンバーと単価は残す)。
@@ -2762,6 +2734,7 @@ function bindMjLog(){
         const t=mjLogTotals(), c=t.c;
         if(!t.n){ toast("半荘の記録がありません"); return; }
         if(!t.settled){ toast("店での精算額を入れてください"); return; }
+        const snap=mjlSnap();   /* v6.71: この卓の半荘の記録の写し(麻雀の記録に持たせる) */
         const rc=[1,2,3,4].slice(0,c.seats).map(k=>String(t.rank[k]||0));
         UI.mjDraft={
           id:uid(), date:todayStr(), shop:"", store:"", category:"free", rule:String(c.seats),
@@ -2790,12 +2763,14 @@ function bindMjLog(){
           /* **馬身だけが卓の外**。バックはゲーム代側に渡した */
           /* v5.78: 差し馬と馬身は**別々の行**で(まとめると内訳が読めない・v5.45と同じ理由) */
           /* v5.91: **相手ごとの行**にし、誰の分かを`who`に持つ——締めた後に置き場へ分ける時、どの額を誰の置き場へ入れるか分かるように */
-          extras: t.outs.filter(x=>x.yen).map(x=>({id:uid(), name:x.kind+(x.who?" "+x.who:"")+" "+(x.n>=0?"+":"−")+Math.abs(x.n), who:x.who||"", amount:String(x.yen)})),
+          /* v6.71: 行の形は mjBetRow(締めた後に足す時と同じ)。相手の分かる行には k(誰との・どちらか)を付ける */
+          extras: t.outs.filter(x=>x.yen).map(x=>mjBetRow(x.kind, x.who, x.n, x.yen, (x.pid && snap.map[x.pid]) ? (x.kind==="差し馬"?"sa:":"um:")+snap.map[x.pid] : "")),
           memo:"半荘の記録から: "+t.n+"半荘 "+rc.join("-")+
                " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+(t.drink?" ドリンク代"+signYen(t.drink):"")+
                (t.tobiY?" / 飛び"+(t.tobi>=0?"+":"−")+Math.abs(t.tobi)+"("+signYen(t.tobiY)+"・スコアに含む)":"")+
                " / 店での精算"+signYen(t.settle),
-          bwal:String(S.mjLog.bwal||(bankPots()[0]||{}).id||"")
+          bwal:String(S.mjLog.bwal||(bankPots()[0]||{}).id||""),
+          log:snap.log   /* v6.71: 半荘ごとの着順・親・印・チップ・飛び・精算・単価(mjlSnap) */
         };
         UI.mjIsNew=true;
         /* 締めた印。**保存されたら記録を空にする**——保存前に消すと戻れなくなる。
@@ -2803,7 +2778,7 @@ function bindMjLog(){
            別の麻雀の記録(前の記録を直す等)を保存した時にも、打っている卓の記録を空にしていた */
         UI.mjlPending=UI.mjDraft.id;
         UI.screen="mahjong-edit"; render();
-        toast("店と同卓者を足して保存してください");
+        toast("店とルールを入れて保存してください");   /* v6.71: 同卓者は半荘の記録から入っている(v5.77〜)ので、文を合わせた */
         return;
       }
       if(a==="conf"){ UI.mjcDraft={}; UI.screen="mjconf"; render(); return; }
@@ -3110,9 +3085,9 @@ function viewLedgerDetail(mk){
      ・状態は`UI`に置き**保存しない**。照合は一度きりの仕事で、翌日に持ち越すと嘘の✓が残る。 */
   const rest = reconRest(shown);
   h += band("明細",
-    '<span class="mono" style="font-size:11px;cursor:pointer;color:'+(UI.detAsc?'var(--teal)':'var(--muted)')+'" data-a="detord">'+
+    '<span class="mono hit" style="--ht:20px;--hb:9px;--hl:10px;--hr:6px;font-size:11px;cursor:pointer;color:'+(UI.detAsc?'var(--teal)':'var(--muted)')+'" data-a="detord">'+
     (UI.detAsc?'古い順 ↑':'新しい順 ↓')+'</span>'+
-    '<span class="mono" style="font-size:11px;cursor:pointer;margin-left:12px;color:'+(UI.recon?'var(--teal)':'var(--muted)')+'" data-a="recon">'+
+    '<span class="mono hit" style="--ht:20px;--hb:9px;--hl:6px;--hr:16px;font-size:11px;cursor:pointer;margin-left:12px;color:'+(UI.recon?'var(--teal)':'var(--muted)')+'" data-a="recon">'+
     (UI.recon?'照合を終える':'照合')+'</span>');
   if(UI.recon){
     const pots=walletPots();
@@ -4981,7 +4956,10 @@ const MJT_PRESET_INFO="名前を押すと、そのルール(3麻/4麻・持ち�
   "<b>編集</b>: 名前に × が付きます。押すと、そのルールを消せます(記録済みのデータには影響しません)。";
 const MJT_TOBI_INFO="表の点数は、入れた数字をそのまま使います。ここの数字は、キーパッドの<b>「飛び」ボタン</b>が入れる点数を決めるためのものです。<br><br>"+
   "<b>飛び = −(返し点 ÷ 1000) + 最下位のウマ</b><br>例: 返し点 30000・3着のウマ −20 なら、飛び = −50<br><br>"+
-  "返し点が空の時と、「箱下あり」がオンの時は、「飛び」ボタンは出ません。<br><br><b>持ち点</b>は控えです(計算には使いません)。";
+  "下に「<b>✓ 飛び = …</b>」と出ていれば、「飛び」ボタンが使えます。対局モードで点数のマスを選ぶと、キーパッドに出ます。<br>"+   /* v6.71: 「… セル選択でキーパッドに「飛び」ボタンが出ます」をここへ */
+  "返し点が空の時と、「箱下あり」がオンの時は、「飛び」ボタンは出ません。<br><br>"+
+  "<b>ウマ</b>は着順ごとに入れます。数字の左の ＋/− のボタンで、プラスとマイナスを切り替えます。<br><br>"+   /* v6.71: 見出しの「(着順ごと・±ボタンで符号)」をここへ */
+  "<b>持ち点</b>は控えです(計算には使いません)。";
 function viewMjTable(){
   const t = UI.mjt;
   const P = t.players;
@@ -5061,7 +5039,7 @@ function viewMjTable(){
     '<div class="row" style="gap:8px;margin-bottom:8px">'+
     '<div style="flex:1"><div class="muted" style="font-size:11px">持ち点(配給原点)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="例 25000" value="'+esc(t.mochi||"")+'" data-mt="rd" data-v="mochi"></div>'+
     '<div style="flex:1"><div class="muted" style="font-size:11px">返し点(基準点)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="例 30000" value="'+esc(t.kaeshi||"")+'" data-mt="rd" data-v="kaeshi"></div></div>'+
-    '<div class="muted" style="font-size:11px;margin-bottom:2px">ウマ(着順ごと・±ボタンで符号)</div><div class="row" style="gap:6px;margin-bottom:8px">'+
+    '<div class="muted" style="font-size:11px;margin-bottom:2px">ウマ</div><div class="row" style="gap:6px;margin-bottom:8px">'+
     [["uma1","1着"],["uma2","2着"],["uma3","3着"]].concat(mjtSeats(t)===4?[["uma4","4着"]]:[]).map(([k,l])=>{
       const neg=String(t[k]||"").startsWith("-");
       return '<div style="flex:1;min-width:0"><div class="muted" style="font-size:11px;text-align:center;margin-bottom:2px">'+l+'</div>'+
@@ -5074,7 +5052,7 @@ function viewMjTable(){
     '<div style="flex:1"><div class="muted" style="font-size:11px">チップ(1枚=)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc(t.chipRate)+'" data-mt="rate" data-v="chipRate"></div></div>'+
     '<label class="row" style="gap:8px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" data-mt="hako" '+(t.hakoshita?"checked":"")+'><span>箱下あり(マイナス続行)</span></label>'+
     (mjtHasTobi(t)
-      ? '<div class="muted" style="font-size:11px;margin-top:6px">✓ 飛び = <span class="mono" style="color:var(--amber);font-weight:700">'+mjtTobiScore(t)+'</span> … セル選択でキーパッドに「飛び」ボタンが出ます</div>'
+      ? '<div class="muted" style="font-size:11px;margin-top:6px">✓ 飛び = <span class="mono" style="color:var(--amber);font-weight:700">'+mjtTobiScore(t)+'</span></div>'
       : '<div style="font-size:11px;margin-top:6px;color:var(--red)">※飛びボタン: 返し点を入力し「箱下あり」をオフに</div>')+
     '<div style="height:1px;background:var(--line);margin:10px 0"></div>'+
     '<div class="muted" style="font-size:11px;margin-bottom:6px">精算単位'+
@@ -5284,7 +5262,7 @@ function viewMjPlay(){
       if(ri<=skipUntil) return;
       let e2=ri; while(e2+1<rows.length && (t.locked||[])[e2+1]) e2++;
       if(e2>ri){
-        h += '<tr><td colspan="'+(P.length+1)+'" data-mt="lkopen" style="text-align:center;padding:11px 2px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px">🔒 '+(ri+1)+'〜'+(e2+1)+'回戦 確定済み(タップで開く)</td></tr>';
+        h += '<tr><td colspan="'+(P.length+1)+'" data-mt="lkopen" style="text-align:center;padding:11px 2px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px">▸ 🔒 '+(ri+1)+'〜'+(e2+1)+'回戦 確定済み</td></tr>';   /* v6.71: 「(タップで開く)」→ 畳んだ行の印 ▸(ほかの畳んだ行と同じ)。説明は下の「表の見方」の ⓘ へ */
         skipUntil=e2; return;
       }
     }
@@ -5321,7 +5299,8 @@ function viewMjPlay(){
   /* v6.70: 表の読み方の1行(「ヘッダー: 上段=合計 / 下段=…」)は ⓘ へ(総点検 A2) */
   h += '<div class="muted" style="font-size:11px;text-align:right;margin-top:6px">表の見方'+infoBtn(
     "名前の下の大きい数字は、ここまでの<b>合計</b>です。その下の小さい数字は、<b>1着・2着・3着"+(mjtSeats(t)>3?"・4着":"")+"の回数</b>です。<br><br>"+
-    "点数を入れていない人が1人だけになると、その人の点数は自動で入ります(その回の合計が0になる数)。")+'</div>';
+    "点数を入れていない人が1人だけになると、その人の点数は自動で入ります(その回の合計が0になる数)。<br><br>"+
+    "<b>▸ 🔒 の行</b>は、確定した回戦をまとめた行です。押すと開きます(開いた後は、表の下の「確定済みをたたむ」で戻ります)。")+'</div>';
   h += '<div style="height:40px"></div>';
   return h;
 }
@@ -5964,7 +5943,7 @@ function txnRowHtml(A, t, labelHtml, amt, ent){
   const head='<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+labelHtml+'</div>';
   const yen='<div class="mono '+clsPM(amt)+'" style="font-size:14px;font-weight:700">'+signYen(amt)+'</div>';
   if(!ent) return '<div class="listitem">'+head+'<div class="muted mono" style="font-size:11px">'+esc(t.date)+'</div></div>'+yen+
-    '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0" '+A.del+' data-v="'+t.id+'">×</button></div>';
+    '<button class="xbtn hit" style="--ht:18px;--hb:18px;--hl:15px;--hr:17px;font-size:13px;margin-left:8px;flex-shrink:0" '+A.del+' data-v="'+t.id+'">×</button></div>';
   const name=String(ent.store||ent.item||ent.category||"").trim();
   return '<div class="listitem" '+A.open+' data-v="'+esc(ent.id)+'">'+head+
     '<div class="muted mono ellip" style="font-size:11px">'+esc(t.date)+(name ? '<span style="line-height:1"> ・ '+esc(name)+'</span>' : '')+'</div></div>'+yen+
@@ -6095,6 +6074,121 @@ function mjlBreakdownHtml(){
   return h+'</div>';
 }
 function mjLogRows(){ return (S.mjLog&&S.mjLog.rows)||[]; }
+/* v5.80: **記録は表で出す——席を列に固定し、各マスに着順**(ユーザー要望: スコア表のように。途中交代にも対応する工夫を)。
+   ・列は人ではなく**席**(A・B・C…)。人は入れ替わるが席は変わらないので、列が増え続けない
+   ・**顔ぶれが変わった所に名前の行を挟む**(最初の行も)。変わった名前は琥珀で示し、
+     行頭に「交代」「卓移動」「席替え」を出す(自分以外が全員変われば卓移動、顔ぶれが同じで並びだけ変われば席替え)
+   ・着順の色は成績画面と同じ体系(1着=緑・最下位=赤・2着=琥珀・4麻の3着=紫)。自分のマスは太字
+   ・古い順(1回戦が上)。スコア表と同じ向きで、最新の行が下の記録ボタンに近い
+   v6.17: **直近8半荘だけ出し、前の分は表の頭の1行に畳む**(押すと全部)。表を1画面目に置いたので、
+   20半荘を超える卓でも最新の行が画面の外へ押し出されないように(古い順のままなので、最新は表の一番下)。
+   畳んだ所から始まる顔ぶれには、ラベル無しの名前の行を足す(列が誰か分からなくならないように)
+   v6.71: **表の中身(tbody)を作る所を、ここへ切り出した**(ユーザー: 締めた後も途中経過を全部引き継ぎたい)。
+   o = {rows, seats, name(id), useUma, live, all, editIdx}
+   ・live = 今打っている卓(半荘の記録の画面): 行を押すと直せる・✕で消す・直近8半荘より前は畳む。出る字は v6.70 までと1字も変わらない
+   ・live でない = 締めた記録が持っている写し(麻雀の記録の画面): **見るだけ**(押せない・✕の列が無い)・全部出す
+   返すのは {ncol: 席の列の数, body: tbody の中身} */
+function mjlTableParts(o){
+  const rows=o.rows||[], live=!!o.live, name=o.name;
+  const stOf=r=> r.st ? r.st : (r.ranks ? ['me'].concat(Object.keys(r.ranks).filter(k=>k!=="me")) : null);
+  const ncol=Math.max(o.seats, ...rows.map(r=>{ const st=stOf(r); return st?st.length:0; }));
+  const RK=ncol>=4 ? ["var(--teal)","var(--amber)","#B39DDB","var(--red)"] : ["var(--teal)","var(--amber)","var(--red)"];
+  const hid=(live && rows.length>MJL_HIST_N) ? rows.length-MJL_HIST_N : 0;
+  const all=!hid || !!o.all, from=all ? 0 : hid;
+  const hidLab=(hid>1 ? '1〜'+hid : '1')+'半荘目';
+  const E=i=> live ? ' data-ml="edit" data-v="'+i+'"' : '';                          /* 行を押して直す */
+  const X=i=> live ? '<td class="x" data-ml="del" data-v="'+i+'">✕</td>' : '';      /* ✕で消す */
+  let prev=null, body='';
+  if(hid) body+='<tr class="more"><td colspan="'+(ncol+2)+'" data-ml="histtog">'+
+    (all ? '▾ '+hidLab+'を畳む' : '▸ '+hidLab+'も見る')+'</td></tr>';
+  rows.forEach((r,i)=>{
+    const vis=i>=from;
+    const st=stOf(r), edc=(live && o.editIdx!=null && num(o.editIdx)===i) ? ' class="ed"' : '';
+    if(!st){
+      /* メンバー無しで入れた古い行: 席が分からないので、自分の着順だけを1行で */
+      if(vis) body+='<tr'+edc+'><td class="no"'+E(i)+'>'+(i+1)+'</td>'+
+        '<td colspan="'+ncol+'"'+E(i)+' style="font-family:inherit;text-align:left;padding-left:8px">'+
+        '<b>自分 '+(r.rank||'-')+'着</b>'+(o.useUma&&num(r.uma)?' <span class="muted">馬身'+(num(r.uma)>0?'+':'−')+Math.abs(num(r.uma))+'</span>':'')+'</td>'+
+        X(i)+'</tr>';
+      prev=null; return;
+    }
+    const brk=(!prev || prev.join(",")!==st.join(",") || r.ev==="卓移動");
+    if(brk || (vis && i===from)){
+      /* v5.84: 最初の顔ぶれにもラベルを出す(ユーザー要望: 卓移動と同じく、卓の始まりが見えるように)。
+         v5.85: 「スタート」は4文字で列(34px)に収まらず「スタ…」と切れたので「開始」に(ユーザー提案)。
+         v6.17: brk でない = 畳んだ所の続き。ラベル無しで顔ぶれだけ */
+      let lab='';
+      if(brk){
+        lab='開始';
+        if(prev){
+          if(r.ev) lab=r.ev;   /* v5.82: 実際に行った操作 */
+          else {               /* 印の無い古い行だけ、並びの変化から推測する */
+            const same=prev.length===st.length && prev.slice().sort().join(",")===st.slice().sort().join(",");
+            const others=st.filter(x=>x!=="me"), allNew=others.length && others.every(x=>prev.indexOf(x)<0);
+            lab = same ? '席替え' : (allNew ? '卓移動' : '交代');
+          }
+        }
+      }
+      /* 卓移動と開始は**卓の始まり**なので、どちらも青い太線とラベルで揃える。名前ごとの色付けはしない */
+      const mv=(lab==='卓移動' || lab==='開始');
+      const labCol = mv ? 'var(--blue)' : (lab==='交代' ? 'var(--amber)' : 'var(--muted)');
+      if(vis) body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:11px;font-weight:700;padding-left:0;padding-right:0;white-space:nowrap'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
+        Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
+          if(pid==null) return '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>';
+          const chg=!mv && prev && prev[k]!==pid;
+          return '<td style="'+(pid==="me"?'font-weight:700;color:var(--text)':'')+(chg?';color:var(--amber)':'')+(mv?';border-top:2px solid var(--blue)':'')+'">'+esc(name(pid))+'</td>'; }).join("")+
+        (live ? '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>' : '')+'</tr>';
+      prev=st;
+    }
+    if(vis) body+='<tr'+edc+'><td class="no"'+E(i)+'>'+(i+1)+'</td>'+
+      Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
+        if(pid==null) return '<td'+E(i)+'></td>';
+        const rk=num(r.ranks&&r.ranks[pid]);
+        const col= rk===1 ? RK[0] : (rk===st.length ? RK[RK.length-1] : (RK[rk-1]||"var(--text)"));
+        const oy=(r.oya!=null && num(r.oya)===k);   /* v6.36: その半荘の親の席に「親」(並びが斜めに続かない所が、親が飛んだ所) */
+        return '<td'+E(i)+(oy?' class="oya"':'')+' style="color:'+col+(pid==="me"?';font-weight:700':'')+'">'+(oy?'<span class="oyl">親</span>':'')+(rk||'')+'</td>'; }).join("")+
+      X(i)+'</tr>';
+  });
+  return {ncol:ncol, body:body};
+}
+/* v6.71【締めた後も、半荘の記録を全部残す】(ユーザー 11/14 22:09: 「半荘の記録から収支に入れる時に途中経過も全て引き継ぎしたいです。
+   というのも馬身とか差し馬を計上し忘れた時に、そのまま閉めたら着順が分からなくなる」)。
+   v6.70 までは、締めて保存すると半荘ごとの行を消していた(麻雀の記録に残るのは、着順の回数と金額だけ)。
+   **締める時に、その卓の半荘の記録の写しを作り、麻雀の記録(S.mjSessions の1件)の log に持たせる**。
+   ・rows = 半荘ごとの行(全員の着順 ranks・自分の着順 rank・その時の席 st・親の席 oya・卓移動や交代の印 ev・記録した時刻 t)
+   ・people = {席の人の id: 名前}。**id は写しの中だけの短い字(a, b, c…)に付け替える**(元の id は 14字あり、行ごとに2回ずつ出る。
+     記録はバックアップの控え3世代にも入るので、1件を小さくしておく)。自分は "me" のまま
+   ・chip・tobi = 締めた時に数えた数(使わない設定なら 0)/ settle = 店での精算に入れた字
+   ・unit = 締めた時の単価 {chip, tobi, uma(馬身), sashi(差し馬)}。**馬身・差し馬の単価は、締めた後に足す時の金額に使う**(記録の画面で変えられる)
+   差し馬・馬身を選んでいたかは、写しには持たない: 選んだ分は「卓の外」の行(extras)になり、行の k("sa:a"・"um:b")が「誰との・どちらか」を持つ。
+   **金額の元は、今までどおり麻雀の記録の欄(score・chips・ranks・extras…)**。写しは、表と、相手ごとの成績(差し馬・馬身を後から足す)に使う。
+   返すのは {log, map: 元の id → 写しの中の id} */
+function mjlSnap(){
+  const L=S.mjLog||{}, c=mjLogConf(), P=mjlPeople(), t=mjLogTotals();
+  const ids=[], see=id=>{ if(id!=null && id!=="me" && ids.indexOf(id)<0) ids.push(id); };
+  const rows0=mjLogRows().filter(r=>r && typeof r==="object");
+  rows0.forEach(r=>{ if(Array.isArray(r.st)) r.st.forEach(see); if(r.ranks) Object.keys(r.ranks).forEach(see); });
+  const map={me:"me"}; ids.forEach((id,i)=>{ map[id]= i<26 ? String.fromCharCode(97+i) : "z"+i; });
+  const people={}; ids.forEach(id=>{ people[map[id]]=String(P[id]==null?"?":P[id]); });
+  const rows=rows0.map(r=>{
+    const o={rank:num(r.rank)};
+    if(r.ranks){ o.ranks={}; Object.keys(r.ranks).forEach(k=>{ o.ranks[map[k]]=num(r.ranks[k]); }); }
+    if(Array.isArray(r.st)) o.st=r.st.map(k=>map[k]);
+    if(num(r.uma)) o.uma=num(r.uma);          /* 全員の着順を入れた行は 0(手で入れた馬身は、席の無い古い形の行だけ) */
+    if(num(r.t)) o.t=num(r.t); else if(r.at) o.at=String(r.at);   /* 記録した時刻。無い行(v6.30 までの行)は日付だけ */
+    if(r.ev) o.ev=String(r.ev);
+    if(r.oya!=null) o.oya=num(r.oya);
+    return o; });
+  return {map:map, log:{v:1, seats:c.seats, rows:rows, people:people, chip:t.chip, tobi:t.tobi, settle:String(L.settle||""),
+    unit:{chip:c.chipUnit, tobi:c.tobiUnit, uma:c.umaUnit, sashi:c.sashiUnit}}};
+}
+/* 卓の外の1行(差し馬・馬身)。締める時と、締めた後に記録の画面で足す時で、同じ形にする。k があれば「誰との・どちらか」("sa:a"・"um:b") */
+function mjBetName(kind, who, n){ return kind+(who?" "+who:"")+" "+(n>=0?"+":"−")+Math.abs(n); }
+function mjBetRow(kind, who, n, yen, k){
+  const x={id:uid(), name:mjBetName(kind, who, n), who:who||"", amount:String(yen)};
+  if(k) x.k=k;
+  return x;
+}
 /* v5.77: **メンバーと全員の着順**(ユーザー要望: プレイヤー名を事前に入れ、毎回全員の着順を入れる。途中交代にも対応。
    後から馬身や差し馬を計算できるようにしたい)。
    ・people = {id: 名前}(この卓に一度でも座った人。自分は含めない) / roster = 今座っている相手の id の並び
@@ -6500,7 +6594,7 @@ function mjlMergeName(from, to){
   if(!from || !to || from===to) return null;
   const c=mjlMergePlan(from, to), same=x=>String(x==null?"":x).trim()===from;
   const has=(arr,nm)=>(arr||[]).some(x=>String(x==null?"":x).trim()===nm);
-  (S.mjSessions||[]).forEach(m=>{ if(has(m.players,from) && !has(m.players,to)) m.players=m.players.map(x=>same(x) ? to : x); });
+  (S.mjSessions||[]).forEach(m=>{ if(has(m.players,from) && !has(m.players,to)){ m.players=m.players.map(x=>same(x) ? to : x); mjLogRename(m, from, to); } });   /* v6.71: 締めた時の写しの名前も */
   (S.mjTables||[]).forEach(t=>{ if(Array.isArray(t.players) && has(t.players,from) && !has(t.players,to)) t.players=t.players.map(x=>same(x) ? to : x); });
   (S.sessions||[]).forEach(s=>{ if(same(s.partnerName)) s.partnerName=to; });
   if(S.mjLog && !mjLogRows().length){ const P=mjlPeople(), P2={}; Object.keys(P).forEach(k=>{ P2[k]=same(P[k]) ? to : P[k]; }); S.mjLog.people=P2; }
@@ -6611,9 +6705,9 @@ function mjlPrune(){
    v5.78: **差し馬と馬身は別の賭け**(ユーザー: どっちも欲しい。どのパターンもある)。
    ・差し馬 = 1半荘ごとに相手より上なら+1、下なら−1(着順の差は関係ない)→ sa = 上 − 下
    ・馬身   = 着順の差(相手の着順 − 自分の着順。自分が上なら＋)→ uma */
-function mjlVs(){
+function mjlVs(rows){   /* v6.71: rows を渡すと、その行で数える(締めた記録が持っている写し)。渡さなければ、今打っている卓 */
   const res={};
-  mjLogRows().forEach(r=>{ if(!r.ranks) return; const me=num(r.ranks.me); if(!me) return;
+  (rows||mjLogRows()).forEach(r=>{ if(!r || !r.ranks) return; const me=num(r.ranks.me); if(!me) return;
     Object.keys(r.ranks).forEach(pid=>{ if(pid==="me") return; const o=num(r.ranks[pid]); if(!o) return;
       const x=res[pid]||(res[pid]={n:0,up:0,down:0,uma:0});
       x.n++; if(me<o) x.up++; else if(me>o) x.down++; x.uma+=(o-me); x.sa=x.up-x.down; }); });
@@ -6640,10 +6734,10 @@ function mjLogTotals(){
     /* v5.88: 仮称の人は画面に出さないので、選択が残っていても数えない(見えない選択が金額に効くのを防ぐ) */
     const named=pid=>!mjlIsX(mjlName(pid));
     Object.keys(sa).forEach(pid=>{ if(sa[pid] && vs[pid] && named(pid)){ sashi+=vs[pid].sa;
-      outs.push({kind:"差し馬", who:mjlName(pid), n:vs[pid].sa, yen:vs[pid].sa*c.sashiUnit}); } });
+      outs.push({kind:"差し馬", pid:pid, who:mjlName(pid), n:vs[pid].sa, yen:vs[pid].sa*c.sashiUnit}); } });
     const manual=uma;   /* メンバー無しで入れた行の手入力の馬身(相手不明) */
     Object.keys(um).forEach(pid=>{ if(um[pid] && vs[pid] && named(pid)){ uma+=vs[pid].uma;
-      outs.push({kind:"馬身", who:mjlName(pid), n:vs[pid].uma, yen:vs[pid].uma*c.umaUnit}); } });
+      outs.push({kind:"馬身", pid:pid, who:mjlName(pid), n:vs[pid].uma, yen:vs[pid].uma*c.umaUnit}); } });
     if(manual) outs.push({kind:"馬身", who:"", n:manual, yen:manual*c.umaUnit}); }
   /* v6.17: 使わない(OFF)なら0。**ここ1箇所で決める**——画面・精算の内訳・締めた時の記録が全部ここを通る。
      数そのものは消さないので、ONに戻せば元の数が戻る */
@@ -8864,7 +8958,7 @@ function viewWishlist(){
         '<div class="row between" style="align-items:flex-start;margin-bottom:6px">'+
         '<div style="flex:1;min-width:0"><span class="chip" style="border-color:'+WISH_COLOR[eff]+';color:'+WISH_COLOR[eff]+';font-size:11px;padding:2px 8px">'+WISH_LABEL[eff]+(eff==="cooldown"?" 残"+wishDaysLeft(w)+"日":"")+'</span>'+
         '<div style="font-weight:700;font-size:14px;margin-top:5px" class="ellip">'+esc(w.name||"(無題)")+'</div></div>'+
-        '<button class="xbtn" style="font-size:14px;flex-shrink:0" data-wa="del" data-v="'+w.id+'">×</button></div>'+
+        '<button class="xbtn hit" style="--ht:13px;--hb:22px;--hl:14px;--hr:16px;font-size:14px;flex-shrink:0" data-wa="del" data-v="'+w.id+'">×</button></div>'+
         '<div class="mono muted" style="font-size:12px;margin-bottom:4px">見積り ¥'+num(w.est).toLocaleString("ja-JP")+(w.status==="bought"&&num(w.buy)?' → 購入 ¥'+num(w.buy).toLocaleString("ja-JP"):'')+'</div>';
       if(w.url) h+='<a href="'+esc(w.url)+'" target="_blank" rel="noopener" class="ellip" style="font-size:11px;color:var(--blue);display:block;margin-bottom:4px">'+esc(w.url)+'</a>';
       if(w.reason) h+='<div class="muted" style="font-size:11px;margin-bottom:6px">'+esc(w.reason)+'</div>';
@@ -9214,8 +9308,137 @@ function bindFixed(){
   });
 }
 
+/* v6.71【麻雀の記録の画面を、半荘の記録とつなげる】(ユーザー 11/14 22:09: 「麻雀の記録の中もごちゃごちゃしてて見づらい、
+   半荘の記録と連動させて綺麗にしたうえで機能は失わないように出来ないだろうか?」)。
+   **半荘の記録から来た記録(log を持つ記録)は、並びを変える**: 日付・店・ルール → この日の結果 → 半荘ごとの着順(表)→ 相手ごとの成績 → 経費 → 置き場 → メモ →「数字を直す」。
+   v6.70 までの欄(入れ方・スコアとチップ・着順の回数・同卓者・ゲーム代・卓の外の行)は、半荘の記録が入れてくれる数字なので「数字を直す」に畳む。
+   **欄そのものは1つも減らしていない**(畳んだ中に、同じ欄・同じ動きのまま入っている)。
+   **log の無い記録(手で入れた記録・スコア表から来た記録・v6.70 までに締めた記録)は、画面を1字も変えていない**(検査が v6.70 の出力と比べる)。 */
+/* 写しの行。**壊れた行(null など)は読まない**——同期や取り込みで形が崩れても、記録の画面が「表示エラー」にならないように */
+const mjLogRowsOf = m => { const r=((m||{}).log||{}).rows; return Array.isArray(r) ? r.filter(x=>x && typeof x==="object") : []; };
+const mjHasLog = m => mjLogRowsOf(m).length>0;
+const mjLogNm = (m, id) => id==="me" ? "自分" : String(((m.log||{}).people||{})[id] || "?");
+const mjBetOf = (m, k) => ((m&&m.extras)||[]).find(x=>x && x.k===k) || null;   /* 「卓の外」の行のうち、その相手との差し馬(sa:)・馬身(um:)の行 */
+const MJ_LOG_INFO="締めた時の<b>半荘の記録</b>を、そのまま残した物です。列は席(A・B・C…)、マスはその半荘の着順です。<b>親</b>は、その半荘の親の席。途中で人が替わった所には、名前の行が入ります(交代・卓移動・席替え)。<br><br>"+
+  "この表は<b>見るだけ</b>です。着順の回数やスコアを直す時は、一番下の「数字を直す」を開いてください(表は、締めた時のまま残ります)。<br><br>"+
+  "表の下の小さい字は、締めた時のチップと飛びの数、店での精算の額です。";
+const MJ_VS_INFO="半荘ごとの全員の着順から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>"+
+  "<b>差し馬・馬身は、締めた後からでも足せます。</b>ボタンを押すと、その相手との分が「卓の外」に入り、最終収支に足されます。もう一度押すと外れます。締める前に選んだ分は、押してある形で出ます。<br><br>"+
+  "<b>差し馬</b>: 1半荘ごとに、相手より上なら +1、下なら −1。着順の差は関係ありません。<br><b>馬身</b>: 着順の差を数えます。自分が1着・相手が3着なら +2、自分が3着・相手が2着なら −1。<br><br>"+
+  "金額 = 回数 × 下の単価。単価には、締めた時の「設定」の額が入っています。ここで変えると、ボタンで足した分の金額も一緒に変わります。<br><br>"+
+  "仮の名前(X・Y など)の人は出しません。";
+const MJ_RAW_INFO="半荘の記録から入った数字を、手で直す所です。<b>入れ方(金額・素点)・3麻と4麻・スコアとチップ・着順の回数・同卓者・ゲーム代・卓の外の行</b>があります。<br><br>"+
+  "ふだんは開かなくて大丈夫です。ここで着順の回数を変えても、上の表(締めた時の記録)は変わりません。";
+/* 半荘ごとの着順(締めた時の写し。見るだけ)。表の中身は、半荘の記録の画面と同じ mjlTableParts */
+function mjLogCardHtml(m){
+  const G=m.log, rows=mjLogRowsOf(m), seats=num(G.seats)||mjRankCount(m);
+  const tb=mjlTableParts({rows:rows, seats:seats, name:id=>mjLogNm(m,id), useUma:true});
+  const cnt=mjLogCnt(m);
+  const RANKS=[1,2,3,4].slice(0, seats);
+  const foot=[];
+  if(num(G.chip)) foot.push("チップ "+(num(G.chip)>=0?"+":"−")+Math.abs(num(G.chip))+"枚");
+  if(num(G.tobi)) foot.push("飛び "+(num(G.tobi)>=0?"+":"−")+Math.abs(num(G.tobi)));
+  if(String(G.settle==null?"":G.settle).trim()!=="") foot.push("店での精算 "+signYen(num(G.settle)));
+  return band("半荘ごとの着順", null, MJ_LOG_INFO)+
+    '<div class="card" id="mj-logcard" style="margin-bottom:12px;padding:10px 10px 2px">'+
+    '<div class="row between" style="align-items:baseline;padding:0 6px 4px">'+
+    '<span class="fxl" style="margin:0"><span class="mono" style="color:var(--text);font-weight:700">'+rows.length+'</span>半荘</span>'+
+    '<span class="mono" style="font-size:12px">'+
+      RANKS.map(k=>'<span class="muted" style="margin-left:8px">'+k+'着 <span style="color:var(--text);font-weight:700">'+(cnt[k]||0)+'</span></span>').join("")+
+    '</span></div>'+
+    '<table class="mjl-tbl"><thead><tr><th style="width:34px">回</th>'+
+    MJL_SEATS.slice(0,tb.ncol).map(L=>'<th>'+L+'</th>').join("")+'</tr></thead>'+
+    '<tbody>'+tb.body+'</tbody></table>'+
+    '<div style="padding:8px 6px;border-top:1px solid var(--line);font-size:11px">'+
+      (foot.length ? '<div class="muted mono">締めた時: '+esc(foot.join(" ・ "))+'</div>' : '')+
+      '<div id="mj-logdiff">'+mjLogDiffHtml(m)+'</div>'+   /* 着順の回数を打つたびに、ここだけ書き換える(refreshMj) */
+      '</div>'+
+    '</div>';
+}
+/* 締めた時の写しの、着順ごとの回数 {1:n, 2:n, …}(自分の着順) */
+function mjLogCnt(m){ const cnt={}; mjLogRowsOf(m).forEach(r=>{ if(r.rank) cnt[r.rank]=(cnt[r.rank]||0)+1; }); return cnt; }
+/* 着順の回数を手で直してあると、表(締めた時のまま)と合わない。**黙って食い違わせない**——表の下に1行出す */
+function mjLogDiffHtml(m){
+  if(!mjHasLog(m)) return '';
+  const cnt=mjLogCnt(m), mine=mjRanks(m);
+  return [1,2,3,4].some(k=>(cnt[k]||0)!==(mine[k-1]||0))
+    ? '<div class="amber" style="margin-top:3px">着順の回数を手で直してあります(表は締めた時のまま)</div>' : '';
+}
+/* 相手ごとの成績(締めた時の写しから)。差し馬・馬身のボタンは「卓の外」の行を足す/外す——**締めた後でも計上できる** */
+function mjLogVsHtml(m){
+  const G=m.log, vs=mjlVs(mjLogRowsOf(m)), U=G.unit||{};
+  const pids=Object.keys(vs).filter(pid=>!mjlIsX(mjLogNm(m,pid)));   /* 仮称の人は出さない(半荘の記録の画面と同じ・v5.88) */
+  if(!pids.length) return '';
+  const sv=v=>'<span class="mono '+(v<0?'red':v>0?'teal':'muted')+'" style="font-weight:700">'+(v>=0?'+':'−')+Math.abs(v)+'</span>';
+  const btn=(kind, lab, pid, n)=>{ const k=kind+":"+pid, row=mjBetOf(m,k);
+    return '<button class="btn'+(row?' sel':'')+'" style="flex:1;min-width:0;font-size:12px;padding:7px 0" data-a="mjvs" data-v="'+esc(k)+'">'+lab+' '+sv(n)+
+      (row ? ' <span class="mono" style="font-size:11px;margin-left:4px" data-vsy="'+esc(k)+'">'+signYen(num(row.amount))+'</span>' : '')+'</button>'; };
+  const unit=(key, lab)=>'<div style="flex:1;min-width:0"><div class="muted" style="font-size:11px;margin-bottom:2px">'+lab+'</div>'+
+    '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="円" value="'+esc(num(U[key])>0?String(num(U[key])):"")+'" data-in="mjvu" data-v="'+key+'"></div>';
+  return band("相手ごとの成績", null, MJ_VS_INFO)+
+    '<div class="card" id="mj-vscard" style="margin-bottom:12px;padding-top:8px;padding-bottom:12px">'+
+    pids.map((pid,i)=>{ const x=vs[pid];
+      return '<div style="padding:8px 0'+(i?';border-top:1px solid var(--line)':'')+'">'+
+        '<div class="row between" style="align-items:baseline">'+
+        '<span class="ellip" style="font-size:13px;min-width:0">'+esc(mjLogNm(m,pid))+'</span>'+
+        '<span class="muted mono" style="font-size:11px;flex-shrink:0">'+x.n+'回 上'+x.up+'・下'+x.down+'</span></div>'+
+        '<div class="row" style="gap:6px;margin-top:6px">'+btn("sa","差し馬",pid,x.sa)+btn("um","馬身",pid,x.uma)+'</div></div>'; }).join("")+
+    '<div class="row" style="gap:8px;padding-top:10px;border-top:1px solid var(--line)">'+unit("sashi","差し馬の単価(1回)")+unit("uma","馬身の単価(1つ)")+'</div>'+
+    '</div>';
+}
+/* 差し馬・馬身のボタン: 行があれば外す、無ければ足す(回数 × 単価)。単価が無ければ足さずに、単価の欄へ */
+function mjVsTap(m, k){
+  if(!mjHasLog(m)) return;
+  k=String(k); const i=k.indexOf(":"), kind=k.slice(0,i), pid=k.slice(i+1);
+  if(kind!=="sa" && kind!=="um") return;
+  if(mjBetOf(m,k)){ m.extras=(m.extras||[]).filter(x=>!(x && x.k===k)); render(); toast("外しました"); return; }
+  const x=mjlVs(mjLogRowsOf(m))[pid]; if(!x) return;
+  const lab=(kind==="sa"?"差し馬":"馬身"), key=(kind==="sa"?"sashi":"uma"), unit=num((m.log.unit||{})[key]);
+  if(!(unit>0)){ toast(lab+"の単価を入れてください"); const el=document.querySelector('[data-in="mjvu"][data-v="'+key+'"]'); if(el) el.focus(); return; }
+  const n=(kind==="sa"?x.sa:x.uma), who=mjLogNm(m,pid);
+  m.extras=(m.extras||[]).concat([mjBetRow(lab, who, n, n*unit, k)]);
+  render(); toast(mjBetName(lab, who, n)+" を足しました("+signYen(n*unit)+")");
+}
+/* 単価を打った時: ボタンで足した行(k のある行)の金額を、回数 × 新しい単価に。**描き直さない**(キーボードが閉じる)ので、見えている字だけ書き換える */
+function mjVsUnit(m, key, val){
+  if(!mjHasLog(m) || (key!=="sashi" && key!=="uma")) return;
+  const unit=Math.max(0, num(val));
+  m.log.unit=Object.assign({}, m.log.unit||{}, {[key]:unit});
+  const kind=(key==="sashi"?"sa":"um"), vs=mjlVs(mjLogRowsOf(m));
+  (m.extras||[]).forEach(x=>{
+    if(!x || !x.k || String(x.k).indexOf(kind+":")!==0) return;
+    const v=vs[String(x.k).slice(3)]; if(!v) return;
+    x.amount=String((kind==="sa"?v.sa:v.uma)*unit);
+    document.querySelectorAll("[data-vsy]").forEach(el=>{ if(el.dataset.vsy===x.k) el.textContent=signYen(num(x.amount)); });
+    document.querySelectorAll('[data-in="mjeamount"]').forEach(el=>{ if(String(el.dataset.v)===String(x.id)) el.value=String(Math.abs(num(x.amount))); });
+  });
+  refreshMj();
+}
+/* 名前をまとめた時(v6.34)に、写しの中の名前と、ボタンで足した行の名前も同じに直す(同卓者を書き換えた記録だけ) */
+function mjLogRename(m, from, to){
+  if(!mjHasLog(m)) return false;
+  const P=m.log.people||{}, hit=[];
+  Object.keys(P).forEach(id=>{ if(String(P[id]==null?"":P[id]).trim()===from){ P[id]=to; hit.push(id); } });
+  if(!hit.length) return false;
+  const vs=mjlVs(mjLogRowsOf(m));
+  (m.extras||[]).forEach(x=>{
+    if(!x || !x.k) return; const kind=String(x.k).slice(0,2), pid=String(x.k).slice(3);
+    if(hit.indexOf(pid)<0 || !vs[pid]) return;
+    x.who=to; x.name=mjBetName(kind==="sa"?"差し馬":"馬身", to, kind==="sa"?vs[pid].sa:vs[pid].uma);
+  });
+  return true;
+}
+/* 今までの欄を畳む行。開くと、その下に v6.70 までと同じ欄が同じ順で出る */
+function mjRawFoldHtml(raw){
+  const open=!!UI.mjRawOpen;
+  return '<div class="row between" style="align-items:center;padding:12px 16px;margin-bottom:'+(open?'12px':'4px')+';background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer" data-a="mjrawtog">'+
+    '<span style="font-size:13px;font-weight:700"><span class="mono muted" style="font-size:11px;font-weight:400;margin-right:6px">'+(open?'▾':'▸')+'</span>数字を直す'+infoBtn(MJ_RAW_INFO)+'</span>'+
+    '<span class="muted" style="font-size:11px;flex-shrink:0;margin-left:8px">スコア・回数・ゲーム代</span></div>'+
+    (open ? raw : '');
+}
 function viewMj(){
   const m = UI.mjDraft;
+  const lg = mjHasLog(m);   /* v6.71: 半荘の記録から来た記録(締めた時の写しを持つ) */
   const isFree = m.category==="free";
   const rc = mjRankCount(m);
   let h = '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
@@ -9258,6 +9481,7 @@ function viewMj(){
   h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
     [["free","フリー"],["set","セット"]].map(([v,l])=>
       '<button class="btn '+(m.category===v?"sel":"")+'" style="flex:1" data-a="mjcat" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
+  const hTop=h; h="";   /* v6.71: ここまでが 日付・店・ルール・実働・フリー/セット。ここから下を塊に分ける(並べるのは最後) */
   h += '<div class="row" style="gap:8px;margin-bottom:12px">'+
     [["4","4麻"],["3","3麻"]].map(([v,l])=>
       '<button class="btn '+(m.rule===v?"sel":"")+'" style="flex:1" data-a="mjrule" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
@@ -9371,6 +9595,7 @@ function viewMj(){
         signYen(mjExtraTotal(m))+'</div>';
     }
   }
+  const hRaw=h; h="";   /* v6.71: 3麻/4麻・入れ方・スコアとチップ・着順の回数・同卓者・ゲーム代・卓の外 */
   /* ----- 経費(私的・スコア表には出さない) ----- */
   h += band("経費");
   (m.expenses||[]).forEach(x=>{
@@ -9384,8 +9609,10 @@ function viewMj(){
   h += '<button class="btn dash full" style="margin-top:6px" data-a="mjxfopen">⇄ 家計簿から振替</button>';
   if(UI.xferOpen){ h += xferHint() + xferRowsHtml(xferCandidates(m.date, m.expenses), "mjxfpick"); }
 
+  const hExp=h; h="";   /* v6.71: 経費 */
   h += band("この日の結果");
   h += '<div class="card" id="mj-summary">'+mjSummary(m)+'</div>';
+  const hRes=h; h="";   /* v6.71: この日の結果 */
   /* v4.57: 麻雀も**どの置き場の金でやったか**。高レートで負けて相手に借りる場合、
      その相手を置き場として作れば借りがマイナス残高として残る */
   if(bankPots().length>1){
@@ -9398,9 +9625,12 @@ function viewMj(){
         '<span class="mono '+(v<0?"red":"muted")+'" style="font-size:11px;display:block">'+signYen(v)+'</span></button>';}).join("")+'</div>';
     h += '<div style="margin-top:8px">'+gspHtml(m, mjFinal(m))+'</div>';   /* v5.74: 置き場を分ける */
   }
+  const hPot=h; h="";   /* v6.71: 軍資金の置き場 */
   h += '<input class="input" placeholder="メモ(任意)" value="'+esc(m.memo||"")+'" style="margin:14px 0" data-in="mjf" data-v="memo">';
   h += '<div style="display:none"><button data-a="mjsave">保存</button></div>';
-  return h;
+  /* v6.71: log の無い記録は、今までと同じ順(= v6.70 と同じ字)。半荘の記録から来た記録は、結果と表を上へ・今までの欄は畳む */
+  if(!lg) return hTop+hRaw+hExp+hRes+hPot+h;
+  return hTop+hRes+mjLogCardHtml(m)+mjLogVsHtml(m)+hExp+hPot+h+mjRawFoldHtml(hRaw);
 }
 
 function mjSignedRow(label, val, field, rateLabel, rateVal, rateField, rateDecimal){
@@ -9547,6 +9777,7 @@ function bindMj(){
       }
       else if(kind==="mjrank"){ (m.ranks=m.ranks||["","","",""])[num(v)]=el.value; refreshMj(); }
       else if(kind==="mjp"){ (m.players=m.players||[])[num(v)]=el.value; }
+      else if(kind==="mjvu"){ mjVsUnit(m, v, el.value); }   /* v6.71: 差し馬・馬身の単価 */
     };
   });
   document.querySelectorAll("[data-a]").forEach(el=>{
@@ -9583,6 +9814,8 @@ function bindMj(){
       }
       else if(a==="mjcat"){ m.category=v; render(); }
       else if(a==="mjrule"){ m.rule=v; render(); }
+      else if(a==="mjrawtog"){ UI.mjRawOpen=!UI.mjRawOpen; render(); }   /* v6.71: 今までの欄を開く/畳む */
+      else if(a==="mjvs"){ mjVsTap(m, v); }                              /* v6.71: 差し馬・馬身を足す/外す */
       /* v6.16: バックの単位。額はそのまま残す(押し間違えて戻しても消えない)。結果は描き直しで追従 */
       else if(a==="mjbackunit"){ if(v==="fixed") m.feeBackUnit="fixed"; else delete m.feeBackUnit; render(); }
       else if(a==="mjsign"){
@@ -9652,6 +9885,7 @@ function refreshMj(){
   const hn=document.getElementById("mj-hanchan"); if(hn) hn.textContent="半荘数 "+mjHanchan(m)+(mjAvgRank(m)!==null?" / 平均着順 "+mjAvgRank(m).toFixed(2):"");
   const ff=document.getElementById("mj-feeformula"); if(ff) ff.textContent=mjFeeFormula(m);
   const fa=document.getElementById("mj-feeauto"); if(fa) fa.textContent="¥"+mjGameFee(m).toLocaleString("ja-JP");
+  { const ld=document.getElementById("mj-logdiff"); if(ld && mjHasLog(m)) ld.innerHTML=mjLogDiffHtml(m); }   /* v6.71 */
   /* v5.74: 最終収支が動けば「残り」も動く(スコアや投資を直しながら分け先を見ても嘘にならないように) */
   const gr=document.getElementById("gsp-rest"); if(gr) gr.innerHTML=gspRestHtml(m, mjFinal(m));
 }
@@ -11615,7 +11849,7 @@ function viewDbt(bm){
   if(sp.hidden.length) h+=bmFold("hid", "出さないことにした行 "+sp.hidden.length+"件", "",
     sp.hidden.map((r,k)=>'<div class="row between" style="align-items:baseline;font-size:12px;padding:6px 0;'+(k?'border-top:1px solid var(--line)':'')+'">'+
       '<span class="ellip muted" style="min-width:0"><span class="mono" style="margin-right:8px">'+md(r.date)+'</span>'+esc(r.merch)+' '+signYen(r.amt)+'</span>'+
-      '<button class="navbtn" style="color:var(--teal);font-size:12px;flex-shrink:0;margin-left:8px;padding:0" data-bm="unhide" data-v="'+r.i+'">戻す</button></div>').join(""));
+      '<button class="navbtn hit" style="--ht:6px;--hb:6px;--hl:12px;--hr:17px;color:var(--teal);font-size:12px;flex-shrink:0;margin-left:8px;padding:0" data-bm="unhide" data-v="'+r.i+'">戻す</button></div>').join(""));
   return h;
 }
 /* 設定の画面の「Amazonのメール」の板 */
