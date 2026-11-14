@@ -458,7 +458,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.71 (localStorage保存・完全オフライン)
+   Tally 6.72 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -542,7 +542,15 @@ const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<"
 const todayStr = () => { const d=new Date();
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 const nowHM = () => { const d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); };
-const uid = () => Date.now() + Math.floor(Math.random()*1000);
+/* v6.72【不具合】**同じ ID を2回出さない**。v6.71 までは「今の時刻 + 0〜999 の乱数」だけで、同じ瞬間に作った2つが 1/1000 で同じ値になった。
+   一度に何件も作る所(レシート・明細の取り込み・品目の行・固定費・卓の外の行)で、同じ ID の記録が2件できる
+   → 後の方を開くと前の方が出る・直して保存すると2件とも同じ中身になる・消すと2件とも消える。
+   取り込みが 10件で 4.1%・20件で 17.5%(本物のコードで 3,000回ずつ数えた)。v6.71 の検査一式を組む時に、検査がたまに落ちて見つかった。
+   → **前に出した値以下なら、前の値 + 1 にする**(この場かぎりの数を1つ覚えるだけ。保存しない)。値の形(数・今の時刻の近く)は変わらない。
+   起動し直すと 0 から覚え直すが、新しい値は今の時刻以上なので、前に作った ID(作った時刻 + 999 まで)とは重ならない
+   (1秒以内に起動し直して作った時・時計を戻した時を除く)。すでに重なっている記録は dupIdGroups(管理のタブ)が見つける */
+let UID_LAST = 0;
+const uid = () => { let v = Date.now() + Math.floor(Math.random()*1000); if(v <= UID_LAST) v = UID_LAST + 1; UID_LAST = v; return v; };
 
 /* ---------- 固定費(定期)テンプレート ----------
    テンプレートが実エントリを生成する方式。日付が過去なら実績、未来なら予定。
@@ -1148,6 +1156,17 @@ const mjExtraTotal = m => ((m&&m.extras)||[]).reduce((a,e)=>a+num(e.amount),0);
    例: 6,450円の卓が16半荘なら、それだけで平均+403pt——素点なら1半荘+403ptはあり得ない数字。
    v5.65: **金額で入れる卓のスコア欄は常に素点**(金額は投資・回収が持つ)ので、単価の条件を外す。 */
 const mjScoreIsPt = m => String(m&&m.score||"").trim()!=="" && (mjIsCash(m) || fnum(m&&m.scoreRate)!==1);
+/* v6.72: 卓の外の行の「相手」。半荘の記録から来た行は who を持つ。手で足した行は、名前の「差し馬 Aさん」「馬身 Aさん」の後ろを相手として読む
+   (締めた時の行の名前「差し馬 Aさん +2」と同じ並び。後ろの回数は外す)。置き場へ「分ける」時の候補(gspHtml)が使う */
+const mjExtWho = x => { if(x && x.who) return String(x.who);
+  const r=/^(?:差し馬|馬身)[ \u3000]+(.+?)(?:[ \u3000]+[+＋\-−]\d+)?$/.exec(String((x&&x.name)||"").trim()); return r ? r[1].trim() : ""; };
+/* v6.72: **締めた時に入れていたメモ**(「半荘の記録から: 12半荘 5-4-3 / ゲーム代… / 店での精算…」)は、欄に出さない
+   (ユーザー 11/15 03:53: 「半荘の記録からという箱も汚いから嫌です、内部的なデータなら表に出す必要無いと思います」)。
+   v6.72 からは入れない。前の記録に入っている分は、**手を加えていない時だけ**隠す(字が1つでも違えば、そのまま出す)。データは消さない
+   (v6.70 までに締めた記録では、飛びの数と店での精算の額が残っているのは、この文だけ)。欄に何か打った時は、元の文を memoAuto へ移す(bindMj) */
+const MJ_MEMO_AUTO=/^半荘の記録から: \d+半荘 \d+(?:-\d+){2,3} \/ ゲーム代[+−]¥[\d,]+ トップ賞[+−]¥[\d,]+(?: ドリンク代[+−]¥[\d,]+)?(?: \/ 飛び[+−]\d+\([+−]¥[\d,]+・スコアに含む\))? \/ 店での精算[+−]¥[\d,]+$/;
+const mjMemoAuto = s => MJ_MEMO_AUTO.test(String(s==null?"":s));
+const mjMemoShown = m => mjMemoAuto(m&&m.memo) ? "" : String((m&&m.memo)||"");
 /* 内訳として分かっている分の合計。**金額で入れる卓では、これは収支を決めない** */
 const mjBreakdown = m => mjScoreYen(m) + mjChipYen(m) + mjExtraTotal(m);
 const mjExpTotal = m => (m.expenses||[]).reduce((a,e)=>a+num(e.amount),0); // セット飲食等の私的経費
@@ -1284,7 +1303,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.71";
+const APP_VERSION = "6.72";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -2608,6 +2627,7 @@ function bindMjLog(){
            (ここで mjlPrune すると、座っていない人として全部消えてしまう)。席を決めた時に人の一覧は作り直す */
         delete S.mjLog.seat; delete S.mjLog.seatOk;
         delete S.mjLog.oyaNext; delete S.mjLog.oyaReset;   /* v6.36: 親も次の卓で選び直す */
+        delete S.mjLog.t0;   /* v6.72: 始まりの時刻も(次に席を決めた時に入る) */
         mjlUiFresh();
         save(); render(); toast("リセットしました"); return;
       }
@@ -2741,7 +2761,7 @@ function bindMjLog(){
           /* v5.65: 半荘の記録は**卓の精算額**を持っていて、買った額・換金額は知らない。
              無い数字を作らず、この経路は素点(=金額)モードのままにする */
           calc:"score", inAmt:"", outAmt:"",
-          startAt:"", endAt:"",
+          startAt:mjlStartHM(), endAt:mjlEndHM(),   /* v6.72: 実働を自動で(席を決めた時刻 〜 締めた時刻) */
           /* **スコア分をそのまま円で**(レート1)。素点は持っていないので金額を直接載せる */
           /* v6.37【不具合】**飛びの額もスコアに入れる**。スコア分は精算から飛びを引いた残りで、締めた記録には飛びの欄が無いので、
              v6.36までは飛びを押した卓の収支から飛びの額が抜けていた(半荘の記録の最終収支 +2,900 → 締めた記録 +2,400)。
@@ -2765,10 +2785,9 @@ function bindMjLog(){
           /* v5.91: **相手ごとの行**にし、誰の分かを`who`に持つ——締めた後に置き場へ分ける時、どの額を誰の置き場へ入れるか分かるように */
           /* v6.71: 行の形は mjBetRow(締めた後に足す時と同じ)。相手の分かる行には k(誰との・どちらか)を付ける */
           extras: t.outs.filter(x=>x.yen).map(x=>mjBetRow(x.kind, x.who, x.n, x.yen, (x.pid && snap.map[x.pid]) ? (x.kind==="差し馬"?"sa:":"um:")+snap.map[x.pid] : "")),
-          memo:"半荘の記録から: "+t.n+"半荘 "+rc.join("-")+
-               " / ゲーム代"+signYen(t.fee)+" トップ賞"+signYen(t.top)+(t.drink?" ドリンク代"+signYen(t.drink):"")+
-               (t.tobiY?" / 飛び"+(t.tobi>=0?"+":"−")+Math.abs(t.tobi)+"("+signYen(t.tobiY)+"・スコアに含む)":"")+
-               " / 店での精算"+signYen(t.settle),
+          /* v6.72: **メモに「半荘の記録から: …」を入れない**(ユーザー 11/15 03:53: 内部的なデータなら表に出す必要無い)。
+             中身(半荘数・着順の回数・飛び・店での精算)は、v6.71 から log(写し)が持っている。ゲーム代・トップ賞・ドリンクは下の欄から出る */
+          memo:"",
           bwal:String(S.mjLog.bwal||(bankPots()[0]||{}).id||""),
           log:snap.log   /* v6.71: 半荘ごとの着順・親・印・チップ・飛び・精算・単価(mjlSnap) */
         };
@@ -4250,6 +4269,37 @@ function bindMjtList(){
   });
 }
 
+/* v6.72 **すでに同じ ID になっている記録を探す**(v6.71 までの uid() で、まれにできた)。あった時だけ、管理のタブの一番上に一覧を出す(viewTool)。
+   見るのは、ID で「開く・保存する・消す」一覧: 家計簿の記録・所持金/軍資金/貯金の記録・パチスロの稼働・麻雀の記録。
+   **直し(ID の振り直し)は、まだ作っていない**: 記録と振替の紐づけ(svTx・bkTx・gtTx・inSvTx)が絡むと、どちらの物か決められない形がある
+   → ユーザーの実物を見てから作る(ⓘ に「開いたり消したりする前に、写真を送って」と書いた)。v6.72 からは、新しくはできない */
+function dupIdGroups(){
+  const out=[], d=x=>x&&x.date ? String(x.date).slice(5).replace("-","/")+" " : "";
+  const scan=(kind, list, lab)=>{
+    const m=new Map();
+    (list||[]).forEach(x=>{ if(!x || x.id==null) return; const k=String(x.id); if(!m.has(k)) m.set(k, []); m.get(k).push(x); });
+    m.forEach((a,k)=>{ if(a.length>1) out.push({kind:kind, id:k, rows:a.map(lab)}); });
+  };
+  scan("家計簿の記録", S.entries, e=>d(e)+[e.store||"", e.item||""].filter(Boolean).join(" ")+(e.store||e.item ? " " : (e.category||"")+" ")+yen(num(e.amount)));
+  scan("所持金の記録", (S.wallet||{}).txns, t=>d(t)+(t.memo ? t.memo+" " : "")+signYen(num(t.amount)));
+  scan("軍資金の記録", (S.bank||{}).txns, t=>d(t)+(t.memo ? t.memo+" " : "")+signYen(num(t.amount)));
+  scan("貯金の記録", (S.savings||{}).txns, t=>d(t)+(t.memo ? t.memo+" " : "")+signYen(num(t.amount)));
+  scan("パチスロの稼働", S.sessions, s=>d(s)+(s.store||"稼働"));
+  scan("麻雀の記録", S.mjSessions, m=>d(m)+(mjWhere(m, " ")||"麻雀"));
+  return out;
+}
+const DUPID_INFO="前の版までの不具合で、<b>同じ瞬間に作った2つの記録が、同じ ID になったもの</b>です(レシートや明細をまとめて取り込んだ時などに、まれに起きました)。<br><br>"+
+  "同じ ID の記録は、<b>片方を開くともう片方が出る・直して保存すると2件とも同じ中身になる・消すと2件とも消える</b>ことがあります。<br><br>"+
+  "<b>この一覧の記録は、開いたり消したりする前に、この画面の写真を Claude に送ってください</b>(直し方を、形を見てから決めます)。<br><br>"+
+  "今の版からは、新しく同じ ID ができることはありません。";
+function dupIdHtml(){
+  const g=dupIdGroups();
+  if(!g.length) return "";
+  return '<div class="gl-h" id="dupid-h"><span class="red">同じ ID の記録が '+g.length+'組あります</span>'+infoBtn(DUPID_INFO)+'</div>'+
+    '<div class="card glist" id="dupid">'+g.map(x=>
+      '<div class="gl-row" style="cursor:default"><div class="gl-main"><div class="gl-t">'+esc(x.kind)+'</div>'+
+      x.rows.map(r=>'<div class="gl-s">'+esc(r)+'</div>').join("")+'</div></div>').join("")+'</div>';
+}
 function viewTool(){
   if(UI.screen==="mjtable") return "";  // 別画面で描画
   /* v6.48: **節ごとに1枚の板**(ユーザー: 管理の中は最初は良いと思ったが、やや煩く見えてきた。
@@ -4280,7 +4330,7 @@ function viewTool(){
   /* v6.57: **「漏れ係数」の行を外した**(ユーザー: 使ってないから消して良いです)。家計簿の板は6行→5行、管理は全部で13行。
      行の右に値を出していたのはこの行だけだったので、そのための .gl-r / .gl-val(CSS)も一緒に外した。
      また値を右に出す行が要る時は、v6.56 の index.html のこの行と CSS の2行を見る */
-  let h = _head("家計簿");
+  let h = dupIdHtml()+_head("家計簿");   /* v6.72: 同じ ID の記録があった時だけ、一番上に */
   h += _list([
     _row('data-a="fixed"', "固定費"),
     /* v5.50: **予算の設定に管理タブから入れる**(ユーザー指摘: どこから期間を変えるの)。
@@ -6209,7 +6259,7 @@ function mjlIsX(name){ return /^[XYZ]\d*$/.test(String(name||"")); }
 function mjlNextX(){
   const used=new Set(Object.values(mjlPeople()));
   for(let k=1;k<50;k++){ for(const L of ["X","Y","Z"]){ const nm=L+(k>1?k:""); if(!used.has(nm)) return nm; } }
-  return "X"+uid().slice(-3);
+  return "X"+String(uid()).slice(-3);   /* v6.72: uid() は数(前は slice が無く、届けばエラーだった) */
 }
 /* 新しい人の id。v6.32: uid は時刻+乱数3桁なので、同じミリ秒に続けて作ると重なりうる(重なると2つの席が同じ人になる)→ 重ならない id にする */
 function mjlNewId(){ const P=mjlPeople(); let id="p"+uid(), k=0; while(P[id]!=null) id="p"+uid()+"_"+(++k); return id; }
@@ -6260,6 +6310,26 @@ const MJL_ORD_EDIT_INFO="1着から順に名前を押し直します。最後の
   "そろえてから、下の「更新する」で保存します。「やめる」で、直すのをやめます。";
 const MJL_HABIT_MS=1500;          /* 記録した直後のこの間は、下バー(前は「記録する」があった所)を効かせない */
 /* 行が壊れていても(null など)落ちないように読む——起動時にも呼ぶので、ここで落ちると画面が出なくなる */
+/* v6.72【実働を自動で】(ユーザー 11/15 03:53: 「半荘の記録つける時に、開始時刻も自動で設定、閉める時に終了時刻も自動で設定出来れば良い。
+   打つ前に時刻が入るケースもあるから、どうかと思ったが、別に店にはいるから稼働時間として良いかと思い直しました」)。
+   ・**始まり = 席を決めた時刻**(S.mjLog.t0。mjlSetupCommit で入れる。リセット・締めて保存した後は消す=次の卓でまた入る)。
+     ただし、席を決めてから最初の半荘を記録するまでが MJL_T0_STALE_MS(3時間)より長い時は、入れない
+     (前の日に席だけ決めて帰った卓。入れると、前の日の時刻が始まりになる)。**v6.72 より前から打っている卓は t0 が無いので、空のまま**
+   ・**終わり = 締めた時刻**。ただし、最後の半荘を記録してから MJL_END_LATE_MS(1時間)より後に締めた時は、最後の半荘を記録した時刻
+     (締め忘れて、次の日に締めた時。締めた時刻を入れると、終わりが次の日の時刻になる)
+   入れるのは締めた時の下書きの 実働 の欄(今までは空)。欄はそのまま直せる。時刻を使う計算は、今は無い(記録だけ) */
+const MJL_T0_STALE_MS=3*60*60000, MJL_END_LATE_MS=60*60000;
+function tsHM(t){ const d=new Date(num(t)); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
+function mjlStartHM(){
+  const t0=num((S.mjLog||{}).t0); if(!t0) return "";
+  let first=0; mjLogRows().forEach(r=>{ const x=num(r&&r.t); if(x && (!first || x<first)) first=x; });
+  if(first && first-t0>MJL_T0_STALE_MS) return "";
+  return tsHM(t0);
+}
+function mjlEndHM(){
+  const last=mjlLastT(), now=Date.now();
+  return (last && now-last>MJL_END_LATE_MS) ? tsHM(last) : tsHM(now);
+}
 function mjlLastT(rows){ let t=0; (rows||mjLogRows()).forEach(r=>{ const x=num(r&&r.t); if(x>t) t=x; }); return t; }
 /* 半荘の間隔(分)の中央値。5分未満(まとめて入れた分)と2時間半より長い分(休憩・卓の外)は数えない。2つ取れなければ0 */
 function mjlGapOf(rows){
@@ -6690,6 +6760,7 @@ function mjlSetupCommit(){
   });
   st.forEach((x,i)=>{ if(x===null) st[i]=mjlNewX(); });
   S.mjLog.seat=st; S.mjLog.seatOk=true; delete S.mjLog.pendEv; delete S.mjLog.roster;
+  S.mjLog.t0=Date.now();   /* v6.72: この卓の始まり(実働の開始に使う=mjlStartHM) */
   mjlUiFresh();
   save(); render(); toast("席を決めました("+st.map((x,i)=>MJL_SEATS[i]+" "+mjlName(x)).join("・")+")");
 }
@@ -7773,7 +7844,7 @@ function gspHtml(sess, fin){
   /* v5.91: **卓の外の相手ごとの額を、その人の名前の置き場へワンタップで分ける**(ユーザー: 締めた後に分けるため分かるように)。
      半荘の記録から締めた卓は、卓の外の行に相手(who)を持っている。**同じ名前の置き場があり、まだ分けていない人**だけ出す */
   { const per={};
-    ((sess&&sess.extras)||[]).forEach(x=>{ if(x&&x.who) per[x.who]=(per[x.who]||0)+num(x.amount); });
+    ((sess&&sess.extras)||[]).forEach(x=>{ const w=mjExtWho(x); if(w) per[w]=(per[w]||0)+num(x.amount); });   /* v6.72: 手で足した「差し馬 Aさん」も */
     const chips=Object.keys(per).filter(w=>per[w]).map(w=>({w:w, y:per[w], p:bankPots().find(p=>p.name===w)}))
       .filter(o=>o.p && String(o.p.id)!==pb && !list.some(x=>String(x.bwal)===String(o.p.id)));
     if(chips.length){
@@ -9429,6 +9500,17 @@ function mjLogRename(m, from, to){
   return true;
 }
 /* 今までの欄を畳む行。開くと、その下に v6.70 までと同じ欄が同じ順で出る */
+/* v6.72: 卓の外の ⓘ。金額で入れる記録では、ここは内訳(最終収支は投資・回収で決まる)——v6.71 までは「内訳(分かる分だけ)」の ⓘ に書いてあったが、
+   フリーではその見出しを出さなくなったので、ここに書く */
+function mjExtInfo(cash){
+  return "同卓の人と、<b>店の精算とは別に</b>やり取りしたお金です(差し馬・馬身など)。<b>もらった分がプラス</b>で、払った分は ＋ のボタンを押して − にします。<br><br>"+
+    "<b>＋ 差し馬・＋ 馬身</b>で行を足すと、同卓者の名前のボタンが出ます。押すと「差し馬 Aさん」のように相手が入ります(名前は手で書いても同じです)。"+
+    "相手を入れておくと、その人の名前の置き場へ「分ける」時の候補に出ます。成績の集計では、名前に「差し馬」「馬身」とある行を、それぞれに数えます。<br><br>"+
+    "<b>ゲーム代バック</b>は、ここではなく上のゲーム代の欄に入れます。"+
+    (cash ? "<br><br>この記録は<b>金額で入れる</b>形なので、ここは<b>内訳(記録用)</b>です。最終収支は、投資と回収だけで決まります。結果の欄では、麻雀だけの勝ち負けを、ここに入れた分と残り(スコア分)に分けて出します。" : "");
+}
+const MJ_EXP_INFO="麻雀の記録に経費を足す機能は、やめました(交通費・飲食などは、家計簿に<b>遊技</b>の経費として記録します)。<br><br>"+
+  "この記録には、前に入れた経費が残っているので出しています。<b>直す・消す</b>はできます。最終収支からは、今までどおり引かれます。";
 function mjRawFoldHtml(raw){
   const open=!!UI.mjRawOpen;
   return '<div class="row between" style="align-items:center;padding:12px 16px;margin-bottom:'+(open?'12px':'4px')+';background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer" data-a="mjrawtog">'+
@@ -9489,12 +9571,21 @@ function viewMj(){
   /* v5.65: **入れ方の切り替え**。既定は金額(投資・回収)。
      素点は半荘の記録から反映した卓と、昔の卓のためのモード */
   const _cash = mjIsCash(m);
-  h += '<div class="row" style="gap:8px;margin-bottom:12px">'+
+  /* v6.72【フリーでは、チップと素点を付けない】(ユーザー 11/15 03:53: 「フリーでチップの記録を取る事と素点の記録を取る事は諦めました、
+     実際に過去の記録でも取ってないので、ここは消して良いです。セットは別ですがね」)。
+     フリーのふつうの形(金額で入れる・素点もチップも入っていない)では、切り替えも、内訳の欄も出さない。
+     **数字が入っている記録では出す**(前の記録・半荘の記録から締めた記録のスコア=円)。見えない数字が金額に効かないように。
+     切り替えは「出ている時は、どちらへも戻れる」: 素点の形の記録では出るので、金額へ行って戻れる(金額へ行っても、スコアの数字が残っている間は出る) */
+  const _hasSc = !!fnum(m.score), _hasCh = !!fnum(m.chips);
+  const _plain = isFree && _cash && !_hasSc && !_hasCh;
+  const _showSc = !isFree || !_cash || _hasSc;   /* フリーの金額の記録では、入っている時だけ */
+  const _showCh = !isFree || _hasCh;             /* フリーでは、入っている時だけ */
+  if(!_plain) h += '<div class="row" style="gap:8px;margin-bottom:12px">'+
     [["cash","金額で入れる"],["score","素点で入れる"]].map(([v,l])=>
       '<button class="btn '+((_cash?"cash":"score")===v?"sel":"")+'" style="flex:1;font-size:12px" data-a="mjcalc" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
 
   if(_cash){
-    h += band("投資・回収", null, "雀荘では、最初にお金を払ってチップを買い、最後に残ったチップを換金します。<br><b>投資</b> = 最初に払った額、<b>回収</b> = 最後に換金した額です。回収 − 投資 が、卓での収支です。経費(交通費・飲食など)を入れた場合は、そこからさらに経費を引いた額が家計簿に記録されます。<br><br>ゲーム代は打っている途中で払っているので、回収額からはすでに差し引かれています。その分を差額に足し戻すと、「麻雀だけの勝ち負け」が分かります。");
+    h += band("投資・回収", null, "雀荘では、最初にお金を払ってチップを買い、最後に残ったチップを換金します。<br><b>投資</b> = 最初に払った額、<b>回収</b> = 最後に換金した額です。回収 − 投資 が、卓での収支です。"+((m.expenses||[]).length ? "この記録には経費が入っているので、そこからさらに経費を引いた額が家計簿に記録されます。" : "")+"<br><br>ゲーム代は打っている途中で払っているので、回収額からはすでに差し引かれています。その分を差額に足し戻すと、「麻雀だけの勝ち負け」が分かります。");
     h += '<div class="grid2" style="margin-bottom:6px">'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">投資(買った額)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(m.inAmt||"")+'" data-in="mjf" data-v="inAmt"></div>'+
@@ -9503,7 +9594,7 @@ function viewMj(){
   }
 
   /* v5.75: この節の説明(金額に効くか/スコア欄が円か素点か)は見出しのⓘへ */
-  h += band(_cash ? "内訳(分かる分だけ)" : "スコア・チップ", null,
+  if(_showSc || _showCh) h += band(_cash ? "内訳(分かる分だけ)" : (_showCh ? "スコア・チップ" : "スコア"), null,
     _cash ? "ここに入れる素点・チップ・馬身などは<b>記録用</b>で、収支の計算には使いません。収支は上の投資・回収だけで決まります。<br><br>分かっているものだけ入れてください。結果の欄で、麻雀だけの勝ち負けのうち、ここに入れていない分が「未入力」として出ます。"
           : (fnum(m.scoreRate)===1
             ? "この記録は単価が1なので、<b>スコア欄の数字がそのまま金額(円)</b>として扱われています(スコア表から反映した記録など)。<br><br>素点(点数)で入れ直す場合は、1スコアあたりの単価(レート。例: 30)に直してください。"
@@ -9513,8 +9604,8 @@ function viewMj(){
      素点で入れたいなら単価をレートに直す——**入力欄はどちらでも受ける**
      v5.65: 金額の卓では、この節は**記録用で金額に効かない**ことをはっきり書く */
 
-  h += mjSignedRow("トータルスコア"+(_cash?"(素点・任意)":""), m.score, "score", "1スコア単価(円)", m.scoreRate, "scoreRate", true);
-  h += mjSignedRow("トータルチップ"+((_cash||isFree)?"(任意)":""), m.chips, "chips", "チップ1枚単価(円)", m.chipRate, "chipRate", false);
+  if(_showSc) h += mjSignedRow("トータルスコア"+(_cash?"(素点・任意)":""), m.score, "score", "1スコア単価(円)", m.scoreRate, "scoreRate", true);
+  if(_showCh) h += mjSignedRow("トータルチップ"+((_cash||isFree)?"(任意)":""), m.chips, "chips", "チップ1枚単価(円)", m.chipRate, "chipRate", false);
 
   h += band("着順(回数)");
   h += '<div class="row" style="gap:6px;margin-bottom:6px">';
@@ -9568,7 +9659,13 @@ function viewMj(){
   /* v5.46: **描画中にデータを書き換えない**(描画は何度も走るので副作用を置かない)。
      行が無いときは**入力欄だけを見せる**ことで「何を入れる場所か」を示す */
   if((m.extras||[]).length || m.category==="free"){
-    h += band("卓の外(馬身・バックなど)");
+    /* v6.72【卓の外の形】(ユーザー 11/15 03:53: 「卓の外で+馬身となってるのも微妙。バックは入れる箇所は既にあるし差し馬の場合もある、工夫したい」)。
+       ・見出しから「バック」を外した(バックはゲーム代の欄)。説明は ⓘ
+       ・足すボタンは小さい1行(＋ 差し馬・＋ 馬身・＋ ほか)。v6.71 までは、行が無い時だけ「＋ 馬身」、その下に幅いっぱいの「＋ もらう分を追加」
+       ・押して足したばかりの行(名前が「差し馬」「馬身」だけ)には、同卓者の名前のボタンを出す。押すと名前が「差し馬 Aさん」になる
+         (相手は名前の後ろから読む=mjExtWho。別に持たない) */
+    h += band("卓の外(差し馬・馬身)", null, mjExtInfo(_cash));
+    const _pl=(m.players||[]).map(p=>String(p||"").trim()).filter(Boolean);
     (m.extras||[]).forEach(x=>{
       h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
         '<input class="input sm" placeholder="名前" value="'+esc(x.name||"")+'" style="flex:1.2" data-in="mjename" data-v="'+x.id+'">'+
@@ -9581,15 +9678,19 @@ function viewMj(){
           'data-a="mjesign" data-v="'+x.id+'">'+(neg?"−":"＋")+'</button>'; })()+
         '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="額" value="'+esc(String(x.amount||"").replace(/^-/,""))+'" style="flex:1;min-width:70px" data-in="mjeamount" data-v="'+x.id+'">'+
         '<button class="xbtn" data-a="mjedel" data-v="'+x.id+'">×</button></div>';
+      { const nm0=String(x.name||"").trim();
+        if((nm0==="差し馬" || nm0==="馬身") && !x.who && _pl.length){
+          h += '<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px" data-ewho="'+x.id+'">'+
+            '<span class="muted" style="font-size:11px">相手</span>'+
+            /* 名前のボタンは高さ 25px(.chip)。押せる範囲だけ、上下左右に 3px ずつ広げる(.hit=v6.71。上の行まで 6px・下の足すボタンまで 8px・となりのボタンまで 6px なので、重ならない)。
+               **.hit の広げ幅は、縁(border)の内側から数える**(見えない板 ::after の基準が、縁の内側の箱なので)。.chip は縁が 1px あるので、4px と書いて、見た目より 3px 広い */
+            _pl.map(p=>'<button class="chip hit" style="--ht:4px;--hb:4px;--hl:4px;--hr:4px" data-a="mjewho" data-v="'+x.id+'|'+esc(p)+'">'+esc(p)+'</button>').join("")+'</div>';
+        } }
     });
-    /* v5.46: **馬身の欄が無かった**(ユーザー指摘)。行が1つも無いときは、
-       よく使う2つを**押すだけで足せる**ようにする——追加ボタンだけでは何を入れる場所か分からない */
-    if(!(m.extras||[]).length){
-      h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
-        '<button class="btn" style="flex:1;padding:10px 0" data-a="mjepreset" data-v="馬身">＋ 馬身</button>'+
-        '</div>';
-    }
-    h += '<button class="btn dash full" data-a="mjeadd">＋ もらう分を追加</button>';
+    h += '<div class="row" id="mj-eadd" style="gap:6px">'+
+      [["差し馬","＋ 差し馬"],["馬身","＋ 馬身"]].map(([v,l])=>
+        '<button class="btn" style="flex:1;padding:10px 0;font-size:13px" data-a="mjepreset" data-v="'+v+'">'+l+'</button>').join("")+
+      '<button class="btn" style="flex:1;padding:10px 0;font-size:13px" data-a="mjeadd">＋ ほか</button></div>';
     if((m.extras||[]).length){
       h += '<div class="muted mono" style="font-size:11px;margin-top:6px;text-align:right">合計 '+
         signYen(mjExtraTotal(m))+'</div>';
@@ -9597,7 +9698,12 @@ function viewMj(){
   }
   const hRaw=h; h="";   /* v6.71: 3麻/4麻・入れ方・スコアとチップ・着順の回数・同卓者・ゲーム代・卓の外 */
   /* ----- 経費(私的・スコア表には出さない) ----- */
-  h += band("経費");
+  /* v6.72【麻雀の記録の経費をやめた】(ユーザー 11/15 03:53: 「とりあえず経費の機能は消して良いです。遊戯経費で記帳することにしたので不用。
+     後はゲーム代で調整出来ますのでオッケー」)。「＋ 経費を追加」と「⇄ 家計簿から振替」を外した。
+     **前の記録に経費が入っている時だけ**、その行を出す(直す・消すはできる。足せない)——見えない経費が最終収支から引かれないように。
+     計算(mjExpTotal → mjFinal)と、家計簿から振り替えた行を消した時に家計簿へ戻す動き(_restore)は、そのまま */
+  if((m.expenses||[]).length){
+  h += band("経費", null, MJ_EXP_INFO);
   (m.expenses||[]).forEach(x=>{
     h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
       '<input class="input sm" placeholder="店名" value="'+esc(x.store||"")+'" style="flex:1" data-in="mjxstore" data-v="'+x.id+'">'+
@@ -9605,9 +9711,7 @@ function viewMj(){
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="金額" value="'+esc(x.amount)+'" style="flex:0.9;min-width:72px" data-in="mjxamount" data-v="'+x.id+'">'+
       '<button class="xbtn" data-a="mjxdel" data-v="'+x.id+'">×</button></div>';
   });
-  h += '<button class="btn dash full" data-a="mjxadd">＋ 経費を追加</button>';
-  h += '<button class="btn dash full" style="margin-top:6px" data-a="mjxfopen">⇄ 家計簿から振替</button>';
-  if(UI.xferOpen){ h += xferHint() + xferRowsHtml(xferCandidates(m.date, m.expenses), "mjxfpick"); }
+  }
 
   const hExp=h; h="";   /* v6.71: 経費 */
   h += band("この日の結果");
@@ -9626,7 +9730,7 @@ function viewMj(){
     h += '<div style="margin-top:8px">'+gspHtml(m, mjFinal(m))+'</div>';   /* v5.74: 置き場を分ける */
   }
   const hPot=h; h="";   /* v6.71: 軍資金の置き場 */
-  h += '<input class="input" placeholder="メモ(任意)" value="'+esc(m.memo||"")+'" style="margin:14px 0" data-in="mjf" data-v="memo">';
+  h += '<input class="input" placeholder="メモ(任意)" value="'+esc(mjMemoShown(m))+'" style="margin:14px 0" data-in="mjf" data-v="memo">';   /* v6.72: 締めた時に入れていた文は出さない(mjMemoAuto) */
   h += '<div style="display:none"><button data-a="mjsave">保存</button></div>';
   /* v6.71: log の無い記録は、今までと同じ順(= v6.70 と同じ字)。半荘の記録から来た記録は、結果と表を上へ・今までの欄は畳む */
   if(!lg) return hTop+hRaw+hExp+hRes+hPot+h;
@@ -9692,7 +9796,9 @@ function mjSummary(m){
     /* 内訳を1つでも入れていて、なお残りがあるときだけ出す。
        **何も入れていない卓に「未入力」は出さない**(分かっていないのではなく、まだ入れていないだけ)。
        ぴったり埋まったときも出さない——0円の行は読む手を止めるだけ */
-    if(mjBreakdown(m)!==0 && mjUnknown(m)!==0) h += sub("未入力", mjUnknown(m));
+    /* v6.72: フリーで素点もチップも入っていない記録(=付けない形)では、残りは卓の中の勝ち負けなので「スコア分」と呼ぶ
+       (半荘の記録の精算の内訳と同じ呼び名)。「未入力」は、入れる欄がある時の呼び名 */
+    if(mjBreakdown(m)!==0 && mjUnknown(m)!==0) h += sub((m.category==="free" && !fnum(m.score) && !fnum(m.chips)) ? "スコア分" : "未入力", mjUnknown(m));
 
     if(fee||back){
       h += head("ゲーム代", back-fee);
@@ -9722,7 +9828,8 @@ function mjSummary(m){
     return h;
   }
   h += srow("スコア収支", mjScoreYen(m));
-  if(num(m.chips)||fnum(m.chipRate)) h += srow("チップ収支", mjChipYen(m));
+  /* v6.72: フリーでは、チップを付けた時だけ(v6.71 までは、単価が入っていれば「チップ収支 +¥0」と出ていた)。セットは今までどおり */
+  if(num(m.chips) || (m.category!=="free" && fnum(m.chipRate))) h += srow("チップ収支", mjChipYen(m));
   /* v5.46: **卓の外(馬身・バック)も内訳に出す**(ユーザー指摘: 表示したい)。
      `mjRaw`に含まれているのに行が無いと、**合計だけ増えて理由が読めない** */
   ((m.extras||[]).forEach(x=>{ if(num(x.amount)) h += srow(x.name||"卓の外", num(x.amount)); }));
@@ -9747,7 +9854,10 @@ function bindMj(){
   document.querySelectorAll("[data-in]").forEach(el=>{
     const kind=el.dataset.in, v=el.dataset.v;
     el.oninput = ()=>{
-      if(kind==="mjf"){ m[v]=el.value; refreshMj(); }
+      if(kind==="mjf"){
+        /* v6.72: 隠していた「半荘の記録から: …」の上から打ち始めた時は、元の文を memoAuto へ移してから書き換える(消さない) */
+        if(v==="memo" && mjMemoAuto(m.memo)) m.memoAuto=m.memo;
+        m[v]=el.value; refreshMj(); }
       else if(kind==="gsp"){ gspInput(m, num(v), el.value, mjFinal(m)); }   /* v5.74 */
       else if(kind==="mjxstore"||kind==="mjxitem"||kind==="mjxamount"){
         const x = (m.expenses||[]).find(e=>String(e.id)===String(v));
@@ -9853,11 +9963,18 @@ function bindMj(){
         UI.mjDraft.extras=(UI.mjDraft.extras||[]).concat([{id:uid(), name:"", amount:""}]);
         render(); return;
       }
+      /* v6.72: 足したばかりの行に、相手の名前を入れる(「差し馬」→「差し馬 Aさん」)。相手は名前から読む(mjExtWho) */
+      else if(a==="mjewho"){
+        const i=String(v).indexOf("|"), id=String(v).slice(0,i), who=String(v).slice(i+1);
+        const x=(UI.mjDraft.extras||[]).find(e=>String(e.id)===id);
+        if(!x || !who) return;
+        x.name=(String(x.name||"").trim().indexOf("差し馬")===0 ? "差し馬" : "馬身")+" "+who;
+        render(); return;
+      }
       else if(a==="mjedel"){
         UI.mjDraft.extras=(UI.mjDraft.extras||[]).filter(x=>String(x.id)!==String(v));
         render(); return;
       }
-      else if(a==="mjxadd"){ (m.expenses=m.expenses||[]).push({id:uid(),store:"",item:"",amount:""}); render(); }
       else if(a==="mjxdel"){
         const x = (m.expenses||[]).find(e=>String(e.id)===String(v));
         if(x && x.fromData){
@@ -9865,11 +9982,6 @@ function bindMj(){
           (m._restore=m._restore||[]).push(x.fromData);
         }
         m.expenses=(m.expenses||[]).filter(e=>String(e.id)!==String(v)); render();
-      }
-      else if(a==="mjxfopen"){ UI.xferOpen=!UI.xferOpen; render(); }
-      else if(a==="mjxfpick"){
-        const e=(S.entries||[]).find(x=>String(x.id)===String(v));
-        if(e){ (m.expenses=m.expenses||[]).push({id:uid(), store:e.store||"", item:(e.item||e.memo||e.category||"支出"), amount:String(num(e.amount)), fromEntry:e.id, fromData:Object.assign({},e)}); UI.xferOpen=false; render(); }
       }
       /* v5.74: 主の置き場を選び直したら、同じ置き場の分け先は外す(主と分け先を兼ねない) */
       else if(a==="mjbwal"){ UI.mjDraft.bwal=String(v); UI.mjDraft.splits=gspList(UI.mjDraft).filter(x=>String(x.bwal)!==String(v)); UI.gspPick=false; render(); }
@@ -9919,6 +10031,7 @@ function saveMj(){
        (この卓の同卓者は締めた記録の players に入る)を押すだけで済む */
     delete keep.seat; delete keep.seatOk;
     delete keep.oyaNext; delete keep.oyaReset;   /* v6.36: 親も次の卓で選び直す */
+    delete keep.t0;   /* v6.72: 始まりの時刻も */
     S.mjLog=Object.assign(keep, {rows:[], chip:0, tobi:0, settle:""});
     mjlPrune();   /* 座っている人も記録も無いので、人の一覧は空になる(仮称も残らない) */
     mjlUiFresh();
