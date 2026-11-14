@@ -448,7 +448,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.68 (localStorage保存・完全オフライン)
+   Tally 6.69 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -680,6 +680,7 @@ function fixedDedupe(){
     if(g.length < 2) return;
     const tpl = byTpl[String(g[0].fixedId)];
     const untouched = e => !!tpl
+      && !e.fxAt   /* v6.69: 金額を書き換えた(確かめた)回は、金額が設定と同じでも「触った方」として残す */
       && e.date === fixedOccKey(e)
       && num(e.amount) === num(tpl.amount)
       && (e.store||"") === (tpl.store||"");
@@ -722,7 +723,9 @@ function updateFixed(tpl){
   const old = (S.fixed||[]).find(t=>String(t.id)===String(tpl.id));
   if(old && old.skips && tpl.skips===undefined) tpl.skips = old.skips;
   const today = todayStr();
-  S.entries = S.entries.filter(e=> !(String(e.fixedId)===String(tpl.id) && e.date > today));
+  /* v6.69: **金額を書き換えた回(fxAt)は、先の日付でも残す**(請求額が決まった後で設定を直しても、決まった金額が設定の金額に戻らないように)。
+     同じ回は作り直されない(genFixedEntries は、その回の記録があれば作らない)。周期や日を変えた時は、残した回と新しい回が同じ月に並ぶことがある */
+  S.entries = S.entries.filter(e=> !(String(e.fixedId)===String(tpl.id) && e.date > today && !e.fxAt));
   S.fixed = (S.fixed||[]).map(t=> String(t.id)===String(tpl.id) ? tpl : t);
   /* 養子縁組(v3.14): スケジュール変更で出生日が旧暦のまま残った実績を新暦へ。
      新スケジュールの発生日と同じ日付を持つ自テンプレの実績に fixedDate を刻み直し、
@@ -1267,7 +1270,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.68";
+const APP_VERSION = "6.69";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1350,6 +1353,7 @@ function subnavExtra(sc){
   if(sc==="entry"){
     const f=UI.entryForm||{};
     const lb = f.type==="transfer" ? "振り替える" : (UI.editEntryId!==null ? "更新する" : "記録する");
+    if(fxState(UI.entryForm)) return [["[data-a='fxsave']", "書き換える", SV]];   /* v6.69: 固定費の今回の金額を読んだ時(記録の画面も、いつもの欄の代わりに板を出している) */
     /* v4.40: 固定費への登録は下バーから降ろした(ユーザー指摘)。**削除より使用頻度が低い**のに
        親指の一等地を占め、しかも戻ると更新の間に挟まって誤タップを招いていた。
        置き場所の規則: **複数画面に共通し位置を覚えたいもの=ヘッダ右(削除)** /
@@ -8861,11 +8865,16 @@ function bindWishlist(){
   });
 }
 
+/* 固定費の名前の出し方: 品目 → 店 → 名前。品目と店の両方があれば、店は下の小さい字(sub)。固定費の画面の一覧と、v6.69 の指示書の一覧(fxLabel)が使う */
+function fixedTitle(t){
+  const st=(t.store!=null?String(t.store):"").trim(), it=(t.item!=null?String(t.item):"").trim();
+  return {title:(it||st||t.name||""), sub:((it&&st)?st:"")};
+}
 function viewFixed(){
   const f = UI.fixForm;
   let h = '<div class="hdr"><button class="navbtn" data-fa="fback">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">固定費(定期)'+
-      infoBtn("家賃・光熱費・サブスクのように決まった周期で出ていくお金を登録しておくと、<b>その年の12月まで自動で記録</b>されます。毎月手で入れる必要はありません。<br><br>・金額が月によって変わるもの(光熱費など)は、後からその月の記録を直せます<br>・停止すると、これから先の予定だけが消え、過去の記録は残ります<br>・給与などの定期的な収入も登録できます(収入に切り替え)")+
+      infoBtn("家賃・光熱費・サブスクのように決まった周期で出ていくお金を登録しておくと、<b>その年の12月まで自動で記録</b>されます。毎月手で入れる必要はありません。<br><br>・金額が月によって変わるもの(光熱費など)は、後からその月の記録を直せます。金額が決まったら、記録の「写真・PDF」で請求額の画面や給与明細を読ませると、その回の金額を書き換える板が出ます(写真から読む設定をしてある時)<br>・停止すると、これから先の予定だけが消え、過去の記録は残ります<br>・給与などの定期的な収入も登録できます(収入に切り替え)")+
       '</div><div style="width:44px"></div></div>';
 
   const list = S.fixed||[];
@@ -8873,8 +8882,7 @@ function viewFixed(){
     h += band("登録済み");
     list.forEach(t=>{
       const catC = t.type==="income" ? "var(--teal)" : (t.category==="娯楽"?"var(--amber)":t.category==="承認"?"var(--blue)":"var(--teal)");
-      const fst=(t.store!=null?String(t.store):"").trim(), fit=(t.item!=null?String(t.item):"").trim();
-      const fTitle=fit||fst||t.name||"", fSub=(fit&&fst)?fst:"";
+      const FT=fixedTitle(t), fTitle=FT.title, fSub=FT.sub;   /* v6.69: 指示書の一覧(fxLabel)と同じ出し方 */
       h += '<div class="card" style="margin-bottom:8px"><div class="row between" style="align-items:center">'+
         '<div style="min-width:0;flex:1"><div style="font-size:14px;font-weight:700" class="ellip">'+esc(fTitle)+'</div>'+
         (fSub?'<div class="muted ellip" style="font-size:11px;margin-top:2px">'+esc(fSub)+'</div>':'')+
@@ -10134,7 +10142,7 @@ function normDate(v){
   return m ? (m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0")) : "";
 }
 function parseReceipt(txt){
-  const out={date:"",store:"",wallet:"",category:"",type:"",total:"",box:"",balance:"",ref:"",items:[],blocks:0,totalNum:null};   /* v5.98: #box。v6.35: #balance(Suicaなどの残高 `日付 金額`)。v6.58: #ref(元になったメールの印 `amz:<id>`) */
+  const out={date:"",store:"",wallet:"",category:"",type:"",total:"",box:"",balance:"",ref:"",fixed:"",items:[],blocks:0,totalNum:null};   /* v5.98: #box。v6.35: #balance(Suicaなどの残高 `日付 金額`)。v6.58: #ref(元になったメールの印 `amz:<id>`)。v6.69: #fixed(固定費の名前=今回の確定した金額) */
   /* v4.67: **コードフェンスがあれば中だけを読む**。
      ショートカットで自動化すると**モデルの出力が丸ごとクリップボードに入る**ため、
      前後の散文が混ざる。「合計 5,432円」のような行は品目として拾えてしまうので、
@@ -10411,7 +10419,9 @@ function receiptPasteText(raw, f){
     const note=receiptNote(list[0].r); if(note) alert(note);
     return true;
   }
-  const res=receiptImportMany(list, "");
+  const many=fxHold(list); if(many.note) alert(many.note);   /* v6.69: #fixed の付いたブロックは、まとめては保存しない(rcptApply と同じ) */
+  if(!many.list.length) return true;
+  const res=receiptImportMany(many.list, "");
   if(res.saved){
     UI.pasteOpen=false; UI.pasteText=""; f.rcptNote="";
     entryAfterSave("取り込んで保存しました", res.saved+"件", "", false);   /* v6.65: タブの記録なら記録に残る */
@@ -10435,6 +10445,7 @@ function applyReceipt(txt){
      交通コンポーザと同じ扱い——取り込みは「新しい記録の中身」で上書きするもの */
   f.svPot=""; f.svDraw=undefined; f.svAuto=false; f.svNoAuto=false;
   f.bkSrc="";   /* v5.83: 軍資金の指定も同じ理由で消す(前のレシートの指定が黙って付かないように) */
+  f.fxName=String(r.fixed||"").replace(/\s+/g," ").trim(); f.fxNo=false; f.fxPick=""; f.fxAmt="";   /* v6.69: 固定費の今回の金額か(fxState)。選んだ回・打ち直した金額は、読むたびに消す */
   if(r.items.length===1 && !r.items[0].date){
     const st=(r.store||"").trim(), it=(r.items[0].item||"").trim();
     const arrow=/^(.+?)\s*(?:→|->|＞|>)\s*(.+)$/.exec(it);
@@ -10511,6 +10522,7 @@ function rcptLists(){
 /* 指示書。もとは別チャットの RECEIPT_PROMPT.md(v4.53〜)。**聞き返せない**ことに合わせて「返し方」を変えた */
 function rcptSystem(){
   const P=walletPots(), W=P.map(p=>p.name);
+  const FX=fxNames(), fxN=FX.expense.length+FX.income.length;   /* v6.69: 固定費の名前(無ければ、指示書は前と1字も同じ) */
   const bank=String(rcptBank().name || "");
   const L=rcptLists(), fence="```";
   const pay=[];
@@ -10604,6 +10616,13 @@ pay.length ? "  - "+pay.join(" / ") : null,
 "- 差引支給額(手取り)の1行だけ。#type income、#category 給与(賞与なら 賞与)、品目は 給与(賞与なら 賞与)、#date は支給日、#wallet は "+bank,
 "- 源泉徴収票は記帳しない",
 "",
+(fxN ? "## 固定費(金額が決まったら書き換えるもの)" : null),
+(fxN ? "- 下の一覧は、わたしが**仮の金額**で登録している、決まった周期の支払いと収入の名前。画像が、このどれかの**今回の確定した金額**を示すもの(電気・ガス・水道・通信などの請求額や料金のお知らせ、給与明細など)なら、ヘッダに `#fixed 名前` を書く。名前は一覧の表記を1字も変えずに書く" : null),
+(fxN ? "- その時は、請求額(給与明細なら差引支給額)の**1行だけ**にする。内訳は書かない。`#date` は支払日・引き落とし日・支給日(印字が無ければ請求日・検針日。どれも無ければ書かない)" : null),
+(fxN ? "- 一覧と同じ店での**ふつうの買い物のレシートには書かない**(店が同じというだけでは書かない)。一覧に無いものにも書かない。どれに当たるか決められない時は書かずに、メモに書く" : null),
+(FX.expense.length ? "### 支出\n"+FX.expense.join("\n") : null),
+(FX.income.length ? "### 収入\n"+FX.income.join("\n") : null),
+(fxN ? "" : null),
 "## これまでの店名",
 L.stores.length ? L.stores.join("\n") : "(まだ無い)",
 "",
@@ -10692,7 +10711,10 @@ function rcptApply(txt, f, stop){
     return {form:true, saved:0, one:true};   /* v6.64: one = 1枚をフォームに入れた(呼んだ側が、上の板を要約に替える) */
   }
   /* v6.28: それ以外(履歴・1枚の写真に複数のレシート・注文の一覧)は、**まとめて1回の確認で保存**し、記録済みは飛ばす */
-  const res=receiptImportMany(rs, notes.join("\n\n"));
+  /* v6.69: まとめて保存する道では、固定費の回を書き換えられない(板は1枚ずつ)。#fixed の付いたブロックは**保存しないで知らせる**(保存すると、固定費の予定と二重になる) */
+  const many=fxHold(rs); if(many.note) notes.push(many.note);
+  if(!many.list.length){ f.rcptNote=notes.join("\n\n"); return {form:true, saved:0, empty:true}; }
+  const res=receiptImportMany(many.list, notes.join("\n\n"));
   const keep=notes.concat(res.notes||[], (res.skipped||[]).length ? ["記録済みなので飛ばしました: "+res.skipped.join("、")] : [],
     res.balance ? [res.balance] : []).filter(Boolean);   /* v6.35: 残高が合うか(保存した後・全部記録済みだった時) */
   /* 保存した後もメモがあれば記録の画面に残して見せる(確認の画面は閉じると消えるため。読めなかった行をその場で足せる) */
@@ -10832,7 +10854,7 @@ function viewRcptSet(){
     "<b>はじめに一度だけ</b><br>① claude.ai の設定 → 請求(Billing)の「API credits」で、Claude Console の組織をつなぐ(Maxプランは毎月$100分。翌月には繰り越さない)<br>"+
     "② Console(platform.claude.com)の API keys で「Create key」。Workspace は Tally(作っていなければ Default)、Linked account は自分、有効期限(Expiration)は Never を選んで作り、出たキーをすぐコピーする(この時しか表示されない)<br>③ ここに貼って保存する<br><br>"+
     "<b>キーの置き場所</b>: この端末の中だけ。同期・バックアップには入りません(別の端末では、そこでもう一度貼ります)。<br><br>"+
-    "<b>送るもの</b>: 画像と、財布・店名・駅名の一覧(表記を揃えるため)。金額や記録そのものは送りません(銀行の明細の行から開いた時だけ、その行の日付・店名・金額を添えます)。<br><br>"+
+    "<b>送るもの</b>: 画像と、財布・店名・駅名の一覧(表記を揃えるため)、固定費の名前の一覧(固定費の今回の金額かどうかを見分けるため)。金額や記録そのものは送りません(銀行の明細の行から開いた時だけ、その行の日付・店名・金額を添えます)。<br><br>"+
     "<b>費用</b>: 1枚 数円ほど。Consoleに支払い方法を登録していなければ、クレジットを使い切った時点で読み取りが止まるだけです。";
   let h='<div class="hdr"><button class="navbtn" data-rs="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">レシートの読み取り</div><div style="width:44px"></div></div>';
@@ -12092,6 +12114,127 @@ function entryFormOf(e){
      ・**書きかけは消えない**(UI.entryDraft)。ほかのタブを見て戻れば続きから。捨てる時は左上の「クリア」。アプリを閉じれば消える(保存はしない)
      ・読み取りの途中でタブを離れても、読み取りは続く(結果は預かって、記録に戻った時に当てる・rcptFinish)
      ・明細から開く編集・突き合わせから開く記録・資産の画面から開く振替・複製は、戻る先が決まっているので、今までどおり「戻る」のある画面 */
+/* 照合済み(✓)を落とすべきか: 金額・日付・財布・種別のどれかが変わった(v5.60 の決まり。品目やメモの直しでは落とさない) */
+function chkStale(x, y){
+  return String(x.date)!==String(y.date) || num(x.amount)!==num(y.amount) || String(x.wal||"")!==String(y.wal||"") || String(x.type)!==String(y.type);
+}
+/* ========================= v6.69 固定費の金額を、画像から書き換える =========================
+   ユーザー(11/14 11:03):「固定費の金額、例えば光熱費や給与は仮置きで入れてますが、確定金額が出たら画像を貼れば書き換えるようにして欲しい」
+   今まで: 固定費は、設定の金額のまま年末までの記録が先に作られる(genFixedEntries)。金額が決まったら、明細からその回の記録を開いて手で直す。
+           請求額の画面や給与明細を読ませると**新しい記録**として入るので、固定費の予定と二重になった。
+   v6.69:  **入口は増やさない**(記録のいつもの「写真・PDF」・貼り付け)。指示書(rcptSystem)に固定費の**名前の一覧**を載せ、画像がそのどれかの
+           「今回の確定した金額」なら、Claude がヘッダに #fixed と名前を書く。Tally はその名前の固定費の回を探し、
+           新しい記録の代わりに「この回の金額を書き換える」板を出す。**見分けるのは Claude・回を探すのと書き換えるのは Tally**(決まった手順)。
+   ・書き換えるのは**その回の記録の金額だけ**(日付・支払い元・分類・店・品目はそのまま。固定費の設定の金額=来月からの仮の金額も変えない)
+   ・書き換えた回には fxAt(書き換えた日)を付ける。固定費の設定を保存し直しても、その回は作り直さない(updateFixed)。
+     付けないと、先の日付の回(まだ引き落とされていない請求)は、設定を保存した時に設定の金額へ戻ってしまう
+   ・Claude に送るのは**名前だけ**(金額・日付は送らない)
+   ・#fixed の無い読み取りは、今までどおり。**店名が同じというだけでは板を出さない**(ふつうの買い物のたびに聞かれないように)
+   ・軍資金・貯金の箱とつながった回は、ここでは書き換えない(振替も一緒に変える仕事は、記録の画面の「更新する」が持っている)。金額を入れた形でその記録を開く */
+const FX_WIN=40, FX_BACK=3;   /* 読んだ日付の前後40日の回を見る・選んでおくのは「読んだ日付の3日前」より後の最初の回 */
+/* 指示書に載せる名前・#fixed と見比べる名前: 「品目(店)」。出し方は固定費の画面の一覧と同じ(fixedTitle) */
+function fxLabel(t){ const x=fixedTitle(t); return String(x.title+(x.sub ? "("+x.sub+")" : "")).replace(/\s+/g," ").trim(); }
+/* 見比べる時は、全角半角・空白・大文字小文字の違いを見ない */
+function fxNorm(s){ let t=String(s==null?"":s); try{ t=t.normalize("NFKC"); }catch(e){} return t.replace(/\s+/g,"").toLowerCase(); }
+/* 指示書の一覧(支出・収入に分ける。同じ名前は1つ) */
+function fxNames(){
+  const out={expense:[], income:[]};
+  (S.fixed||[]).forEach(t=>{ const k=(t.type==="income" ? "income" : "expense"), n=fxLabel(t); if(n && out[k].indexOf(n)<0) out[k].push(n); });
+  return out;
+}
+/* まとめて保存する道(ブロックが2つ以上・日付つきの行)に来た読み取りから、#fixed の付いたブロックを外す。list = [{r:parseReceipt の結果, …}]。
+   返すもの: list = 残り / note = 外した時の知らせ(無ければ "") */
+function fxHold(list){
+  const held=(list||[]).filter(x=>x && x.r && String(x.r.fixed||"").trim());
+  if(!held.length) return {list:list, note:""};
+  const names=[]; held.forEach(x=>{ const n=String(x.r.fixed).replace(/\s+/g," ").trim(); if(names.indexOf(n)<0) names.push(n); });
+  return {list:list.filter(x=>held.indexOf(x)<0),
+    note:"⚠ 固定費の今回の金額("+names.join("・")+")は、まとめては入れていません。\n固定費の回を書き換えるには、その1枚だけを読ませてください。"};
+}
+/* 仮のまま = 設定の金額と同じで、書き換えていない回 */
+function fxIsProv(e){
+  if(!e || e.fxAt) return false;
+  const t=(S.fixed||[]).find(x=>String(x.id)===String(e.fixedId));
+  return !!t && num(e.amount)===num(t.amount);
+}
+/* 軍資金・貯金の箱とつながった記録か(金額を変えると、振替も一緒に変える必要がある) */
+function fxLinked(e){
+  return e.svTx!=null || e.inSvTx!=null || e.bkTx!=null || e.gtTx!=null || !!e.svPot || !!e.bkSrc || !!e.inBk || !!e.inPot || isGameCat(e);
+}
+function fxEntName(e){ return String(e.item||"").trim() || String(e.store||"").trim() || String(e.memo||"").trim() || "固定費"; }
+/* 読んだ中身(記録のフォーム f)に当たる固定費の回。当たらなければ null。
+   返すもの: rows = 出す回(日付順・3つまで。選んでおく回と、その前後)/ ent = 選んである回 / amt = 書き換える金額(欄の字)
+   名前は、一覧の表記と同じ(全角半角・空白の違いは見ない)か、かっこの前(品目)だけが同じ時に当たる。**部分一致では当てない**(「ガス」が別の店名に当たらないように) */
+function fxState(f){
+  if(!f || !f.fxName || f.fxNo || !f.rcptSrc || UI.editEntryId!==null) return null;
+  if(f.type!=="expense" && f.type!=="income") return null;
+  if(UI.rcptBusy && UI.rcptBusy.form===f) return null;
+  const want=fxNorm(f.fxName); if(!want) return null;
+  const T=(S.fixed||[]).filter(t=>(t.type==="income" ? "income" : "expense")===f.type);
+  let hit=T.filter(t=>fxNorm(fxLabel(t))===want);
+  if(!hit.length) hit=T.filter(t=>fxNorm(fixedTitle(t).title)===want);
+  if(!hit.length) return null;
+  const ids={}; hit.forEach(t=>{ ids[String(t.id)]=1; });
+  const D=/^\d{4}-\d{2}-\d{2}$/.test(String(f.date||"")) ? String(f.date) : todayStr();
+  const lo=amzDay(D, -FX_WIN), hi=amzDay(D, FX_WIN);
+  const all=(S.entries||[]).filter(e=>e.fixedId!=null && ids[String(e.fixedId)] && e.type===f.type && e.date>=lo && e.date<=hi)
+    .sort((a,b)=>a.date<b.date ? -1 : a.date>b.date ? 1 : (String(a.id)<String(b.id) ? -1 : 1));
+  if(!all.length) return null;
+  const from=amzDay(D, -FX_BACK);
+  const def=all.find(e=>e.date>=from && fxIsProv(e)) || all.find(e=>e.date>=from) || all[all.length-1];
+  const at=Math.max(0, Math.min(all.indexOf(def)-1, all.length-3));
+  const rows=all.slice(at, at+3);
+  const ent=rows.find(e=>String(e.id)===String(f.fxPick||"")) || def;
+  const amt=(f.fxAmt!=null && String(f.fxAmt)!=="") ? String(f.fxAmt) : String(entryTotals(f).sum||"");
+  return {rows:rows, ent:ent, amt:amt};
+}
+const FX_INFO = "読み取った画像が、固定費の<b>今回の確定した金額</b>(電気・ガス・水道などの請求額、給与明細など)だと Claude が見分けた時に出ます。<br><br>"+
+  "<b>書き換える</b>を押すと、選んである回の記録の<b>金額だけ</b>を書き換えます。新しい記録は作りません。日付・支払い元・分類はそのままです。固定費の設定の金額(来月からの仮の金額)も変わりません。<br><br>"+
+  "<b>仮</b>は、固定費の設定の金額のままの回。<b>確定</b>は、ここで書き換えた回です。回が違う時は、行を押して選び直してください。書き換えた回は、あとで固定費の設定を保存し直しても、そのまま残ります。<br><br>"+
+  "<b>別の記録として入れる</b>: 固定費の支払いではなかった時は、こちらを押すと、いつもの記録の画面になります。<br><br>"+
+  "見分けるために、固定費の<b>名前の一覧</b>を Claude に送っています(金額や日付は送りません)。";
+/* 板。回の並びは、記録の画面の選択と同じ「つながった帯」(縦に1列)。金額の欄は、読んだ合計が入っている(読み違いは、ここで直せる) */
+function fxBoardHtml(f, fx){
+  const wd=d=>"日月火水木金土"[new Date(d+"T12:00:00").getDay()];
+  /* 名前は品目(無ければ店)。別々の固定費の回が並ぶ時(同じ品目で店が違う 2つの固定費に当たった時)は、見分けられるように店も出す */
+  const multi=fx.rows.some(e=>String(e.fixedId)!==String(fx.rows[0].fixedId));
+  const nameOf=e=>(multi && [String(e.item||"").trim(), String(e.store||"").trim()].filter(Boolean).join("・")) || fxEntName(e);
+  const cells=fx.rows.map(e=>({
+    at:'data-a="fxpick" data-v="'+esc(String(e.id))+'"', cls:(e===fx.ent ? "sel" : ""),
+    html:'<span style="display:flex;align-items:center;gap:8px;padding:0 10px;text-align:left">'+
+      '<span class="mono" style="flex:none">'+esc(String(e.date).slice(5).replace("-","/"))+' ('+wd(e.date)+')</span>'+
+      '<span class="ellip" style="flex:1;min-width:0">'+esc(nameOf(e))+'</span>'+
+      (fxIsProv(e) ? '<span style="flex:none;font-size:11px;font-weight:400">仮</span>' : (e.fxAt ? '<span style="flex:none;font-size:11px;font-weight:400">確定</span>' : ''))+
+      '<span class="mono" style="flex:none;font-weight:700">¥'+num(e.amount).toLocaleString("ja-JP")+'</span></span>'}));
+  return '<div class="card" id="e-fx" style="margin-bottom:12px;padding:14px 16px">'+
+    '<div class="fxl">固定費の金額を書き換える'+infoBtn(FX_INFO)+'</div>'+
+    segHtml(1, cells)+
+    '<div class="fxl" style="margin-top:12px">確定した金額</div>'+
+    '<input class="input mono r" type="number" inputmode="numeric" id="e-fx-amt" placeholder="金額" value="'+esc(fx.amt)+'" style="width:100%;height:44px;font-size:16px">'+
+    '<div style="text-align:center;margin-top:6px"><button class="navbtn" style="font-size:12px;color:var(--muted);text-decoration:underline;padding:14px 12px;margin-bottom:-12px" data-a="fxno">別の記録として入れる</button></div></div>';
+}
+/* 書き換える(下の棒の「書き換える」)。できたら true */
+function fxCommit(f){
+  const fx=fxState(f); if(!fx || !fx.ent) return false;
+  const ent=fx.ent, amt=num(fx.amt), old=num(ent.amount);
+  if(!(amt>0)){ toast("金額を入れてください"); return false; }
+  if(fxLinked(ent)){
+    const back=UI.entryReturn||"main";
+    if(entryTabbed()) entryFresh();   /* 読んだ中身は、開く記録に写したので、書きかけとしては残さない */
+    UI.editEntryId=ent.id; UI.entryForm=entryFormOf(ent); UI.entryForm.amount=String(amt); UI.entryForm.fxConfirm=true;
+    UI.entryReturn=back; UI.screen="entry"; render();
+    toast("軍資金や貯金とつながった記録です。確かめて「更新する」を押してください");
+    return true;
+  }
+  const before=Object.assign({}, ent);
+  ent.amount=amt; ent.fxAt=todayStr();
+  if(ent.chk && chkStale(before, ent)) delete ent.chk;
+  save();
+  const yen=v=>"¥"+v.toLocaleString("ja-JP");
+  entryAfterSave(amt===old ? "金額はそのままです" : "書き換えました", String(ent.date).slice(5).replace("-","/")+" "+fxEntName(ent), amt===old ? yen(amt) : yen(old)+" → "+yen(amt), true);
+  toast(amt===old ? "固定費の金額を確かめました" : "固定費の金額を書き換えました");
+  return true;
+}
 /* 記録をタブとして出しているか: 新しい記録で、戻る先が決まっていない時だけ */
 function entryTabbed(){ return UI.screen==="entry" && UI.editEntryId===null && !UI.entryReturn; }
 /* 書きかけと呼べる中身があるか。**見えているものだけ**で決める(読み取りの控え rcptBase など、見えない印は数えない)。
@@ -12545,10 +12688,15 @@ function viewEntry(){
       (SVD.body ? '<span class="ellip mono muted" style="min-width:0;margin-left:8px">'+esc(SVD.body)+'</span>' : '')+
       (SVD.amt ? '<span class="mono muted" style="flex:none;margin-left:6px">'+esc(SVD.amt)+'</span>' : '')+'</div>'
     : '';
-  return hdr+savedLine+
+  const hintHtml =
     /* v6.18: 銀行の明細から開いた時は、その行を上に出す(記録には書かない。フォームを開き直すと消える) */
     (f.bankHint ? '<div class="card" style="margin-bottom:12px;padding:9px 16px;border-color:var(--amber)">'+
-      '<div class="muted" style="font-size:11px;margin-bottom:2px">'+(f.bankHintSrc==="mail" ? 'デビットの通知' : '銀行の明細')+'</div><div class="mono" style="font-size:12px">'+esc(f.bankHint)+'</div></div>' : '')+
+      '<div class="muted" style="font-size:11px;margin-bottom:2px">'+(f.bankHintSrc==="mail" ? 'デビットの通知' : '銀行の明細')+'</div><div class="mono" style="font-size:12px">'+esc(f.bankHint)+'</div></div>' : '');
+  /* v6.69: 読んだ中身が固定費の今回の金額なら、いつもの欄の代わりに「書き換える」板を出す(下の棒も「書き換える」になる・subnavExtra)。
+     「別の記録として入れる」を押すと、いつもの欄に戻る(f.fxNo)。上の要約(何を読んだか)と「取り込み直す」はそのまま */
+  const fx = (isNew && !isTr) ? fxState(f) : null;
+  if(fx) return hdr+savedLine+hintHtml+impHtml+fxBoardHtml(f, fx)+'<div style="display:none"><button data-a="fxsave">書き換える</button></div>';
+  return hdr+savedLine+hintHtml+
     impHtml +
     plate(rec.concat(src)) +
     (body ? '<div class="card" style="margin-bottom:12px;padding:14px 16px">'+body+'</div>' : '') +
@@ -12563,9 +12711,11 @@ function viewEntry(){
 function bindEntry(){
   const f = UI.entryForm;
   /* v6.64: 打つたびに、合計の字(上の要約・下の「N件の合計」)と「クリア」の出し入れを差し替える(entryPaint。描き直しはしない) */
-  document.getElementById("e-date").oninput = e=>{ f.date=e.target.value; entryPaint(); };
+  /* v6.69: 固定費の書き換えの板を出している時は、日付の欄が無い */
+  { const ed=document.getElementById("e-date"); if(ed) ed.oninput = e=>{ f.date=e.target.value; entryPaint(); }; }
   /* v5.98: 日付を決めた時に、旅行の期間なら箱の分に(期間から外れたら自動で付けた分を外す)。日付の選択は打鍵ではないので描き直してよい */
-  document.getElementById("e-date").onchange = e=>{ f.date=e.target.value; const was=f.svPot; svAutoPick(f); if(f.svPot!==was) render(); else entryPaint(); };
+  { const ed=document.getElementById("e-date"); if(ed) ed.onchange = e=>{ f.date=e.target.value; const was=f.svPot; svAutoPick(f); if(f.svPot!==was) render(); else entryPaint(); }; }
+  { const fa=document.getElementById("e-fx-amt"); if(fa) fa.oninput = e=>{ f.fxAmt=e.target.value; }; }   /* v6.69: 確定した金額(打っている間は描き直さない) */
   { const ea=document.getElementById("e-amount"); if(ea) ea.oninput = e=>{ f.amount=e.target.value; entryPaint(); }; }
   /* v4.35: 追加した品目行。**再描画で消えないようUI側に保持**する(入力のたびにrenderはしない) */
   { const pt=document.getElementById("e-paste"); if(pt){ pt.oninput = e=>{ UI.pasteText=e.target.value; };
@@ -12616,6 +12766,10 @@ function bindEntry(){
       else if(a==="efold"){ entFoldSet(v, !entFold(v)); render(); }
       /* 読んだ後の要約から、取り込みの入口に戻す(フォームの中身は消さない。次に読んだものが上書きする=今までと同じ) */
       else if(a==="rcptagain"){ f.rcptSrc=""; render(); }
+      /* v6.69: 固定費の書き換えの板。回を選ぶ・いつもの記録に戻す・書き換える(下の棒から) */
+      else if(a==="fxpick"){ f.fxPick=String(v); render(); }
+      else if(a==="fxno"){ f.fxNo=true; render(); }
+      else if(a==="fxsave"){ fxCommit(f); }
       else if(a==="back"){ rcptCancel(f); UI.screen=(UI.entryReturn||"main"); UI.entryReturn=null; render(); }   /* v6.23: 読み取り中なら止める(費用だけかかるので) */
       else if(a==="etype"){ if(v==="transfer" && rcptCancel(f)) toast("読み取りをやめました");   /* v6.23: 振替ではボタンごと消えるので止める */
         f.type=v; if(v!=="transfer") f.category = v==="expense"?"消費":"給与";
@@ -12859,13 +13013,13 @@ function bindEntry(){
             /* v5.60: **照合済みの中身が変わったら✓を落とす**。金額・日付・財布・種別が変われば
                「銀行と一致していた」という事実がもう成り立たない。**品目やメモの直しでは落とさない**——
                誤字を直すたびに照合をやり直すことになると、記録を直す動機そのものを削る */
-            if(y.chk && (String(x.date)!==String(y.date) || num(x.amount)!==num(y.amount)
-                || String(x.wal||"")!==String(y.wal||"") || String(x.type)!==String(y.type))) delete y.chk;
+            if(y.chk && chkStale(x, y)) delete y.chk;   /* v6.69: 決まりは chkStale に(固定費の書き換えも同じ決まりを使う) */
             return y;
           });
           const _e = S.entries.find(x=>x.id===UI.editEntryId);
           if(_e){ entrySvSync(_e, svPot, amt, f.date, wal, svDraw); entryBkSync(_e, bkSrc, amt, f.date, wal); entryGtSync(_e, tWal, amt, f.date, tBwal);
                   entrySvInSync(_e, inPot, amt, f.date, wal); setIn(_e); }   /* v5.95 */
+          if(_e && f.fxConfirm) _e.fxAt=todayStr();   /* v6.69: 固定費の書き換えの板から開いた記録(軍資金・貯金とつながった回)を更新した = その回の金額は確定 */
         } else {
           const _new = {id:uid(),date:f.date,type:f.type,category:f.category,amount:amt,store,item,memo,wal};
           if(gsrc){ _new.src=gsrc; _new.bwal=gBwal; }   /* v5.71 */
