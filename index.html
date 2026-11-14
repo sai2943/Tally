@@ -206,11 +206,11 @@
   .mjl-tbl tr.nm td{font-family:inherit; font-size:11px; color:var(--muted); background:var(--surface2); padding:5px 2px;}
   .mjl-tbl tr.ed td{background:rgba(242,179,61,.12);}
   .mjl-tbl td.oya{box-shadow:inset 0 0 0 1px rgba(242,179,61,.55); border-radius:6px;}   /* v6.36: その半荘の親の席 */
-  .mjl-tbl td.oya .oyl{font-family:inherit; font-size:9px; font-weight:700; color:var(--amber); margin-right:2px; vertical-align:1px;}
+  .mjl-tbl td.oya .oyl{font-family:inherit; font-size:11px; font-weight:700; color:var(--amber); margin-right:2px; vertical-align:1px;}
   /* v6.41: 店・ルール別 成績の収支(名前 | 1半荘平均 | 合計 の3列。列の幅を揃えて縦に読めるように) */
   .mjm-row{display:grid; grid-template-columns:minmax(0,1fr) 64px 88px; column-gap:6px; align-items:baseline; font-size:12px; margin:5px 0;}
   .mjm-row > .mono{text-align:right; white-space:nowrap;}
-  .mjm-row.head{font-size:10px; margin:0 0 4px;}
+  .mjm-row.head{font-size:11px; margin:0 0 4px;}
   .mjm-row.head > span{text-align:right;}
   .mjm-row.top{font-size:13px; margin:2px 0 8px; align-items:center;}
   .mjm-row.top .mjm-l{font-weight:700;}
@@ -218,7 +218,7 @@
   .mjm-row.sub{font-size:11px; margin:2px 0;}
   .mjm-row.sub .mjm-l{padding-left:14px;}
   .mjm-l{min-width:0;}
-  .mjm-n{display:block; font-size:10px; color:var(--muted);}
+  .mjm-n{display:block; font-size:11px; color:var(--muted);}
   .mjl-tbl tr.more td{font-family:inherit; font-size:11px; color:var(--muted); text-align:left; padding:7px 8px; cursor:pointer;}   /* v6.17: 畳んだ前の半荘 */
   .ibtn{display:inline-flex; align-items:center; justify-content:center; padding:6px; margin:-6px -6px -6px 0;
     background:none; border:0; cursor:pointer; flex-shrink:0; vertical-align:middle;}
@@ -448,7 +448,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.69 (localStorage保存・完全オフライン)
+   Tally 6.70 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -523,6 +523,10 @@ const num = v => { const n = parseInt(v,10); return isNaN(n)?0:n; };
 const fnum = v => { const n = parseFloat(v); return isNaN(n)?0:n; };
 const yen = n => "¥" + Math.abs(n).toLocaleString("ja-JP");
 const signYen = n => (n>=0?"+":"−") + yen(n);
+/* v6.70: **マイナスになり得る金額(残高・差)を、符号なしの形で書く時の決まり**。0 以上は「¥1,200」、マイナスは「−¥1,200」。
+   前は残高を '¥'+n.toLocaleString() と直に書いていて、マイナスの時だけ「¥-1,200」になった(総点検 C1)。
+   プラスにも印を付けるなら signYen。**残高を書く所で、'¥'+数字 を直に書かないこと** */
+const yenM = n => (n<0?"−":"") + yen(n);
 const clsPM = n => n>=0 ? "teal" : "red";
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const todayStr = () => { const d=new Date();
@@ -1149,8 +1153,8 @@ const mjUnknown = m => mjIsCash(m) ? (mjRaw(m) - mjBreakdown(m)) : 0;
    `S.rates`は「最後に使った1つ」しか持てないので、店を行き来すると毎回入れ直しになる。
    `feeBack`(ゲーム代バック)に至っては`S.rates`にも入っていないので、**ここでしか復元できない**。 */
 /* v6.02: **店名をルール名と別の欄に**(ユーザー要望: ルールと別に店名も入れたい。その方が管理が楽)。
-   麻雀の`store`は歴史的に**ルール名**の欄(「DUO虹」のように店とルールを1つに書いていた)。名前は変えずにそのまま使い、
-   **店名は新しい`shop`**に持つ(既存の記録は`shop`無し=店名なし。読み込み時の移行はしない——「DUO虹」を機械では割れない)。
+   麻雀の`store`は歴史的に**ルール名**の欄(「さくら東風」のように店とルールを1つに書いていた)。名前は変えずにそのまま使い、
+   **店名は新しい`shop`**に持つ(既存の記録は`shop`無し=店名なし。読み込み時の移行はしない——「さくら東風」を機械では割れない)。
    ・過去のルールは**店名+ルール名**で1件にまとめる。単価やゲーム代は店ごとに違うので、同じ「東南」でも店が違えば別の設定。
    ・一覧(全件・新しい順)を返し、何件出すかは画面側で決める(店で絞るため) */
 function mjRuleHints(){
@@ -1181,7 +1185,7 @@ function mjWhere(s, sep){
 }
 /* v6.03: 一覧の名前を**塊ごと**に折り返すHTML(ユーザー指摘: 名前と店名が一覧で切れる)。
    1行に収まれば「店 ・ ルール」のまま、収まらなければ**塊の境目で**改行する——
-   普通に折り返すと「…RED BEAR ・ ザンルー/ルペアマッチ」のように名前の途中で割れるため。
+   普通に折り返すと「…店の名前 ・ 長いルー/ルの名前」のように名前の途中で割れるため。
    区切り(sep)は前の塊の末尾に付ける(行頭に「・」が来ないように)。joinは塊の間(空白なら見た目の隙間も兼ねる) */
 function wsegHtml(parts, sep, join){
   const ps=(parts||[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);
@@ -1270,7 +1274,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.69";
+const APP_VERSION = "6.70";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -1318,7 +1322,9 @@ function subnavExtra(sc){
      本文の一番下まで探しに行かせない。実装は本文のボタンをclick()するだけなので処理は二重にならない。
      フォームが開いている時だけ出す画面は、その状態を条件にする */
   const SV = 'color:var(--amber);font-weight:700';
-  if(sc==="bank") return [["[data-ba='edit']",'編集',''], ["[data-ba='adjust']",'調整','']];
+  /* v6.70: 「編集」「調整」→「設定」だけ(総点検 C5)。置き場ごとの「編集」「調整」と同じ名前で別の物だった。
+     下の「調整」は、どの置き場に入るかを選べなかった(いつも一番上)ので、置き場ごとの「調整」に任せる */
+  if(sc==="bank") return [["[data-ba='edit']",'設定','']];
   /* v4.75: ボーダー試算のクリア。ヘッダに置くとスクロール時にステータスバーと重なるため下バーへ */
   if(sc==="bordertool") return [["[data-a='btreset']",'クリア','color:var(--red)']];
   if(sc==="mahjong-edit") return [["[data-a='mjsave']",'保存する',SV]];
@@ -1613,25 +1619,28 @@ function budJoin(amt, pct){
   const arr=[]; if(a>0) arr.push(String(a)); if(p>0) arr.push(String(p)+"%");
   return arr.join("|");
 }
+/* v6.70: 予算の設定の、欄ごとに出していた説明文(総点検 A1)。開くたびに同じ文なので、見出しの ⓘ へ。
+   「今月はこの枠 → ¥…」と「今月の残り …」は、数字(データ)なので本文に残す */
+const BUD_CAP_INFO="<b>変動消費</b>: 日々の消費の上限。超えないための計器です。<br><b>娯楽</b>: 娯楽の上限。増収しても膨らませない額。<br><br>"+
+  "金額と割合(可処分に対する %)の両方を入れると、<b>小さい方</b>が使われます。欄の下の「今月はこの枠」が、今月に使われる額です。";
+const BUD_REST_INFO="<br><br>2つの欄の数字は、合計が100でなくても、比として扱います(例: 貯金 3・投資 1 なら、4分の3 と 4分の1)。";   /* 「今月の残り …」の行の ⓘ の後ろに足す(「使う枠を引いて残った分を按分します」は、その ⓘ に元から書いてある) */
 function viewBudget(){
   const bg=S.budgets||{}, wf=S.waterfall||{};
   const base=disposableBase(curBudgetMk());   /* v5.56: 今走っている期間で試算する */
   const f=UI.budForm||{};
-  const row=(label, key, cur, hint)=>{
+  const row=(label, key, cur)=>{   /* v6.70: 欄ごとの説明文(hint)は、見出しの ⓘ へ(BUD_CAP_INFO) */
     const pp=budParts(cur);
     const amtV=(f[key+"_amt"]!==undefined)?f[key+"_amt"]:pp.amt;
     const pctV=(f[key+"_pct"]!==undefined)?f[key+"_pct"]:pp.pct;
     const solved=budgetAmt(budJoin(amtV,pctV), base);
     return '<div class="card" style="margin-bottom:12px">'+
-      '<div style="font-size:13px;font-weight:700;margin-bottom:2px">'+label+'</div>'+
-      '<div class="muted" style="font-size:11px;margin-bottom:8px">'+hint+'</div>'+
+      '<div style="font-size:13px;font-weight:700;margin-bottom:8px">'+label+'</div>'+
       '<div class="row" style="gap:8px">'+
       '<div style="flex:1"><div class="fxl">金額(円)</div>'+
       '<input class="input mono r" type="number" inputmode="numeric" id="bud-'+key+'-amt" placeholder="上限" value="'+esc(amtV)+'"></div>'+
       '<div style="flex:1"><div class="fxl">割合(%)</div>'+
       '<input class="input mono r" type="number" inputmode="numeric" id="bud-'+key+'-pct" placeholder="任意" value="'+esc(pctV)+'"></div></div>'+
-      '<div class="muted" style="font-size:11px;margin-top:6px">今月はこの枠 → <span class="mono teal">¥'+solved.toLocaleString("ja-JP")+'</span>'+
-      ((num(amtV)>0&&parseFloat(pctV)>0)?'(両方入れると小さい方)':'')+'</div></div>';
+      '<div class="muted" style="font-size:11px;margin-top:6px">今月はこの枠 → <span class="mono teal">¥'+solved.toLocaleString("ja-JP")+'</span></div></div>';
   };
   const rr=(label,key,cur,hint)=>{
     const v=(f[key]!==undefined)?f[key]:String(parseFloat(String(cur||"").replace("%",""))||0);
@@ -1645,16 +1654,15 @@ function viewBudget(){
   h+='<div class="row" style="align-items:center;gap:2px;margin-bottom:12px">'+
     '<span class="muted" style="font-size:11px">可処分(今月) <span class="mono">¥'+base.toLocaleString("ja-JP")+'</span></span>'+
     infoBtn("<b>可処分</b>は、その期間の収入から固定費(家賃など、毎月決まって出ていくお金)を引いた、自由に配分できるお金です。<br><br>消費・娯楽の枠は、金額でも、可処分に対する割合(%)でも決められます。両方を入れた場合は<b>小さい方</b>が使われます。<br>例: 「60,000円 と 40%」で可処分が20万円なら、40% = 8万円より小さい6万円が枠になります。可処分が12万円の月は、40% = 4万8千円の方が小さいので、収入が少ない月だけ自動で枠が絞られます。")+'</div>';
-  h+=band("使う枠(上限)");
-  h+=row("変動消費","varc",bg["消費"],"日々の消費の上限。超えないための計器です。");
-  h+=row("娯楽","amuse",bg["娯楽"],"娯楽の上限。増収しても膨らませない額。");
+  h+=band("使う枠(上限)", null, BUD_CAP_INFO);
+  h+=row("変動消費","varc",bg["消費"]);
+  h+=row("娯楽","amuse",bg["娯楽"]);
   h+=band("残りの配分");
-  h+='<div class="card"><div class="muted" style="font-size:11px;margin-bottom:8px">'+
-    '使う枠を引いて残った分を、貯金と投資で按分します。<br>合計が100でなくても比として扱います。</div>'+
+  h+='<div class="card">'+
     '<div class="row" style="gap:8px">'+rr("貯金へ(%)","sink",wf.sink)+rr("投資へ(%)","invest",wf.invest)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:6px">今月の残り <span class="mono teal">¥'+ps.rest.toLocaleString("ja-JP")+'</span>'+
     ' → 貯金 ¥'+ps.sv.toLocaleString("ja-JP")+' / 投資 ¥'+ps.iv.toLocaleString("ja-JP")+
-    infoBtn("今月の残り(可処分から、消費・娯楽の枠と、承認(予算の枠とは別に自分で認めた特別な支出)を引いた額)を、設定した比率で<b>貯金</b>と<b>投資</b>に分けた目安です。<br><br>貯金の目標額に届いたら、この比率を投資寄りに変えていく想定です。比率は自動では変わりません。")+'</div></div>';
+    infoBtn("今月の残り(可処分から、消費・娯楽の枠と、承認(予算の枠とは別に自分で認めた特別な支出)を引いた額)を、設定した比率で<b>貯金</b>と<b>投資</b>に分けた目安です。<br><br>貯金の目標額に届いたら、この比率を投資寄りに変えていく想定です。比率は自動では変わりません。"+BUD_REST_INFO)+'</div></div>';
   /* v5.49: **予算の期間を選べる**(ユーザー提案: 予算の期間だけ設定できれば良いのでは)。
      「収入を次の収入までどう使うか」が生活の実態。**明細・月別収支・税金は暦月のまま**なので、
      切り替わるのは予算カード(可処分・枠・貯金目標・振替)だけ */
@@ -1780,7 +1788,7 @@ function viewAdvDrill(){
   const lab=e=>[e.store,(e.item!=null?e.item:e.memo)].map(x=>String(x||"").trim()).filter(Boolean).join(" ")||(e.category||"");
   const row=(e,right,sub)=>'<div class="row between" style="align-items:baseline;font-size:12px;padding:6px 0;border-top:1px solid var(--line);cursor:pointer" data-ad="edit" data-v="'+esc(String(e.id))+'">'+
     '<span class="ellip" style="min-width:0"><span class="mono muted" style="margin-right:8px">'+md(e.date)+'</span>'+esc(lab(e))+'</span>'+
-    '<span style="flex-shrink:0;margin-left:8px;text-align:right">'+right+(sub?'<div class="mono muted" style="font-size:10px">'+sub+'</div>':'')+'</span></div>';
+    '<span style="flex-shrink:0;margin-left:8px;text-align:right">'+right+(sub?'<div class="mono muted" style="font-size:11px">'+sub+'</div>':'')+'</span></div>';
   let h='<div class="hdr"><button class="navbtn" data-ad="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">立替の内訳</div><div style="width:44px"></div></div>';
   h+='<div class="card" style="margin-bottom:14px"><div class="row between" style="align-items:baseline">'+
@@ -1853,7 +1861,7 @@ function bmSm(d,lab,y,sub,k){
   const md=x=>String(x||"").slice(5).replace("-","/");
   return '<div style="padding:6px 0;'+(k?'border-top:1px solid var(--line)':'')+'"><div class="row between" style="align-items:baseline;font-size:12px">'+
     '<span class="ellip" style="min-width:0"><span class="mono muted" style="margin-right:8px">'+md(d)+'</span>'+esc(lab)+'</span><span class="mono muted" style="flex-shrink:0;margin-left:8px">'+signYen(y)+'</span></div>'+
-    (sub?'<div class="mono muted" style="font-size:10px;margin-top:2px">'+esc(sub)+'</div>':'')+'</div>';
+    (sub?'<div class="mono muted" style="font-size:11px;margin-top:2px">'+esc(sub)+'</div>':'')+'</div>';
 }
 function viewBankMatch(){
   if(UI.bm && UI.bm.mail) return viewDbt(UI.bm);   /* v6.59: デビットの通知メールとの突き合わせ(下の viewDbt) */
@@ -2253,10 +2261,10 @@ function viewMjConf(){
     [3,4].map(n=>'<button class="btn'+(c.seats===n?' sel':'')+'" style="flex:1;padding:12px 0;font-size:15px;font-weight:700" '+
       'data-mc="seats" data-v="'+n+'">'+n+'麻</button>').join("")+
     '</div>'+
-    tog("チップを使う", c.useChip, 'data-mc="chip"')+
+    /* v6.70: 一番下の文(「チップ・飛びをOFFにすると…」)は ⓘ へ(総点検 A6) */
+    tog("チップを使う"+infoBtn("チップ・飛びを OFF にすると、記録の画面に出さず、精算でも数えません。"), c.useChip, 'data-mc="chip"')+
     tog("飛びを使う", c.useTobi, 'data-mc="tobi"')+
     tog("馬身を使う", c.useUma, 'data-mc="uma"')+
-    '<div class="muted" style="font-size:11px;line-height:1.6;margin-top:6px">チップ・飛びをOFFにすると、記録の画面に出さず、精算でも数えません。</div>'+
     '</div>';
   h+='<button style="display:none" data-mc="save">保存する</button>';
   return h;
@@ -2403,7 +2411,8 @@ function viewMjLog(){
        保存は`f.st`の並び(=直す前のまま)で書くので、**押しても何も変わらなかった**。保存側(fullIn)と同じ条件に揃える */
     ((f.st || f.parts || (!_ed && mjlFull()))
       ? (()=>{ const parts=(f.st || (f.parts ? ['me'].concat(f.parts) : mjlSeat())), ord=f.order||[];   /* v5.79: 席順で並べる */
-          return '<div class="fxl">着順(1着から順に名前を押す)'+(_ed?'':infoBtn(MJL_ORD_INFO))+'</div>'+
+          /* v6.70: 「(1着から順に名前を押す)」は ⓘ へ(総点検 A5)。直している時にも ⓘ を出す(前は、直している時は文だけで ⓘ が無かった) */
+          return '<div class="fxl">着順'+infoBtn(_ed ? MJL_ORD_EDIT_INFO : MJL_ORD_INFO)+'</div>'+
             /* v6.36: この半荘の親(起家)。新しい半荘を入れる時だけ(直している時・席の無い古い形では出さない) */
             ((_ed || f.st || f.parts) ? '' : mjlOyaLineHtml())+
             '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:6px">'+
@@ -2544,7 +2553,7 @@ function viewMjLog(){
         /* 卓移動と開始は**卓の始まり**なので、どちらも青い太線とラベルで揃える。名前ごとの色付けはしない */
         const mv=(lab==='卓移動' || lab==='開始');
         const labCol = mv ? 'var(--blue)' : (lab==='交代' ? 'var(--amber)' : 'var(--muted)');
-        if(vis) body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:10px;font-weight:700'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
+        if(vis) body+='<tr class="nm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'><td class="no" style="color:'+labCol+';font-size:11px;font-weight:700;padding-left:0;padding-right:0;white-space:nowrap'+(mv?';border-top:2px solid var(--blue)':'')+'">'+lab+'</td>'+
           Array.from({length:ncol}).map((_,k)=>{ const pid=st[k];
             if(pid==null) return '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>';
             const chg=!mv && prev && prev[k]!==pid;
@@ -3512,7 +3521,7 @@ function viewLedgerBudget(mk){
       h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="svdrill">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">貯金</span>'+
-        '<span class="mono muted" style="font-size:11px"> ¥'+_sp.sv.toLocaleString("ja-JP")+' / ¥'+_pp.sv.toLocaleString("ja-JP")+'</span></span>'+
+        '<span class="mono muted" style="font-size:11px"> '+yenM(_sp.sv)+' / '+yenM(_pp.sv)+'</span></span>'+
         '<span class="nw"><span class="mono muted" style="font-size:11px">'+(_ok?'':'あと')+'</span> '+
         '<span class="mono '+(_ok?'teal':'amber')+'" style="font-size:17px;font-weight:700">'+
         (_ok?'達成':'¥'+Math.max(0,_pp.sv-_sp.sv).toLocaleString("ja-JP"))+'</span>'+
@@ -3595,7 +3604,7 @@ function viewLedger(){
         if(target<=0){
           h += '<div style="cursor:pointer'+_sep+'" data-a="setpre" data-v="'+key+'">'+
             '<div class="row between" style="align-items:center"><span style="font-size:12px"><span class="muted" style="font-weight:700">'+nm+'</span> '+
-            '<span class="mono muted">¥'+done.toLocaleString("ja-JP")+'</span></span>'+
+            '<span class="mono muted">'+yenM(done)+'</span></span>'+
             '<span class="amber" style="font-size:11px">＋ 上限を設定</span></div></div>';
           return;
         }
@@ -3604,7 +3613,7 @@ function viewLedger(){
         h += '<div style="cursor:pointer'+_sep+'" data-a="'+act+'">'+
           '<div class="row between" style="align-items:baseline">'+
           '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
-          '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+target.toLocaleString("ja-JP")+'</span></span>'+
+          '<span class="mono muted" style="font-size:11px"> '+yenM(done)+' / ¥'+target.toLocaleString("ja-JP")+'</span></span>'+
           /* v3.88: 「あと」=これから入れる額(消費の「残り」と方向が逆なので語で示す)
              v3.92: 色はバー連動=teal。全枠が連動するので「貯金だけ緑」は例外でなく規則になる */
           '<span class="nw"><span class="mono muted" style="font-size:11px">あと</span> '+
@@ -3625,7 +3634,7 @@ function viewLedger(){
         '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
         '<span class="red" style="font-size:13px;font-weight:700">⚠ 所持金で予定を払えません</span>'+
         '<span class="mono red" style="font-size:15px;font-weight:700">不足 ¥'+_fc.short.toLocaleString("ja-JP")+'</span></div>'+
-        '<div class="muted" style="font-size:11px;line-height:1.7">所持金 ¥'+_fc.now.toLocaleString("ja-JP")+
+        '<div class="muted" style="font-size:11px;line-height:1.7">所持金 '+yenM(_fc.now)+
         ' に対し、今後の予定は 収入 ¥'+_fc.futIncome.toLocaleString("ja-JP")+' / 支出 ¥'+_fc.futExpense.toLocaleString("ja-JP")+'。<br>'+
         '変動消費と娯楽を見直すか、貯金から引き出してください。</div></div>';
     }
@@ -3659,7 +3668,7 @@ function viewLedger(){
       return '<div style="margin-bottom:10px">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
-        '<span class="mono muted" style="font-size:11px"> ¥'+done.toLocaleString("ja-JP")+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
+        '<span class="mono muted" style="font-size:11px"> '+yenM(done)+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
         '<span><span class="mono muted" style="font-size:11px">'+(ok?'':'あと')+'</span> '+
         '<span class="mono '+(ok?"teal":"amber")+'" style="font-size:17px;font-weight:700">'+
         (ok?'達成':'¥'+Math.max(0,plan-done).toLocaleString("ja-JP"))+'</span>'+
@@ -4012,7 +4021,7 @@ function mjAgg(list, mk){
     otherX:L.reduce((a,s)=>a+mjExtSum(s,"other"),0),
     chipY:L.reduce((a,s)=>a+mjChipYen(s),0)};
 }
-/* v6.40: 卓の外の行の種類。半荘の記録から締めた行は「馬身 ツル +2」「差し馬 ツル −1」、手で足す行は「馬身」(押すだけの行)か自由な名前。
+/* v6.40: 卓の外の行の種類。半荘の記録から締めた行は「馬身 Aさん +2」「差し馬 Aさん −1」、手で足す行は「馬身」(押すだけの行)か自由な名前。
    「差し馬」を先に見る(「差し馬」の中に「馬身」は無いが、念のため順番を決めておく)。どちらでもなければ その他 */
 const mjExtKind = x => { const n=String((x&&x.name)||""); return n.indexOf("差し馬")>=0 ? "sashi" : n.indexOf("馬身")>=0 ? "uma" : "other"; };
 const mjExtSum = (m, kind) => ((m&&m.extras)||[]).reduce((a,x)=>a+(mjExtKind(x)===kind ? num(x.amount) : 0),0);
@@ -4116,8 +4125,8 @@ function viewMjStatsPage(){
       infoBtn("麻雀の成績を、<b>フリーは店ごと</b>(店の中はルール名で分けて)、<b>セットはルール名ごと</b>(どの店で打ったかは問わない)に並べています。見出しの右の金額は、その中の収支(勝ち負け)の合計です。<br><br>"+
         "フリーでルールが2つ以上ある店は、一番上に<b>店全体</b>(全部のルールを合わせた成績)が出ます。3麻と4麻は平均着順の意味が違うので、両方ある店では人数ごとに分けます。<br><br>"+
         "組を押すと、累計と月ごとの成績(半荘数・平均着順・収支など)が見られます。<br><br>"+
-        "店名を入れていないフリーの記録は「店名なし」にまとまります。前に店名とルール名を1つの欄に入れていた記録(例:「DUO虹」)は、"+
-        "組を開いた先の「店名・ルール名を書き換える」で、店名「DUO」・ルール名「虹」のように<b>まとめて分けられます</b>。")+
+        "店名を入れていないフリーの記録は「店名なし」にまとまります。前に店名とルール名を1つの欄に入れていた記録(例:「さくら東風」)は、"+
+        "組を開いた先の「店名・ルール名を書き換える」で、店名「さくら」・ルール名「東風」のように<b>まとめて分けられます</b>。")+
     '</div><div style="width:44px"></div></div>';
   if(!gs.length) return h+'<div style="text-align:center;padding:24px 0;font-size:12px" class="muted">まだ記録がありません。</div>';
   /* 1組のカード。店全体は札を「店全体」(teal)に */
@@ -4132,7 +4141,7 @@ function viewMjStatsPage(){
       '<span class="tag" style="border:1px solid '+catC+';color:'+catC+';flex-shrink:0">'+(G.isShop?"店全体":(G.category==="free"?"フリー":"セット"))+'</span>'+
       '<span class="wrapname" style="font-weight:700;font-size:13px">'+esc(G.store)+'</span></div>'+   /* v6.03: 長いルール名も切らない */
       /* v6.41: この組の収支の合計(積み上げ)も右上に(店の見出しの金額と同じ形) */
-      '<span class="row" style="align-items:center;gap:6px;flex-shrink:0"><span class="muted" style="font-size:10px">合計</span>'+
+      '<span class="row" style="align-items:center;gap:6px;flex-shrink:0"><span class="muted" style="font-size:11px">合計</span>'+
         '<span class="mono '+clsPM(A.final)+'" style="font-size:12px;font-weight:700">'+signYen(A.final)+'</span>'+
         '<span class="chevw" style="font-size:18px">'+CHEV+'</span></span></div>'+
       '<div class="row between" style="margin-top:8px;font-size:11px">'+
@@ -4192,7 +4201,7 @@ function viewMjStatDetail(){
         '<div class="muted" style="font-size:11px;margin-bottom:8px">'+A.H+'半荘 / '+A.days+'日</div>'+
         mjAggHtml(A, G)+'</div>'
       : '<div class="muted" style="text-align:center;padding:18px 0;font-size:12px">この月の記録はありません。</div>';
-  /* v6.02: **この組の記録の店名・ルール名をまとめて書き換える**(店名の欄ができる前の「DUO虹」を 店名DUO・ルール名虹 に分けるため)。
+  /* v6.02: **この組の記録の店名・ルール名をまとめて書き換える**(店名の欄ができる前の「さくら東風」を 店名さくら・ルール名東風 に分けるため)。
      v6.38: セットは店を問わないのでルール名だけ。店全体はルールがいくつもあるので出さない(書き換えはルールの組から) */
   if(!G.isShop) h+='<button class="btn full" style="margin-top:14px;padding:11px 0;font-size:12px" data-a="mjstren">'+
     (G.category==="free" ? 'この組の店名・ルール名を書き換える(' : 'この組のルール名を書き換える(')+G.list.length+'件)</button>';
@@ -4567,7 +4576,7 @@ function mjtChipStarts(t){ return (t.players||[]).map((p,ci)=>String(((t.chipSta
    **注意(ⓘにも書いた)**: 基準を動かすのは代金を**この表の精算でまとめて払う**時。その場で現金を払い、しかもチップをこの表の精算(チップ単価)にも
    入れていると、同じチップを二重に数える(買った人が多く払う)。どちらの運用かはユーザーに確認中 */
 const MJT_TRADE_INFO = "チップを<b>渡した人(売った人)の基準から枚数を引き、受け取った人(買った人)の基準に足します</b>。全員の基準の合計は変わりません。<br><br>"+
-  "例: ゴリ(基準50)がツルさん(基準150)に30枚売ったら、ゴリ 20・ツルさん 180。<br><br>"+
+  "例: Aさん(基準50)が Bさん(基準150)に30枚売ったら、Aさん 20・Bさん 180。<br><br>"+
   "記録した売り買いは下に並び、「取消」で元に戻せます。<br><br>"+
   "<b>注意</b>: これは、売り買いの代金を<b>最後の精算でまとめて払う</b>時の記録です。代金を<b>その場で現金で払った</b>のに、チップもこの表の精算に入れていると、"+
   "同じチップを二重に数えてしまいます(買った人が多く払う)。その場で払った売り買いは記録しないでください。";
@@ -4711,9 +4720,11 @@ function mjtMidImage(t, full){
   if(cd){
     const gx=PAD, gw=W-PAD*2, gy=y, gh=chartH;
     ctx.strokeStyle="#999"; ctx.strokeRect(gx+0.5,gy+0.5,gw,gh);
-    ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.font="bold 16px "+F;
-    ctx.fillText("スコア推移(チップ除く)", gx+10, gy+19);
-    const L=gx+56,R=gx+gw-78,T=gy+36,B=gy+gh-30;
+    /* v6.70: グラフの字を 20 に(総点検 B2。幅 720 の画像を画面の幅 402 で見ると、13〜14 の字は約 7px。20 なら約 11px)。字のぶん、左右と上下の余白を広げた。
+       この関数の字は textBaseline="middle"(y は字の真ん中) */
+    ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.font="bold 20px "+F;
+    ctx.fillText("スコア推移(チップ除く)", gx+10, gy+22);
+    const L=gx+68,R=gx+gw-112,T=gy+48,B=gy+gh-34;
     const px=i=> L+(R-L)*(i/(cd.idx.length-1));
     const py=v=> T+(B-T)*(1-(v-cd.mn)/(cd.mx-cd.mn));
     /* 罫線は最小・0・最大の3本のみ(形を読む図に目盛りノイズは不要) */
@@ -4721,11 +4732,11 @@ function mjtMidImage(t, full){
       const yy=py(v);
       ctx.strokeStyle = v===0?"#888":"#eaeaea"; ctx.lineWidth = v===0?1.6:1;
       ctx.beginPath(); ctx.moveTo(L,yy); ctx.lineTo(R,yy); ctx.stroke();
-      ctx.fillStyle="#666"; ctx.textAlign="right"; ctx.font="13px "+F; ctx.fillText(String(v), L-6, yy+4);
+      ctx.fillStyle="#666"; ctx.textAlign="right"; ctx.font="20px "+F; ctx.fillText(String(v), L-8, yy+1);
     });
     const stp=Math.max(1,Math.ceil(cd.idx.length/10));
-    ctx.fillStyle="#666"; ctx.textAlign="center"; ctx.font="13px "+F;
-    cd.idx.forEach((ri,i)=>{ if(i===cd.idx.length-1 || (i%stp===0 && cd.idx.length-1-i>1)) ctx.fillText(String(ri+1), px(i), B+12); });
+    ctx.fillStyle="#666"; ctx.textAlign="center"; ctx.font="20px "+F;
+    cd.idx.forEach((ri,i)=>{ if(i===cd.idx.length-1 || (i%stp===0 && cd.idx.length-1-i>1)) ctx.fillText(String(ri+1), px(i), B+20); });
     cd.series.forEach((a,ci)=>{
       const c=MJT_COLS[ci%MJT_COLS.length];
       ctx.strokeStyle=c; ctx.lineWidth=3; ctx.lineJoin="round";
@@ -4733,9 +4744,9 @@ function mjtMidImage(t, full){
       ctx.fillStyle=c; ctx.beginPath(); ctx.arc(px(a.length-1),py(a[a.length-1]),3.5,0,Math.PI*2); ctx.fill();
     });
     const lbl=cd.series.map((a,ci)=>({ci:ci,y:py(a[a.length-1])})).sort((a,b)=>a.y-b.y);
-    for(let i=1;i<lbl.length;i++){ if(lbl[i].y<lbl[i-1].y+18) lbl[i].y=lbl[i-1].y+18; }
-    ctx.font="bold 14px "+F; ctx.textAlign="left";
-    lbl.forEach(o=>{ ctx.fillStyle=MJT_COLS[o.ci%MJT_COLS.length]; ctx.fillText(P[o.ci]||("P"+(o.ci+1)), R+5, Math.min(Math.max(o.y,T+4),B-2)); });
+    mjtLblFit(lbl, T+4, B-6, 24);
+    ctx.font="bold 20px "+F; ctx.textAlign="left";
+    lbl.forEach(o=>{ ctx.fillStyle=MJT_COLS[o.ci%MJT_COLS.length]; ctx.fillText(P[o.ci]||("P"+(o.ci+1)), R+6, o.y); });
     y+=gh+14;
   }
   /* 履歴 */
@@ -4814,6 +4825,15 @@ function mjtSettle(t){
   return {rawFees:rawFees, fees:fees, pexp:pexp, pays:pays, adjs:adjs, payNote:payNote, feeNotes:feeNotes};
 }
 const MJT_COLS=["#2E6DA4","#C0392B","#0E8C7A","#A9780E","#7B5EA7","#5D7472"];
+/* v6.70: 線の右端の名前を、重ならないように縦に並べる(上から gap ずつ空け、下にはみ出した分は下から詰め直す)。
+   字を大きくしたぶん図が詰まるので、前の「上から空けて、最後に上下の端で切る」だけだと、下の端で名前が重なる。画面のグラフと、共有の画像で使う */
+function mjtLblFit(lbl, lo, hi, gap){
+  if(!lbl.length) return lbl;
+  lbl[0].y=Math.max(lbl[0].y, lo);
+  for(let i=1;i<lbl.length;i++){ if(lbl[i].y < lbl[i-1].y+gap) lbl[i].y = lbl[i-1].y+gap; }
+  for(let i=lbl.length-1;i>=0;i--){ const cap=(i===lbl.length-1 ? hi : lbl[i+1].y-gap); if(lbl[i].y>cap) lbl[i].y=cap; }
+  return lbl;
+}
 function mjtChartData(t){
   const P=t.players, rows=(t.rows||[]);
   const idx=[]; rows.forEach((r,ri)=>{ if(P.some((p,ci)=>mjtScore(t,ri,ci)!==null)) idx.push(ri); });
@@ -4823,12 +4843,17 @@ function mjtChartData(t){
   if(mn===mx) mx=mn+1;
   return {idx:idx, series:series, mn:mn, mx:mx};
 }
-function mjtChartSvg(t){
+/* v6.70: **big = 画面で見る時**(精算シート・途中経過)。前は紙と同じ 640×300 の図を画面の幅(約 336px)に縮めていたので、
+   10 の字が画面の上で約 5px だった(総点検 B2)。画面では 300×174 の図にして、字を 11(画面の上で 11px 以上。幅 375 でも)にする。
+   紙(印刷)は今までどおり(big なし = 1字も変えていない) */
+function mjtChartSvg(t, big){
   const P=t.players;
   const cd=mjtChartData(t);
   if(!cd) return "";
   const cols=MJT_COLS, idx=cd.idx, series=cd.series, mn=cd.mn, mx=cd.mx;
-  const W=640,H=300,L=48,R=58,T=14,B=26;
+  const G = big ? {W:300,H:174,L:34,R:62,T:10,B:24, fs:11, dy:4, xb:6, gap:12, lw:1.6, zw:1, gw:.6, r:2.4}
+                : {W:640,H:300,L:48,R:58,T:14,B:26, fs:10, dy:3.5, xb:8, gap:11, lw:2, zw:1.6, gw:1, r:2.5};
+  const W=G.W,H=G.H,L=G.L,R=G.R,T=G.T,B=G.B;
   const px=i=> L+(W-L-R)*(i/(idx.length-1));
   const py=v=> T+(H-T-B)*(1-(v-mn)/(mx-mn));
   /* 切りの良い目盛り */
@@ -4838,18 +4863,19 @@ function mjtChartSvg(t){
   if(ticks.indexOf(0)<0) ticks.push(0);
   let g='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">';
   ticks.forEach(v=>{ const y=py(v);
-    g+='<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke="'+(v===0?"#888":"#ececec")+'" stroke-width="'+(v===0?1.6:1)+'"/>'+
-       '<text x="'+(L-4)+'" y="'+(y+3.5).toFixed(1)+'" text-anchor="end" font-size="10" fill="#666">'+v+'</text>'; });
+    g+='<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke="'+(v===0?"#888":"#ececec")+'" stroke-width="'+(v===0?G.zw:G.gw)+'"/>'+
+       '<text x="'+(L-4)+'" y="'+(y+G.dy).toFixed(1)+'" text-anchor="end" font-size="'+G.fs+'" fill="#666">'+v+'</text>'; });
   const stp=Math.max(1,Math.ceil(idx.length/10));
-  idx.forEach((ri,i)=>{ if(i===idx.length-1 || (i%stp===0 && idx.length-1-i>1)) g+='<text x="'+px(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="#666">'+(ri+1)+'</text>'; });
+  idx.forEach((ri,i)=>{ if(i===idx.length-1 || (i%stp===0 && idx.length-1-i>1)) g+='<text x="'+px(i).toFixed(1)+'" y="'+(H-G.xb)+'" text-anchor="middle" font-size="'+G.fs+'" fill="#666">'+(ri+1)+'</text>'; });
   series.forEach((a,ci)=>{ const c=cols[ci%cols.length];
-    g+='<polyline fill="none" stroke="'+c+'" stroke-width="2" stroke-linejoin="round" points="'+a.map((v,i)=>px(i).toFixed(1)+","+py(v).toFixed(1)).join(" ")+'"/>'+
-       '<circle cx="'+px(a.length-1).toFixed(1)+'" cy="'+py(a[a.length-1]).toFixed(1)+'" r="2.5" fill="'+c+'"/>'; });
+    g+='<polyline fill="none" stroke="'+c+'" stroke-width="'+G.lw+'" stroke-linejoin="round" points="'+a.map((v,i)=>px(i).toFixed(1)+","+py(v).toFixed(1)).join(" ")+'"/>'+
+       '<circle cx="'+px(a.length-1).toFixed(1)+'" cy="'+py(a[a.length-1]).toFixed(1)+'" r="'+G.r+'" fill="'+c+'"/>'; });
   /* 凡例の代わりに線の右端へ名前を直付け(重なりは縦にずらす) */
   const lbl=series.map((a,ci)=>({ci,y:py(a[a.length-1])})).sort((a,b)=>a.y-b.y);
-  for(let i=1;i<lbl.length;i++){ if(lbl[i].y < lbl[i-1].y+11) lbl[i].y = lbl[i-1].y+11; }
+  if(big) mjtLblFit(lbl, T+4, H-B-2, G.gap);
+  else for(let i=1;i<lbl.length;i++){ if(lbl[i].y < lbl[i-1].y+11) lbl[i].y = lbl[i-1].y+11; }
   lbl.forEach(o=>{ const y=Math.min(Math.max(o.y,T+4),H-B-2);
-    g+='<text x="'+(W-R+5)+'" y="'+(y+3.5).toFixed(1)+'" font-size="10" font-weight="700" fill="'+cols[o.ci%cols.length]+'">'+esc(P[o.ci]||("P"+(o.ci+1)))+'</text>'; });
+    g+='<text x="'+(W-R+5)+'" y="'+(y+G.dy).toFixed(1)+'" font-size="'+G.fs+'" font-weight="700" fill="'+cols[o.ci%cols.length]+'">'+esc(P[o.ci]||("P"+(o.ci+1)))+'</text>'; });
   g+='</svg>';
   return '<div style="border:1px solid #999;border-radius:6px;padding:8px 8px 2px;margin:2px 0 16px;background:#fff">'+
     '<div style="font-weight:700;font-size:12px;margin:0 0 2px 2px">スコア推移(チップ除く)</div>'+g+'</div>';
@@ -4878,7 +4904,7 @@ function mjtPrintHtml(t, mode){
   const latest = lastIdx<0 ? "" :
     '<table class="pr-tbl"><thead>'+names.replace('<th>No</th>','<th>直近</th>')+'</thead><tbody>'+
     '<tr class="pr-latest"><td class="pr-no">'+(lastIdx+1)+'回戦</td>'+cellsOf(lastIdx)+'</tr></tbody></table>';
-  const chart=mjtChartSvg(t);
+  const chart=mjtChartSvg(t, mode!=="print");   /* v6.70: 画面(精算シート・途中経過)では字の大きい図 */
   let sum='<table class="pr-tbl pr-sum"><thead><tr><th></th>'+P.map((p,i)=>'<th>'+esc(p||("P"+(i+1)))+'</th>').join("")+'</tr></thead><tbody>';
   sum+='<tr><td class="pr-lbl">平均着順</td>'+P.map((p,ci)=>{const av=mjtAvgRank(t,ci);return '<td>'+(av===null?"–":av.toFixed(2))+'</td>';}).join("")+'</tr>';
   sum+='<tr><td class="pr-lbl">合計</td>'+calcs.map(c=>'<td class="'+(c.sum<0?"pr-neg":"")+'">'+fmtPt(c.sum)+'</td>').join("")+'</tr>';
@@ -4933,6 +4959,14 @@ function newMjTable(){
 function mjtUma(t, idx){ return [num(t.uma1)||0,num(t.uma2)||0,num(t.uma3)||0,num(t.uma4)||0][idx]||0; }
 function mjtTobiScore(t){ return Math.round(-(num(t.kaeshi)||0)/1000) + mjtUma(t, mjtSeats(t)-1); }
 function mjtHasTobi(t){ return !t.hakoshita && (num(t.kaeshi)||0)>0; }
+/* v6.70: ルールの要約の、持ち点/返し点の所。両方あれば「25000/30000」、片方だけならその名前を付け、どちらも空なら何も出さない(前は「?/?」) */
+function mjtPtsSum(t){
+  const m=String(t.mochi==null?"":t.mochi).trim(), k=String(t.kaeshi==null?"":t.kaeshi).trim();
+  if(m && k) return " ・ "+m+"/"+k;
+  if(m) return " ・ 持ち点"+m;
+  if(k) return " ・ 返し点"+k;
+  return "";
+}
 function mjtAvgRank(t, pi){
   const rc = mjtRankCounts(t, pi);
   const g = rc.reduce((a,b)=>a+b,0);
@@ -4941,6 +4975,13 @@ function mjtAvgRank(t, pi){
   return w/g;
 }
 
+/* v6.70: スコア表の設定の小さい注記(総点検 A3)。「(タップで適用)」「(× で削除)」「以下は飛びボタン・計算用」は ⓘ へ */
+const MJT_PRESET_INFO="名前を押すと、そのルール(3麻/4麻・持ち点・返し点・ウマ・単価・箱下・精算単位)を今の卓に入れます。<br><br>"+
+  "<b>＋ 現在のルールを保存</b>: 上の「ルール名」の名前で、今のルールを残します。同じ名前があれば上書きします。<br><br>"+
+  "<b>編集</b>: 名前に × が付きます。押すと、そのルールを消せます(記録済みのデータには影響しません)。";
+const MJT_TOBI_INFO="表の点数は、入れた数字をそのまま使います。ここの数字は、キーパッドの<b>「飛び」ボタン</b>が入れる点数を決めるためのものです。<br><br>"+
+  "<b>飛び = −(返し点 ÷ 1000) + 最下位のウマ</b><br>例: 返し点 30000・3着のウマ −20 なら、飛び = −50<br><br>"+
+  "返し点が空の時と、「箱下あり」がオンの時は、「飛び」ボタンは出ません。<br><br><b>持ち点</b>は控えです(計算には使いません)。";
 function viewMjTable(){
   const t = UI.mjt;
   const P = t.players;
@@ -4964,7 +5005,7 @@ function viewMjTable(){
     '<input class="input sm mono" type="time" value="'+esc(t.endAt||"")+'" data-mt="tend" style="width:62px;flex:none;text-align:center"></div>'+
     '<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)">'+
     '<span class="muted" style="flex:none;width:56px;font-size:12px">ルール名</span>'+
-    '<input class="input sm" placeholder="例: DUO虹" value="'+esc(t.ruleName||"")+'" data-mt="rname" style="flex:1;min-width:0"></div>'+
+    '<input class="input sm" placeholder="例: さくら東風" value="'+esc(t.ruleName||"")+'" data-mt="rname" style="flex:1;min-width:0"></div>'+
     '</div>';
 
 
@@ -4977,12 +5018,13 @@ function viewMjTable(){
   }
   const secBar=(key,open,title,sum)=>'<div class="card" data-mt="sect" data-v="'+key+'" style="margin-bottom:10px;padding:11px 16px"><div class="row" style="gap:8px;align-items:center">'+
     '<span style="font-size:12px;font-weight:700;flex:none">'+(open?"▾":"▸")+' '+title+'</span>'+
-    (open?'<span class="muted" style="flex:1;font-size:11px;text-align:right">タップでたたむ</span>'
+    /* v6.70: 開いている時の「タップでたたむ」は出さない(▾ で分かる・総点検 A3) */
+    (open?''
          :'<span class="muted ellip" style="flex:1;font-size:11px;text-align:right;min-width:0">'+esc(sum)+'</span>')+
     '</div></div>';
   const rpU = t.roundPay===true?100:(num(t.roundPay)||0);
   const ruleSum = (t.rule==="3"?"3麻":"4麻")
-    + " ・ " + (t.mochi||"?") + "/" + (t.kaeshi||"?")
+    + mjtPtsSum(t)   /* v6.70: 入れていない時は「?/?」と出さない(総点検 C3) */
     + " ・ 1点¥" + (num(t.scoreRate)||0)
     + (num(t.chipRate)>0 ? " ・ チップ¥"+num(t.chipRate) : "")
     + (rpU>0 ? " ・ 精算"+rpU+"円" : "");
@@ -4995,10 +5037,10 @@ function viewMjTable(){
   const editing = UI.mjtEditPresets;
   if(hasPresets){
     h += '<div class="row between" style="align-items:center;margin-bottom:5px">'+
-      '<span class="muted" style="font-size:11px">保存済みルール '+(editing?"(× で削除)":"(タップで適用)")+'</span>'+
+      '<span class="muted" style="font-size:11px">保存済みルール'+infoBtn(MJT_PRESET_INFO)+'</span>'+
       '<button class="chip" style="font-size:11px;padding:4px 10px'+(editing?";border-color:var(--teal);color:var(--teal)":"")+'" data-mt="editpresets">'+(editing?"完了":"編集")+'</button></div>';
   }else{
-    h += '<div class="muted" style="font-size:11px;margin-bottom:5px">保存済みルール</div>';
+    h += '<div class="muted" style="font-size:11px;margin-bottom:5px">保存済みルール'+infoBtn(MJT_PRESET_INFO)+'</div>';
   }
   h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div class="row" style="gap:6px;flex-wrap:nowrap;padding-bottom:2px">'+
     (hasPresets ? S.mjPresets.map(p=>{
@@ -5015,7 +5057,7 @@ function viewMjTable(){
     '<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">'+
     [["3","3麻"],["4","4麻"]].map(([v,l])=>'<button class="btn '+(t.rule===v?"sel":"")+'" style="flex:1;font-size:12px;padding:7px 0" data-mt="rule" data-v="'+v+'">'+l+'</button>').join("")+
     '<span class="muted" style="font-size:11px;white-space:nowrap">'+mjtSeats(t)+'人打ち</span></div>'+
-    '<div class="muted" style="font-size:11px;margin-bottom:6px;border-top:1px solid var(--line);padding-top:8px">以下は飛びボタン・計算用</div>'+
+    '<div class="muted" style="font-size:11px;margin-bottom:6px;border-top:1px solid var(--line);padding-top:8px">飛びボタン用'+infoBtn(MJT_TOBI_INFO)+'</div>'+
     '<div class="row" style="gap:8px;margin-bottom:8px">'+
     '<div style="flex:1"><div class="muted" style="font-size:11px">持ち点(配給原点)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="例 25000" value="'+esc(t.mochi||"")+'" data-mt="rd" data-v="mochi"></div>'+
     '<div style="flex:1"><div class="muted" style="font-size:11px">返し点(基準点)</div><input class="input sm mono r" type="number" inputmode="numeric" placeholder="例 30000" value="'+esc(t.kaeshi||"")+'" data-mt="rd" data-v="kaeshi"></div></div>'+
@@ -5112,7 +5154,7 @@ function viewMjTable(){
     '<div style="height:1px;background:var(--line);margin:10px 0 8px"></div>'+
     '<div class="row" style="justify-content:space-between"><span class="muted" style="font-size:12px">場代の入力合計</span><span class="mono" style="font-size:14px">¥'+feeSum.toLocaleString("ja-JP")+'</span></div>'+
     '<div class="row" style="justify-content:space-between;margin-top:4px"><span style="font-size:13px;font-weight:700">過不足</span>'+
-    '<span class="mono" style="font-size:14px;font-weight:700;color:'+(diff===0&&feeTotal>0?"var(--teal)":diff===0?"var(--muted)":"var(--red)")+'">'+(diff>0?"+":"")+(feeTotal>0||feeSum>0?"¥"+diff.toLocaleString("ja-JP")+(diff===0?" (一致)":""):"–")+'</span></div>'+
+    '<span class="mono" style="font-size:14px;font-weight:700;color:'+(diff===0&&feeTotal>0?"var(--teal)":diff===0?"var(--muted)":"var(--red)")+'">'+((feeTotal>0||feeSum>0) ? (diff===0 ? "¥0 (一致)" : signYen(diff)) : "–")+'</span></div>'+
     '</div>';
   h += '<div class="card" style="margin-bottom:8px;padding:6px 16px">'+
     P.map((p,ci)=>{
@@ -5276,7 +5318,10 @@ function viewMjPlay(){
   if(mjtChipStarts(t).some(x=>x!=="") || num(t.chipRate)>0 || (t.chipTrades||[]).length){
     h += '<div style="margin-top:8px">'+mjtTradeHtml(t)+'</div>';
   }
-  h += '<div class="muted" style="font-size:11px;text-align:right;margin-top:6px">ヘッダー: 上段=合計 / 下段=1着·2着·3着'+(mjtSeats(t)>3?"·4着":"")+'の回数</div>';
+  /* v6.70: 表の読み方の1行(「ヘッダー: 上段=合計 / 下段=…」)は ⓘ へ(総点検 A2) */
+  h += '<div class="muted" style="font-size:11px;text-align:right;margin-top:6px">表の見方'+infoBtn(
+    "名前の下の大きい数字は、ここまでの<b>合計</b>です。その下の小さい数字は、<b>1着・2着・3着"+(mjtSeats(t)>3?"・4着":"")+"の回数</b>です。<br><br>"+
+    "点数を入れていない人が1人だけになると、その人の点数は自動で入ります(その回の合計が0になる数)。")+'</div>';
   h += '<div style="height:40px"></div>';
   return h;
 }
@@ -5597,7 +5642,7 @@ function viewAssets(){
   let h='';
   h+='<div class="card" style="margin-bottom:14px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">総資産</div>'+
-    '<div class="mono teal" style="font-size:34px;font-weight:700;line-height:1.25">¥'+total.toLocaleString("ja-JP")+'</div>'+
+    '<div class="mono teal" style="font-size:34px;font-weight:700;line-height:1.25">'+yenM(total)+'</div>'+
     /* v4.15: 3分割の内訳を撤去(ユーザー指摘)。すぐ下に所持金/軍資金/貯金/投資のカードが
        全て並んでいるので二重表記だった */
     '</div>';
@@ -5609,7 +5654,7 @@ function viewAssets(){
      どちらも複数の入れ物を束ねたカードなので、様式を揃えて財布ごとの残高を並べる */
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer'+(wFc.short>0?';border-color:var(--red)':'')+'" data-a="wallet">'+
     '<div class="row between" style="align-items:baseline"><span style="font-size:13px;font-weight:700">所持金</span>'+
-    '<span class="nw"><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">¥'+wBal.toLocaleString("ja-JP")+'</span>'+CHEV_IN+'</span></div>';
+    '<span class="nw"><span class="mono '+(wBal<0?"red":"teal")+'" style="font-size:18px;font-weight:700">'+yenM(wBal)+'</span>'+CHEV_IN+'</span></div>';
   {
     /* v4.29: 名前と数字を並べるだけでは情報が薄い(ユーザー指摘)。
        **構成比という情報を既に持っているのだから使う**——貯金の目標バーと同じ位置に
@@ -5626,7 +5671,7 @@ function viewAssets(){
             '<span class="muted">'+esc(w.name)+'</span></span>'+
             /* v4.63: **割合の幅を固定**(ユーザー指摘)。56%と7%で桁数が違うと、
                金額の桁が同じでも右端がずれて読みにくい。数字の列は幅を揃える */
-            '<span><span class="mono muted">¥'+v.toLocaleString("ja-JP")+'</span>'+
+            '<span><span class="mono muted">'+yenM(v)+'</span>'+
             '<span class="mono muted" style="display:inline-block;width:38px;text-align:right">'+
             (wBal>0?Math.round(v/wBal*100):0)+'%</span></span></div>'; }).join("")+
         '</div>';
@@ -5634,7 +5679,7 @@ function viewAssets(){
   }
   h+='</div>';
   h+='<div class="card" style="margin-bottom:12px;cursor:pointer" data-a="savings">'+
-    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">貯金</span><span class="nw"><span class="mono teal" style="font-size:18px;font-weight:700">¥'+sBal.toLocaleString("ja-JP")+'</span>'+CHEV_IN+'</span></div>';
+    '<div class="row between" style="align-items:baseline;margin-bottom:8px"><span style="font-size:13px;font-weight:700">貯金</span><span class="nw"><span class="mono teal" style="font-size:18px;font-weight:700">'+yenM(sBal)+'</span>'+CHEV_IN+'</span></div>';
   /* v4.02: 箱ごとの目標をそのまま並べる(順次の梯子をやめたので「現在の目標」という概念が無い) */
   if(pots4.some(p=>p.hasTarget)){
     h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">';
@@ -6116,6 +6161,9 @@ const MJL_ORD_INFO="1着から順に名前を押します。最後の1人は自�
   "<b>前の記録</b>: 最後に記録してからの時間です。いつもの間隔(この卓の半荘の間隔。まだ少ない時は前の卓の間隔)よりずっと長く空いていると、付け忘れが無いか聞きます。"+
   "付け忘れた半荘は、気付いた時にそのまま押して足せます(表では後ろに並びますが、半荘数・着順の回数・相手ごとの成績は同じです)。<br><br>"+
   "<b>開いた時</b>: 最後の記録から3時間の間は、アプリを開くとこの画面が出ます。卓を締めると、いつもの画面に戻ります。";
+/* v6.70: 前の半荘を直している時の ⓘ(見出しの「(1着から順に名前を押す)」を取った代わり) */
+const MJL_ORD_EDIT_INFO="1着から順に名前を押し直します。最後の1人は自動で決まります。<br>押してある名前をもう一度押すと、その人から後ろの着順が外れます。<br><br>"+
+  "そろえてから、下の「更新する」で保存します。「やめる」で、直すのをやめます。";
 const MJL_HABIT_MS=1500;          /* 記録した直後のこの間は、下バー(前は「記録する」があった所)を効かせない */
 /* 行が壊れていても(null など)落ちないように読む——起動時にも呼ぶので、ここで落ちると画面が出なくなる */
 function mjlLastT(rows){ let t=0; (rows||mjLogRows()).forEach(r=>{ const x=num(r&&r.t); if(x>t) t=x; }); return t; }
@@ -6163,7 +6211,7 @@ function mjlStatusHtml(now){
     const oyId=(last.oya!=null && last.st) ? last.st[num(last.oya)] : null;   /* v6.36: 今記録した半荘の親(違っていたら付け忘れ。取り消して先に足せる) */
     h='<div class="row between" style="align-items:center;gap:8px">'+
       '<span style="font-size:12px;line-height:1.5;min-width:0"><span class="teal" style="font-weight:700">✓ '+rows.length+'半荘目</span> '+
-      ord.map(p=>'<span style="white-space:nowrap">'+esc(rk[p]+'着 '+mjlName(p))+(p===oyId ? '<span class="amber" style="font-size:10px;font-weight:700;margin-left:2px">(親)</span>' : '')+'</span>').join('・')+'</span>'+   /* 名前の途中で折り返さない */
+      ord.map(p=>'<span style="white-space:nowrap">'+esc(rk[p]+'着 '+mjlName(p))+(p===oyId ? '<span class="amber" style="font-size:11px;font-weight:700;margin-left:2px">(親)</span>' : '')+'</span>').join('・')+'</span>'+   /* 名前の途中で折り返さない */
       '<button class="btn" style="font-size:11px;padding:5px 12px;flex-shrink:0" data-ml="undo">取り消す</button></div>';
     if(before) warn='前の記録から'+mjlAgo(before.gap)+'空いていました'+usTxt(before.usual)+'。付け忘れはありませんか?';
   } else {
@@ -6229,7 +6277,7 @@ function mjlCommit(){
   }
   row.t=now;
   /* v5.82: **実際に行った操作を印として付ける**(ユーザー指摘: 卓移動と交代を区別して出して欲しい)。
-     v5.80は席の並びの変化から推測していたので、ツルさんと一緒に卓を移った時(=1人は同じ)を「交代」と誤表示した */
+     v5.80は席の並びの変化から推測していたので、同卓の1人と一緒に卓を移った時(=1人は同じ)を「交代」と誤表示した */
   if(S.mjLog.pendEv){ row.ev=S.mjLog.pendEv; delete S.mjLog.pendEv; }
   /* v6.36: その半荘の親の席(全員の着順で入れる時だけ。席の並びがある形)。直した親は1回使ったら外す */
   { const oy=row.st ? mjlOyaNext() : null; if(oy!=null) row.oya=oy; delete S.mjLog.oyaNext; delete S.mjLog.oyaReset; UI.mjlOyaEd=false; }
@@ -6261,7 +6309,7 @@ function mjlUndo(){
 /* v6.36【親(起家)が移る】(ユーザー: 誰が親でスタートか設定して、以下親は移っていく感じにしたい。それを設定すれば何処が抜けてるか分かりやすくなる。
    親は A→B→C→A の順番で移る)。
    ・最初の半荘で親の席を選ぶと、記録するたびに次の席へ移る(4麻は A→B→C→D→A)。各行に**その半荘の親の席(oya)**を残す
-   ・着順の上に「N半荘目の親 B ツル」——お店の起家と見比べて、違えば付け忘れ。表には各半荘の親の席に「親」
+   ・着順の上に「N半荘目の親 B 名前」——お店の起家と見比べて、違えば付け忘れ。表には各半荘の親の席に「親」
    ・「直す」で本当の親を選ぶと、予定の親との差から**どの親の半荘が抜けたか**を言う(付け忘れなら先にその半荘を記録すれば、親は自動で合う)
    次の半荘の親 = 直した親(oyaNext・1回だけ) → なければ最後の行の親の次。卓移動の後は分からない(oyaReset)ので選び直す */
 function mjlOyaNext(){
@@ -6275,7 +6323,7 @@ const MJL_OYA_INFO="この半荘の<b>起家(最初の親)</b>の席です。最
   "<b>お店の起家と違ったら</b>、半荘が抜けている(付け忘れ)かもしれません。「直す」で本当の親を選ぶと、どの親の半荘が抜けたかを教えます。付け忘れなら、先にその半荘を記録すれば、親は自動で合います。<br><br>"+
   "記録した直後の行にも、その半荘の親に「(親)」と出ます。違っていたら「取り消す」で戻して、抜けた半荘を先に記録してください。<br><br>"+
   "下の表では、各半荘の親の席に「親」と出ます。並びが斜めに続いていない所が、親が飛んだ所です。<br><br>卓移動した時は、新しい卓の親を選び直します。";
-/* 着順の上の1行。決まっていなければ席のボタン(最初の親を選ぶ)、決まっていれば「N半荘目の親 B ツル」と「直す」 */
+/* 着順の上の1行。決まっていなければ席のボタン(最初の親を選ぶ)、決まっていれば「N半荘目の親 B 名前」と「直す」 */
 function mjlOyaLineHtml(){
   const st=mjlSeat(), n=st.length, nx=mjlOyaNext(), no=mjLogRows().length+1, ed=!!UI.mjlOyaEd;
   const pick=(sel)=>st.map((_,k)=>'<button class="btn'+(sel===k?' sel':'')+'" style="font-size:13px;padding:6px 12px;font-weight:700" data-ml="oyapick" data-v="'+k+'">'+MJL_SEATS[k]+'</button>').join("");
@@ -6289,7 +6337,7 @@ function mjlOyaLineHtml(){
       '<button class="btn" style="font-size:11px;padding:4px 10px" data-ml="oyaed">直す</button></span>';
   }
   h+='</div>';
-  if(nx==null && !ed) h+='<div class="muted" style="font-size:11px;margin:-6px 0 10px">'+(no===1 ? '最初の半荘の親の席を選ぶと、次からは自動で移ります' : 'この半荘の親の席を選ぶと、次からは自動で移ります')+'</div>';
+  /* v6.70: 親を選ぶ前の1行(「…親の席を選ぶと、次からは自動で移ります」)は出さない(総点検 A5。同じ中身が、すぐ上の ⓘ = MJL_OYA_INFO にある) */
   return h;
 }
 /* 親を選ぶ・直す。予定の親と違えば、その差の分の半荘が抜けていないか聞く(OK = 抜けていない・ここから選んだ親で移る) */
@@ -6344,7 +6392,7 @@ function mjlUiFresh(){
   UI.mjlForm={rank:0, uma:0}; UI.mjlJust=null; UI.mjlSetup=null; UI.mjlHistAll=false; UI.mjlVsOpen=false;
   UI.mjlMemOpen=null; UI.mjlSeatEd=null; UI.mjlMoving=false; UI.mjlNewName=""; UI.mjlNameEdit=false; UI.mjlMergeFrom=null; UI.mjlOyaEd=false;
 }
-/* v6.33【名前のボタンから消す】(ユーザー: 名前の予想をツル・チョロで統一したいので、さん付けの名前を消したい。ほかにも名前を消す機能がほしい)。
+/* v6.33【名前のボタンから消す】(ユーザー: 名前の予想を、さん付けでない呼び名で統一したいので、さん付けの名前を消したい。ほかにも名前を消す機能がほしい)。
    名前のボタンは**前の記録から作っている**(前の卓の人・麻雀の記録の同卓者)ので、消すのは**ボタンに出さない名前の一覧**(S.mjLog.hideNames)。
    前の記録の同卓者(稼働の一覧のカードの名前)は書き換えない。消した名前は「消した名前」から戻せ、打って入れ直した時も戻る */
 function mjlHiddenNames(){ return new Set(((S.mjLog||{}).hideNames)||[]); }
@@ -6366,7 +6414,7 @@ function mjlSetupCands(all){
 }
 const MJL_SETUP_INFO="卓の座順を A・B・C(4麻なら D)として、<b>自分の席</b>と、ほかの席に座っている人を選びます。<b>全部の席が決まると、そのまま着順を押す画面になります</b>。<br><br>"+
   "名前のボタンは、前の卓の人と、最近の麻雀の記録で一緒に打った人です。<b>知らない人</b>は X・Y などの仮の名前で始め、名前が分かったら座席の名前を押して直せます(それまでの記録もその名前になります)。<br><br>"+
-  "<b>名前を整理</b>: 「ツルさん」と「ツル」のような重なりを直します。<br>・<b>まとめる</b>: 前の記録の名前も書き換えて1つにします(麻雀の記録の同卓者・スコア表の名前・パチスロの相方)。同じ記録に両方の名前がある所は、別の人かもしれないので書き換えません。まとめる前の状態は、バックアップの「自動スナップショット」に残します。<br>・<b>消す</b>: 名前のボタンに出さないだけで、前の記録はそのままです。消した名前は「戻す」で戻ります(名前を入れるで打ち直した時も戻ります)。<br><br>"+
+  "<b>名前を整理</b>: 「タロウさん」と「タロウ」のような重なりを直します。<br>・<b>まとめる</b>: 前の記録の名前も書き換えて1つにします(麻雀の記録の同卓者・スコア表の名前・パチスロの相方)。同じ記録に両方の名前がある所は、別の人かもしれないので書き換えません。まとめる前の状態は、バックアップの「自動スナップショット」に残します。<br>・<b>消す</b>: 名前のボタンに出さないだけで、前の記録はそのままです。消した名前は「戻す」で戻ります(名前を入れるで打ち直した時も戻ります)。<br><br>"+
   "決めた後に変える時は、座席の「交代」と「自分の席」で。リセットした後と卓を締めた後は、次の卓でまたここから聞きます。";
 function viewMjlSetup(){
   const d=mjlSetupDraft(), n=d.pick.length, me=d.pick.indexOf("me"), cands=mjlSetupCands();
@@ -6410,7 +6458,7 @@ function viewMjlSetup(){
                 : '<button class="btn" style="font-size:12px;padding:5px 12px;color:var(--red);border-color:var(--red)" data-ml="nmhide" data-v="'+esc(nm)+'">消す</button>')+
         '</span></div>';
       if(mf===nm){
-        /* まとめ先: 「ツルさん」なら「ツル」を先頭に光らせる(無ければ「ツル」を作る形で出す)。ほかは名前のボタンに出ている名前 */
+        /* まとめ先: 「タロウさん」なら「タロウ」を先頭に光らせる(無ければ「タロウ」を作る形で出す)。ほかは名前のボタンに出ている名前 */
         const base=nm.replace(/\s*さん$/,"").trim();
         let tg=allN.filter(x=>x!==nm);
         if(base && base!==nm){ tg=[base].concat(tg.filter(x=>x!==base)); }
@@ -6435,7 +6483,7 @@ function viewMjlSetup(){
   }
   return h+'</div>';
 }
-/* v6.34【名前をまとめる】(ユーザー: 過去データも統一出来るならしたい)。「ツルさん」を「ツル」へ、のように**前の記録の名前も書き換えて**1つにする。
+/* v6.34【名前をまとめる】(ユーザー: 過去データも統一出来るならしたい)。「タロウさん」を「タロウ」へ、のように**前の記録の名前も書き換えて**1つにする。
    書き換えるのは名前が**完全に同じ**所: 麻雀の記録の同卓者・スコア表の名前・パチスロの相方(同じ人が出てくる所)。
    **1つの記録に両方の名前がある所は書き換えない**(同じ記録の2人は別の人かもしれない。まとめると1人に潰れる)——その名前はボタンには出さない。
    席を聞く前の、名前のボタン用に残っている前の卓の人も直す(0半荘の時だけ。打っている卓の人は id で記録とつながっているので触らない) */
@@ -6457,7 +6505,7 @@ function mjlMergeName(from, to){
   (S.sessions||[]).forEach(s=>{ if(same(s.partnerName)) s.partnerName=to; });
   if(S.mjLog && !mjLogRows().length){ const P=mjlPeople(), P2={}; Object.keys(P).forEach(k=>{ P2[k]=same(P[k]) ? to : P[k]; }); S.mjLog.people=P2; }
   mjlShowName(to);
-  if(c.clash) mjlHideName(from); else mjlShowName(from);   /* 残った所(両方がある記録)の「ツルさん」はボタンに出さない */
+  if(c.clash) mjlHideName(from); else mjlShowName(from);   /* 残った所(両方がある記録)の「タロウさん」はボタンに出さない */
   return c;
 }
 /* まとめる前に、何をいくつ書き換えるかを見せて確かめる。前の記録を書き換える時は、その前の状態を自動スナップショットに残す
@@ -6586,7 +6634,7 @@ function mjLogTotals(){
   rows.forEach(r=>{ if(r.rank) rank[r.rank]=(rank[r.rank]||0)+1; if(!r.ranks) uma+=num(r.uma); });
   /* v5.78: 相手ごとに「差し馬」「馬身」を別々に選ぶ(両方・どちらか・何人でも) */
   let sashi=0;
-  /* v5.91: **卓の外を相手ごとに持つ**(ユーザー: 店の精算と別にツルさんと精算する。締めた後に分けるため、誰の分か分かるように) */
+  /* v5.91: **卓の外を相手ごとに持つ**(ユーザー: 店の精算と別に、同卓の1人と精算する。締めた後に分けるため、誰の分か分かるように) */
   const outs=[];
   { const vs=mjlVs(), um=(L.um||{}), sa=(L.sa||{});
     /* v5.88: 仮称の人は画面に出さないので、選択が残っていても数えない(見えない選択が金額に効くのを防ぐ) */
@@ -7333,8 +7381,11 @@ function viewInvest(){
       '<span class="mono muted">積立 '+yen(bk.nisa)+'</span>'+
       '<span class="muted">'+pct.toFixed(1)+'% / '+yen(L.total)+'</span></div>'+
       '<div style="text-align:left;border-top:1px solid var(--line);margin-top:12px;padding-top:10px">'+
-      '<div class="muted" style="font-size:11px;margin-bottom:6px">生涯枠の内訳　'+
-        '<span style="opacity:.8">※枠は買った金額で数えます(値上がりは関係ありません)</span></div>'+
+      /* v6.70: 「※枠は買った金額で数えます…」は ⓘ へ(総点検 A4) */
+      '<div class="muted" style="font-size:11px;margin-bottom:6px">生涯枠の内訳'+infoBtn(
+        "NISA の枠は、<b>買った金額</b>で数えます(値上がり・値下がりは関係ありません)。<br><br>"+
+        "<b>つみたて投資枠</b>: 生涯枠 "+yen(L.total)+" から、成長投資枠で買った分を引いた額まで。<br>"+
+        "<b>成長投資枠</b>: "+yen(L.seicho)+" と「生涯枠 − つみたて投資枠で買った分」の小さい方まで。")+'</div>'+
       /* v4.50: **つみたて枠に個別上限は無いが、生涯枠から成長に入れた分を引けば実質の上限が出る**
          (ユーザー指摘)。成長側も「1200万」と「生涯枠からつみたて分を引いた額」の小さい方が実質上限 */
       '<div class="row between" style="font-size:11px;padding:2px 0"><span class="muted">つみたて投資枠</span>'+
@@ -7397,7 +7448,7 @@ function viewInvest(){
   /* v4.65: **Bufferを撤去**(ユーザー設計: 投資用の貯金は作らない)。
      待機現金は持たない方針(IPS §3.2)と整合する。貯金が必要なら貯金の箱で作る */
   /* 保有一覧 */
-  h+=band("保有(タップで詳細・買付)");
+  h+=band("保有");   /* v6.70: 「(タップで詳細・買付)」を取った(行の右に矢印がある・総点検 A4) */
   if(!(inv.holdings||[]).length){
     h+='<div class="muted" style="text-align:center;font-size:12px;padding:16px 0">まだ銘柄がありません</div>';
   } else {
@@ -7405,7 +7456,8 @@ function viewInvest(){
     inv.holdings.forEach((x,i)=>{
       h+='<div class="row" data-iv="open" data-v="'+x.id+'" style="gap:8px;align-items:center;padding:11px 0;cursor:pointer'+(i>0?';border-top:1px solid var(--line)':'')+'">'+
         '<div style="flex:1;min-width:0"><div class="ellip" style="font-size:13px;font-weight:600">'+esc(x.name)+'</div>'+
-        '<div class="muted" style="font-size:11px;margin-top:2px">'+(FRAME_LABEL[x.frame]||"")+' ・ '+num(x.qty).toLocaleString("ja-JP")+(x.unit||"")+'</div></div>'+
+        /* v6.70: 枠の無い銘柄は「 ・ 10口」と点から始まっていた(総点検 C2)。ある物だけを点でつなぐ */
+        '<div class="muted" style="font-size:11px;margin-top:2px">'+[FRAME_LABEL[x.frame]||"", num(x.qty).toLocaleString("ja-JP")+esc(x.unit||"")].filter(Boolean).join(' ・ ')+'</div></div>'+
         '<span class="mono" style="flex:none;font-size:13px;font-weight:700">¥'+num(x.cost).toLocaleString("ja-JP")+'</span>'+
         '<span class="chevw" style="flex:none">'+CHEV+'</span></div>';
     });
@@ -7571,7 +7623,7 @@ function bankRefillCap(){ const v=num((S.bank||{}).refillCap); return v>0?v:3000
 /* v4.15: **集計開始日を撤去**(ユーザー指摘)。月別で見る方針にしたのに、残高だけが
    開始日以降しか数えておらず、**月別の合計と残高が一致しない状態**だった(実データで確認)。
    遊技は全期間を数え、開始時の残高は「記録開始前の残高」と定義し直す */
-/* v4.57: **軍資金も財布に分割**(ユーザー設計)。山木の貯玉、麻雀の相手への借り、現金の軍資金など、
+/* v4.57: **軍資金も財布に分割**(ユーザー設計)。店の貯玉、麻雀の相手への借り、現金の軍資金など、
    遊技の金は複数の置き場に分かれている。**マイナスなら借り、プラスなら預け**として同じ仕組みで扱う
    ——貯玉も借金も「遊技に紐づく金の置き場」であり、符号が違うだけ。
    bwal省略=全財布の合計なので、既存の呼び出し(資産タブ・警告・月別・振替枠)は無変更で動く */
@@ -7781,7 +7833,7 @@ function viewWallet(){
   /* v4.22: 冒頭の説明文を撤去(ユーザー指摘)。毎日見る画面に毎回同じ説明は要らない */
   h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">残高</div>'+
-    '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">¥'+bal.toLocaleString("ja-JP")+'</div>'+
+    '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">'+yenM(bal)+'</div>'+
     /* v4.23: 月末見込みの常設表示を撤去(ユーザー指摘)。**振替をすれば動く数字**なので、
        常に見せても判断が変わらない。見るべきなのは「このままだと払えない」という一点だけで、
        それは下の警告(fc.short>0)が担っている */
@@ -7810,7 +7862,7 @@ function viewWallet(){
         return '<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
           '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+COLS[i%COLS.length]+';margin-right:6px"></span>'+esc(w.name)+'</span>'+
           /* v4.63: 割合の幅を固定(桁数の違いで金額の右端がずれるため) */
-          '<span><span class="mono muted">¥'+v.toLocaleString("ja-JP")+'</span>'+
+          '<span><span class="mono muted">'+yenM(v)+'</span>'+
           '<span class="mono muted" style="display:inline-block;width:38px;text-align:right">'+(bal>0?Math.round(v/bal*100):0)+'%</span></span></div>'; }).join("")+
       '</div></div>';
   }
@@ -7819,7 +7871,7 @@ function viewWallet(){
     h+='<div class="card" style="margin-bottom:8px;padding:12px 16px">'+
       '<div class="row between" style="align-items:baseline">'+
       '<span style="font-size:13px;font-weight:700">'+esc(w.name)+'</span>'+
-      '<span class="mono '+(v<0?"red":"teal")+'" style="font-size:17px;font-weight:700">¥'+v.toLocaleString("ja-JP")+'</span></div>'+
+      '<span class="mono '+(v<0?"red":"teal")+'" style="font-size:17px;font-weight:700">'+yenM(v)+'</span></div>'+
       /* v4.22: 起点残高の常設表示を撤去(ユーザー指摘)。**一度決めたら以後は調整で上書きされる**ので
          残り続ける意味がない。値は編集から確認・変更できる */
 
@@ -7871,7 +7923,7 @@ function bindWallet(){
         w.seed=String(num(sd)); save(); render(); return; }
       /* 調整=実際の残高とのズレを埋める。財布同士の移動と同じくwallet.txnsに積む */
       if(a==="wadj"){ const cur=walletBalance(null,v);
-        const p=prompt("いまの実際の残高(円)  →  "+walName(v)+"\n帳簿上は ¥"+cur.toLocaleString("ja-JP")+" です。\n実残高を入れると差額を補正します。", String(cur));
+        const p=prompt("いまの実際の残高(円)  →  "+walName(v)+"\n帳簿上は "+yenM(cur)+" です。\n実残高を入れると差額を補正します。", String(cur));
         if(p===null)return; const real=num(p), diff=real-cur; if(diff===0) return;
         (W.txns=W.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(diff),walId:String(v)});
         save(); render(); toast("差額 "+signYen(diff)+" を補正しました"); return; }
@@ -7880,11 +7932,11 @@ function bindWallet(){
         const others=all.filter(x=>String(x.id)!==String(v));
         let dest=others[0].id;
         if(others.length>1){
-          const menu=others.map((x,i)=>(i+1)+". "+x.name+"(¥"+walletBalance(null,x.id).toLocaleString("ja-JP")+")").join("\n");
+          const menu=others.map((x,i)=>(i+1)+". "+x.name+"("+yenM(walletBalance(null,x.id))+")").join("\n");
           const rr=prompt("「"+walName(v)+"」の残高と履歴をどの財布へ移しますか:\n"+menu,"1"); if(rr===null)return;
           const i=num(rr)-1; if(i<0||i>=others.length) return; dest=others[i].id;
         }
-        if(!confirm("財布「"+walName(v)+"」を削除します。\n残高 ¥"+walletBalance(null,v).toLocaleString("ja-JP")+" と履歴は「"+walName(dest)+"」へ移ります。\nよろしいですか?")) return;
+        if(!confirm("財布「"+walName(v)+"」を削除します。\n残高 "+yenM(walletBalance(null,v))+" と履歴は「"+walName(dest)+"」へ移ります。\nよろしいですか?")) return;
         /* 記録は失わない: 起点残高も移し先へ足し込む */
         const src=(W.pots||[]).find(x=>String(x.id)===String(v));
         const dst=(W.pots||[]).find(x=>String(x.id)===String(dest));
@@ -7930,14 +7982,14 @@ function viewBank(){
      (下バーがこれをclick()する——v3.96の戻るボタンと同じ手法) */
   h+='<div class="card" style="margin-bottom:12px;text-align:center;padding:16px">'+
     '<div class="muted" style="font-size:12px;letter-spacing:.12em">残高</div>'+
-    '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">¥'+bal.toLocaleString("ja-JP")+'</div>'+
+    '<div class="mono '+(bal<0?"red":"teal")+'" style="font-size:32px;font-weight:700;line-height:1.25">'+yenM(bal)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:8px">振替目安 ¥'+ceil.toLocaleString("ja-JP")+'</div>'+
     '<div style="display:none">'+
-      '<button data-ba="edit">編集</button><button data-ba="adjust">調整</button></div></div>';
+      '<button data-ba="edit">設定</button></div></div>';
   if(over>0) h+='<div class="card" style="margin-bottom:12px;border-color:var(--teal)"><div class="teal" style="font-size:12px;font-weight:700">振替目安を超えています +¥'+over.toLocaleString("ja-JP")+'</div><div class="muted" style="font-size:11px;margin:4px 0 8px">この分を貯金へ振り替えられます(+EVの回収)。</div><button class="btn tealb full" style="padding:9px 0;font-weight:700" data-ba="gotrover">¥'+over.toLocaleString("ja-JP")+' を貯金へ振り替える</button></div>';
   /* v4.24: 開始時の残高を撤去(所持金の起点と同じ理屈——一度決めたら調整で上書きされる)。
      振替は累計を出入りの差分で示し、当月は補充枠の消化として示す(語彙は「振替」に統一) */
-  /* v4.57: **軍資金の財布の一覧**(ユーザー設計: 山木の貯玉、麻雀の相手への借り、現金の軍資金)。
+  /* v4.57: **軍資金の財布の一覧**(ユーザー設計: 店の貯玉、麻雀の相手への借り、現金の軍資金)。
      **マイナスは異常ではなく「借り」**——貯玉も借金も遊技に紐づく金の置き場で、符号が違うだけ。
      赤は超過・危険に予約(v4.26)しているが、ここでは**負債であること自体が意味**なので赤を使う。
      財布が1つのうちは内訳を出さない(合計と同じ数字が並ぶだけ) */
@@ -7975,7 +8027,7 @@ function viewBank(){
       infoBtn("<b>振替</b>は、軍資金と、所持金・貯金のあいだでお金を動かすことです。勝ち負け(遊技収支)とは別に数えます。<br><br>"+
         "<b>振替 累計(出−入)</b> = 記録を始めてから、軍資金から出した額(貯金へ・所持金へ)から、軍資金へ入れた額を引いた差です。<br>"+
         "プラスなら、入れた以上のお金を遊技から家計へ戻せています。マイナスなら、家計のお金が遊技に回ったままです。<br><br>"+
-        "<b>今月の振替(入−出)</b>は向きが逆で、今月入れた額から出した額を引いた差です。「/」の右が月の振替枠(下の「編集」で変えられます)で、枠に届くと赤になります。<br>"+
+        "<b>今月の振替(入−出)</b>は向きが逆で、今月入れた額から出した額を引いた差です。「/」の右が月の振替枠(下の「設定」で変えられます)で、枠に届くと赤になります。<br>"+
         "例: 今月5万円入れて2万円戻したなら +¥30,000。<br><br>"+
         "入れた額には、所持金から払った遊技経費と、収入を軍資金に入れた分も含みます(どちらも家計のお金が遊技に回るため)。")+'</span>'+
       '<span class="mono '+clsPM(tAll.net)+'" style="font-weight:700">'+signYen(tAll.net)+'</span></div>'+
@@ -8048,10 +8100,10 @@ function bindBank(){
       if(a==="bgame"){ UI.bankGame=v; render(); return; }   /* v6.07: 月別の 合計/麻雀/パチスロ */
       /* v4.05: 実装は記帳画面の振替へ一本化。振替目安の超過分だけ金額を前埋めして開く
          (通常の振替は下バーから・v4.13) */
-      /* v4.57: 軍資金の置き場(山木の貯玉・相手への借り・現金の軍資金など)。
+      /* v4.57: 軍資金の置き場(店の貯玉・相手への借り・現金の軍資金など)。
          **マイナスを許す**——借りている状態をそのまま入れられないと実態を写せない */
       if(a==="bpadd"){
-        const nm=prompt("置き場の名前(例: 山木の貯玉 / ツルさんへの借り):",""); if(nm===null) return;
+        const nm=prompt("置き場の名前(例: 店Aの貯玉 / Aさんへの借り):",""); if(nm===null) return;
         if(!nm.trim()) return;
         const sd=prompt("いまの残高(円・借りているならマイナス):","0"); if(sd===null) return;
         S.bank.pots=(S.bank.pots||[]).concat([{id:"b"+uid(), name:nm.trim(), seed:String(num(sd))}]);
@@ -8097,11 +8149,11 @@ function bindBank(){
         if(num(c)>0) b.ceiling=String(num(c));
         const rc=prompt("月あたりの振替枠(円)\nこの額までは警告なしで軍資金へ入れられます。\n超えると警告が出ます。", b.refillCap||"30000"); if(rc===null){ save(); render(); return; }
         if(num(rc)>0) b.refillCap=String(num(rc));
-        const p=prompt("開始時の残高(円)\n**記録を始める前**の遊技資金。\nここに記録した全ての勝ち負けと入出金を積み上げます。", b.seed||""); if(p===null){ save(); render(); return; }
-        b.seed=String(num(p));
+        /* v6.70: 3つ目の問い「開始時の残高」を取った(総点検 C5)。書いていた b.seed は、置き場(S.bank.pots)ができた後は読まれない
+           (読み込みの時に、必ず置き場が作られる)ので、**入れた数字が黙って捨てられていた**。残高を合わせるのは、置き場ごとの「調整」 */
         save(); render(); return;
       }
-      if(a==="adjust"){ const p=prompt("残高のズレを補正(円・マイナス可)\n実際の残高と合わない分を入れてください。",""); if(p===null)return; const amt=num(p); if(amt===0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt)}); save(); render(); return; }
+      /* v6.70: 下の棒の「調整」(置き場を選べず、いつも一番上の置き場に入った)は取った。前に入れた分(置き場の無い adjust)は、今までどおり一番上の置き場で数える(tBWal) */
       if(a==="txnopen"){ txnOpenEntry(v, "bank"); return; }   /* v6.68: 記録とつながった振替の行 → その記録を開く */
       if(a==="txndel"){
         /* v6.68: 記録とつながった振替は、ここでは消さない(× は出していない。古い画面が残っていた時などの備え) */
@@ -8112,7 +8164,7 @@ function bindBank(){
 }
 
 /* ---------- 貯金(目標ゲージ・口座) ---------- */
-/* v4.00: **貯金を複数の箱(pot)に分ける**(ユーザー設計)。実口座を分けられる(みんなの銀行)ので
+/* v4.00: **貯金を複数の箱(pot)に分ける**(ユーザー設計)。実口座を分けられるので
    アプリ側も実態に合わせる。目的の違う金——11月の引越し資金と12月のふるさと納税——を混ぜない。
    ・箱はS.savings.pots。既定箱は"main"で、**potIdの無い既存txnは全てmain扱い**(非破壊移行)
    ・軍資金からのスイープ(S.bank.txns の type="sweep")もmainへ入る
@@ -8219,7 +8271,7 @@ function doTransfer(from, to, amt, date){
   else if(isW(from) && isPot(to)){ sv.txns.push({id:uid(),date:d,type:"deposit",amount:String(amt),potId:to,walId:from}); }
   else if(isPot(from) && isW(to)){ sv.txns.push({id:uid(),date:d,type:"withdraw",amount:String(amt),potId:from,walId:to}); }
   else if(isB(from) && isPot(to)){ bk.txns.push({id:uid(),date:d,type:"sweep",amount:String(amt),potId:to,bwal:bwOf(from)}); }
-  /* v4.57: 軍資金の財布同士(山木の貯玉→現金の軍資金 など)。総額は動かないので両側adjust */
+  /* v4.57: 軍資金の財布同士(店の貯玉→現金の軍資金 など)。総額は動かないので両側adjust */
   else if(isB(from) && isB(to)){
     bk.txns.push({id:uid(),date:d,type:"adjust",amount:String(-amt),bwal:bwOf(from)});
     bk.txns.push({id:uid(),date:d,type:"adjust",amount:String(amt),bwal:bwOf(to)});
@@ -8338,7 +8390,7 @@ function potPeriod(pid){
 function potCands(pid){
   const pr=potPeriod(pid), cats=(UI.puCats&&UI.puCats.length)?UI.puCats:["承認"];
   const inRange=e=>e.date>=pr.from && e.date<=pr.to;
-  /* v5.99: **この箱の対象外にした記録**(ユーザー提案: Nudgeだけ対象外で後は対象。特定の品目を除外して残りを計上したい)。
+  /* v5.99: **この箱の対象外にした記録**(ユーザー提案: あるカードの分だけ対象外で後は対象。特定の品目を除外して残りを計上したい)。
      箱ごとに覚える(p.useSkip)——期間を広げても、除外したものは候補に戻ってこない */
   const p=savingsPots().find(x=>String(x.id)===String(pid))||{};
   const skip=new Set((p.useSkip||[]).map(String));
@@ -8403,7 +8455,7 @@ function viewSavings(){
 
   /* ---- 合計 + 構成比の帯(v4.02: 箱が複数のとき、どこにいくら入っているかを1本で示す) ---- */
   h+='<div class="card" style="margin-bottom:12px">';
-  h+='<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">合計残高</span><span class="mono teal" style="font-size:28px;font-weight:700">¥'+bal.toLocaleString("ja-JP")+'</span></div>';
+  h+='<div class="row between" style="align-items:baseline"><span class="muted" style="font-size:11px">合計残高</span><span class="mono teal" style="font-size:28px;font-weight:700">'+yenM(bal)+'</span></div>';
   if(pots.length>1 && bal>0){
     /* v4.26: **赤は超過・危険に予約された色**なので識別には使わない(ユーザー指摘)。
        箱は増減するので個別の色を覚えても意味がなく、**tealの濃淡で統一**して割合だけを読ませる。
@@ -8417,7 +8469,7 @@ function viewSavings(){
       h+='<div class="row between" style="align-items:center;font-size:11px;padding:2px 0">'+
         '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+COLS[i%COLS.length]+';margin-right:6px"></span>'+esc(pt.name)+'</span>'+
         /* v4.63: 割合の幅を固定(桁数の違いで金額の右端がずれるため) */
-        '<span><span class="mono muted">¥'+pt.bal.toLocaleString("ja-JP")+'</span>'+
+        '<span><span class="mono muted">'+yenM(pt.bal)+'</span>'+
         '<span class="mono muted" style="display:inline-block;width:38px;text-align:right">'+(bal>0?Math.round(pt.bal/bal*100):0)+'%</span></span></div>';
     });
     h+='</div>';
@@ -8452,7 +8504,7 @@ function viewSavings(){
          結果として「編集」ボタンが不要になり、ボタンが1つ減った。
          初回登録は「箱を追加」が名前→目標と続けて聞くので、そちらは今までどおり */
       '<span class="muted" style="font-size:12px;font-weight:700;cursor:pointer" data-sa="potname" data-v="'+pt.id+'">'+esc(pt.name)+'</span>'+
-      '<span class="mono '+_col+'" style="font-size:18px;font-weight:700">¥'+pt.bal.toLocaleString("ja-JP")+'</span></div>';
+      '<span class="mono '+_col+'" style="font-size:18px;font-weight:700">'+yenM(pt.bal)+'</span></div>';
     if(pt.hasTarget){
       h+='<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:9px"><div style="height:100%;width:'+pt.pct+'%;background:'+(pt.done?'var(--teal)':'var(--amber)')+'"></div></div>'+
         /* v4.87: 使った分を添える。これが無いと「目標¥80,000・残高¥16,080・あと¥40,000」の
@@ -8547,7 +8599,7 @@ function viewPotUse(){
     line("使った合計 <span class=\"muted\" style=\"font-size:11px\">"+use.length+"件</span>", "¥"+usum.toLocaleString("ja-JP"))+
     (bsum ? line("一部負担で戻った", "−¥"+bsum.toLocaleString("ja-JP")) : '')+
     '<div class="sumline" style="border-top:1px solid var(--line);margin-top:4px"></div>'+
-    line("実質の負担", "¥"+(usum-bsum).toLocaleString("ja-JP"), true)+'</div>';
+    line("実質の負担", yenM(usum-bsum), true)+'</div>';
   /* 分類ごと(2つ以上ある時だけ) */
   const byCat={}; use.forEach(e=>{ byCat[e.category]=(byCat[e.category]||0)+num(e.amount); });
   if(Object.keys(byCat).length>1){
@@ -8565,9 +8617,9 @@ function viewPotUse(){
       const linkOnly = x.k==="u" ? (e.svTx==null) : (String(e.shPot||"")===pid);
       h+='<div class="row between" style="align-items:center;padding:5px 0;border-top:1px solid var(--line)">'+
         '<span class="ellip" style="font-size:12px;min-width:0;flex:1">'+lab(e)+
-          (x.k==="u" && e.svTx!=null ? ' <span class="muted" style="font-size:10px">箱から</span>' : '')+'</span>'+
+          (x.k==="u" && e.svTx!=null ? ' <span class="muted" style="font-size:11px">箱から</span>' : '')+'</span>'+
         '<span class="mono '+(x.k==="b"?'teal':'')+'" style="font-size:13px;flex-shrink:0;margin-left:8px">'+(x.k==="b"?"+":"")+"¥"+num(e.amount).toLocaleString("ja-JP")+'</span>'+
-        (linkOnly ? '<button class="btn" style="font-size:10px;padding:2px 8px;margin-left:8px;flex-shrink:0" data-pu="'+(x.k==="u"?"unu":"unb")+'" data-v="'+e.id+'">外す</button>' : '')+
+        (linkOnly ? '<button class="btn" style="font-size:11px;padding:2px 8px;margin-left:8px;flex-shrink:0" data-pu="'+(x.k==="u"?"unu":"unb")+'" data-v="'+e.id+'">外す</button>' : '')+
         '</div>';
     });
     h+='</div>';
@@ -8580,9 +8632,9 @@ function viewPotUse(){
     h+='<div class="card" style="padding:10px 16px;margin-bottom:12px">'+
       /* v5.99: 期間が**未設定**だと、日付が入って見えても自動の紐づけは働かない(ユーザー報告: なってない)。状態として出す */
       (cd.set
-        ? '<div class="row between" style="align-items:center;margin-bottom:4px"><span class="tag" style="border:1px solid var(--teal);color:var(--teal);font-size:10px">自動で紐づけ中</span>'+
+        ? '<div class="row between" style="align-items:center;margin-bottom:4px"><span class="tag" style="border:1px solid var(--teal);color:var(--teal)">自動で紐づけ中</span>'+
           '<button class="navbtn" style="font-size:11px;color:var(--muted);text-decoration:underline" data-pu="pclear">期間を消す</button></div>'
-        : '<div class="row" style="align-items:center;gap:2px;margin-bottom:4px"><span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:10px">期間は未設定</span>'+
+        : '<div class="row" style="align-items:center;gap:2px;margin-bottom:4px"><span class="tag" style="border:1px solid var(--amber);color:var(--amber)">期間は未設定</span>'+
           infoBtn("期間を選ぶと、その期間の承認は、記録する時に自動でこの箱の分になります(レシートの取り込みでも)。<br><br>未設定の間に入っている日付は、下の一覧を出すための仮の期間です。<b>自動では付きません</b>。")+'</div>')+
       '<div class="row" style="gap:6px;align-items:center;margin-bottom:8px">'+
       '<span class="muted" style="font-size:11px;flex-shrink:0">期間</span>'+
@@ -8598,10 +8650,10 @@ function viewPotUse(){
           '<div class="row between" style="align-items:center;padding:6px 0;border-top:1px solid var(--line)">'+
           /* v5.99: 名前は1行で切り、分類は複数選んでいる時だけ下に小さく(旧版は分類の札が折り返して「認」だけ次の行に出ていた) */
           '<div style="flex:1;min-width:0"><div class="ellip" style="font-size:12px"><span class="muted mono" style="font-size:11px">'+md(e.date)+'</span> '+lab(e)+'</div>'+
-            ((cats.length>1||e.type==="income") ? '<div class="muted" style="font-size:10px">'+esc(e.category)+'</div>' : '')+'</div>'+
+            ((cats.length>1||e.type==="income") ? '<div class="muted" style="font-size:11px">'+esc(e.category)+'</div>' : '')+'</div>'+
           '<span class="mono" style="font-size:12px;flex-shrink:0;margin-left:6px">'+(e.type==="income"?"+":"")+"¥"+num(e.amount).toLocaleString("ja-JP")+'</span>'+
-          '<button class="btn" style="font-size:10px;padding:3px 6px;margin-left:6px;flex-shrink:0;color:var(--muted)" data-pu="skip" data-v="'+e.id+'">除外</button>'+
-          '<button class="btn" style="font-size:10px;padding:3px 6px;margin-left:4px;flex-shrink:0;color:var(--teal)" data-pu="'+(e.type==="income"?"lnb":"lnu")+'" data-v="'+e.id+'">この箱の分</button></div>'
+          '<button class="btn" style="font-size:11px;padding:3px 6px;margin-left:6px;flex-shrink:0;color:var(--muted)" data-pu="skip" data-v="'+e.id+'">除外</button>'+
+          '<button class="btn" style="font-size:11px;padding:3px 6px;margin-left:4px;flex-shrink:0;color:var(--teal)" data-pu="'+(e.type==="income"?"lnb":"lnu")+'" data-v="'+e.id+'">この箱の分</button></div>'
           ).join("")+
           '<button class="btn full" style="margin-top:10px;font-size:12px;padding:9px 0;color:var(--teal)" data-pu="lnall">表示中の'+list.length+'件'+(lsum?'(¥'+lsum.toLocaleString("ja-JP")+')':'')+'をまとめてこの箱の分にする</button>'
         : '<div class="muted" style="font-size:12px;text-align:center;padding:14px 0 6px;border-top:1px solid var(--line)">この期間・分類には、まだ紐づけていない記録がありません。</div>')+
@@ -8612,7 +8664,7 @@ function viewPotUse(){
             '<div class="row between" style="align-items:center;padding:5px 0;border-top:1px solid var(--line)">'+
             '<div class="ellip muted" style="font-size:12px;flex:1;min-width:0"><span class="mono" style="font-size:11px">'+md(e.date)+'</span> '+lab(e)+'</div>'+
             '<span class="mono muted" style="font-size:12px;flex-shrink:0;margin-left:6px">¥'+num(e.amount).toLocaleString("ja-JP")+'</span>'+
-            '<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:6px;flex-shrink:0" data-pu="unskip" data-v="'+e.id+'">戻す</button></div>').join("") : '')
+            '<button class="btn" style="font-size:11px;padding:3px 8px;margin-left:6px;flex-shrink:0" data-pu="unskip" data-v="'+e.id+'">戻す</button></div>').join("") : '')
         : '')+
       '</div>';
   }
@@ -8719,12 +8771,12 @@ function bindSavings(){
         const others=all.filter(x=>String(x.id)!==String(v));
         let dest=others[0].id;
         if(others.length>1){
-          const menu=others.map((x,i)=>(i+1)+". "+x.name+"(¥"+savingsBalance(x.id).toLocaleString("ja-JP")+")").join("\n");
+          const menu=others.map((x,i)=>(i+1)+". "+x.name+"("+yenM(savingsBalance(x.id))+")").join("\n");
           const r=prompt("「"+potName(v)+"」の残高と履歴をどの箱へ移しますか:\n"+menu,"1"); if(r===null)return;
           const i=num(r)-1; if(i<0||i>=others.length) return; dest=others[i].id;
         }
         const bal=savingsBalance(v);
-        if(!confirm("箱「"+potName(v)+"」を削除します。\n残高 ¥"+bal.toLocaleString("ja-JP")+" と履歴は「"+potName(dest)+"」へ移ります。\nよろしいですか?")) return;
+        if(!confirm("箱「"+potName(v)+"」を削除します。\n残高 "+yenM(bal)+" と履歴は「"+potName(dest)+"」へ移ります。\nよろしいですか?")) return;
         (sv.txns||[]).forEach(t=>{ if(txPot(t)===String(v)) t.potId=dest; });          /* 記録は失わない */
         ((S.bank||{}).txns||[]).forEach(t=>{ if(t.type==="sweep" && txPot(t)===String(v)) t.potId=dest; });
         sv.pots=(sv.pots||[]).filter(x=>String(x.id)!==String(v));
@@ -9273,7 +9325,7 @@ function viewMj(){
       /* チップはラベルの行の右に**重ねて**置く(行の高さを変えない=隣のドリンク/入場の欄と高さが揃う) */
       '<div style="position:relative"><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代バック</div>'+
         '<span class="row" style="position:absolute;right:0;top:-3px;gap:3px">'+
-        [["per","1半荘"],["fixed","固定"]].map(([v,l])=>'<button class="chip'+((mjBackFixed(m)?"fixed":"per")===v?" sel":"")+'" style="padding:2px 7px;font-size:10px;line-height:1.3" data-a="mjbackunit" data-v="'+v+'">'+l+'</button>').join("")+
+        [["per","1半荘"],["fixed","固定"]].map(([v,l])=>'<button class="chip'+((mjBackFixed(m)?"fixed":"per")===v?" sel":"")+'" style="padding:1px 6px;font-size:11px;line-height:1.3" data-a="mjbackunit" data-v="'+v+'">'+l+'</button>').join("")+
         '</span>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.feeBack)+'" data-in="mjf" data-v="feeBack"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ドリンク/入場(1回)</div>'+
@@ -9923,9 +9975,9 @@ function entryItemHints(){
 /* 店文脈つき品目ヒント: 店名があれば「その店(チェーン単位)で過去に買った品目」だけを頻度順で。
    未知の店なら空(的外れな全体人気を出さない)。店名が空なら従来の全体人気順。 */
 /* v4.80: **空白があるだけでチェーン扱いしない**(ユーザー指摘: 美容室のような単独店が分割される)。
-   旧: 最初の空白より前をチェーン名 → `Uta hair care【ウタ】` が チェーン「Uta」+支店「hair care【ウタ】」になっていた。
-   実データでも3件誤爆していた: `ebook japan`→「ebook」/ `So-net 光`→「So-net」/
-   `日清食品グループ　オンラインストア`→「日清食品グループ」。
+   旧: 最初の空白より前をチェーン名 → `Abc hair care【エービーシー】` が チェーン「Abc」+支店「hair care【エービーシー】」になっていた。
+   実データでも3件誤爆していた: `abook japan`→「abook」/ `Ab-net 光`→「Ab-net」/
+   `食品グループA　オンラインストア`→「食品グループA」。
    新: **空白の後ろが支店らしい語で終わるときだけ**分割する。日本の小売は支店名がほぼ例外なく
    「〜店」で終わるので、これで実在の店名すべてが正しく判定できる(現行14件で検証済み)。
    **データが増えても判定が変わらない**のが肝——「同じ先頭語の店が2つ以上あればチェーン」という
@@ -10542,7 +10594,7 @@ function rcptSystem(){
 "## 書式",
 fence,
 "#date 2026-08-06",
-"#store ファミリーマート 宮城野通駅前店",
+"#store ファミリーマート A駅前店",
 "#wallet "+(bank||"ソニー銀行"),
 "#category 消費",
 "#type expense",
@@ -10561,11 +10613,11 @@ fence,
 "#wallet Suica",
 "#category 消費",
 "#type expense",
-"2026-08-01 | 宮城野通駅→連坊駅 | 210",
-"2026-08-03 | 宮城野通駅→仙台駅 | 210",
+"2026-08-01 | A駅→B駅 | 210",
+"2026-08-03 | A駅→C駅 | 210",
 fence,
 "- `#date` と `#total` は書かない",
-"- 日付が読めない行は書かない(メモに「10/2? 宮城野通駅→連坊駅 210円の日付が読めません」のように書く)",
+"- 日付が読めない行は書かない(メモに「10/2? A駅→B駅 210円の日付が読めません」のように書く)",
 "- 店・財布・分類はブロックで共通なので、路線(地下鉄・バスなど)や分類が変わる所でブロックを分ける",
 "- チャージは書かない(財布どうしの移動で、支出ではない)。利用だけを書く",
 "- **記録済みかどうかは考えない**。写っている利用は全部書く(Tallyが記録と見比べて、記録済みの行を飛ばす)",
@@ -10586,7 +10638,7 @@ fence,
 "| タクシー | タクシー | 乗った場所→降りた場所 |",
 "| 駐輪 | 場所の名前 | 駐輪 |",
 "- 往復は2行に分ける(A→B と B→A)",
-"- 駅名は下の「これまでの駅名」の表記に合わせる(仙台市地下鉄は「〜駅」を付ける)。読めない駅名・場所は書かない(品目を空にしてメモに書く)",
+"- 駅名は下の「これまでの駅名」の表記に合わせる(地下鉄は「〜駅」を付ける)。読めない駅名・場所は書かない(品目を空にしてメモに書く)",
 "",
 "## ヘッダの値",
 "- `#wallet`: "+W.join(" / ")+" のどれか。支払い方法の印字に従う",
@@ -10865,7 +10917,7 @@ function viewRcptSet(){
     (k ? '<button class="btn" style="flex:none;padding:10px 18px;font-size:12px;color:var(--red)" data-rs="del">消す</button>' : '')+'</div></div>';
   h+='<div class="card" style="margin-bottom:14px"><div class="fxl">読み取るモデル</div><div class="row" style="gap:8px">'+
     RCPT_MODELS.map(x=>'<button class="btn'+(x.id===m.id?' sel':'')+'" style="flex:1;min-height:44px;font-size:12px;line-height:1.5" data-rs="model" data-v="'+esc(x.id)+'">'+
-      esc(x.name)+'<br><span class="muted" style="font-size:10px">'+esc(x.note)+'</span></button>').join("")+'</div></div>';
+      esc(x.name)+'<br><span class="muted" style="font-size:11px">'+esc(x.note)+'</span></button>').join("")+'</div></div>';
   if(k) h+='<div class="card" style="margin-bottom:14px"><button class="btn full" style="padding:10px 0;font-size:12px" data-rs="test">'+((T && T.busy) ? '確かめています…' : 'つながるか確かめる')+'</button>'+
     ((T && T.msg) ? '<div class="'+(T.ok?'teal':'red')+'" style="font-size:12px;margin-top:8px;line-height:1.6">'+esc(T.msg).replace(/\n/g,"<br>")+'</div>' : '')+'</div>';
   h+=amzSetHtml();   /* v6.58: Amazonのメール */
@@ -11428,7 +11480,7 @@ function dbtInfo(){
    家計簿タブの板と、突き合わせの画面が同じ数字を出すように、ここだけで計算する */
 function dbtNet(bm, sp){ const bal=walletBalance(null, String(bm.walId)); return {bal:bal, net:bal+sp.gap}; }
 /* 残高はマイナスにもなりうる(記録が足りない時)。yen() は符号を落とすので、「−」を付ける(色だけに頼らない) */
-function dbtBalYen(v){ return (v<0 ? "−" : "")+yen(v); }
+function dbtBalYen(v){ return yenM(v); }   /* v6.70: 決まりは yenM に(同じ書き方を2か所に持たない) */
 /* 家計簿タブの板。**言うことがある時だけ出す**(未記帳がある・取り込める発送メールがある・読めなかったメールがある(v6.66)・発送メール待ちがある)。押すと突き合わせの画面。
    見出しは、手を動かすものを先に: 未記帳 → 取り込める発送メール → 読めないメール(自分で入れる)→ 発送メール待ち(待つだけ)。
    読めないメールは金額が分からないので、右の琥珀色の数字は通数にする(ほかの見出しと同じ「左に名前・右に琥珀色の数字」の形。右に何も無いと、目を引く色が板から無くなる)。
@@ -12353,7 +12405,7 @@ function segHtml(cols, cells, style){
 }
 /* 財布・置き場・箱のマス(名前と残高の2行) */
 function segPot(at, name, bal, cls){
-  return {at:at, cls:cls, html:'<span class="ellip nm">'+esc(name)+'</span><span class="mono bl">¥'+bal.toLocaleString("ja-JP")+'</span>'};
+  return {at:at, cls:cls, html:'<span class="ellip nm">'+esc(name)+'</span><span class="mono bl">'+yenM(bal)+'</span>'};
 }
 /* 取り込みの板のアイコン(下のメニューのアイコンと同じ線の作り) */
 const IMP_ICONS = (()=>{ const ic=d=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
@@ -12399,7 +12451,7 @@ function viewEntry(){
           toks.map(t=>'<button class="chip" data-a="'+act+'" data-v="'+esc(t)+'">'+esc(t)+'</button>').join("")+'</div>'
         : '';
       if(f.tmode==="駐輪"){
-        composerHtml='<input class="input" id="t-place" placeholder="場所(例: ヨドバシP2)" value="'+esc(f.tplace||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkp");
+        composerHtml='<input class="input" id="t-place" placeholder="場所(例: 駅前の駐輪場)" value="'+esc(f.tplace||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkp");
       } else {
         const _ph=TRANS_PH[f.tmode]||["乗車駅・停","降車駅・停"];   /* v6.14 */
         composerHtml='<input class="input" id="t-from" placeholder="'+_ph[0]+'" value="'+esc(f.tfrom||"")+'" autocomplete="off" style="margin-bottom:8px">'+tokRow("tkf")+
@@ -12440,7 +12492,7 @@ function viewEntry(){
     const opt=(a,sel,act)=>'<button class="btn" data-a="'+act+'" data-v="'+a.id+'" style="width:100%;text-align:left;padding:8px 9px;margin-bottom:5px;border-radius:9px;'+
       (sel?'border-color:var(--teal);background:rgba(47,212,181,.10)':'')+'">'+
       '<div style="font-size:11px;font-weight:700;color:'+(sel?'var(--teal)':'var(--text)')+'">'+esc(a.name)+'</div>'+
-      '<div class="mono" style="font-size:11px;color:'+(sel?'var(--teal)':'var(--muted)')+'">¥'+a.bal.toLocaleString("ja-JP")+'</div></button>';
+      '<div class="mono" style="font-size:11px;color:'+(sel?'var(--teal)':'var(--muted)')+'">'+yenM(a.bal)+'</div></button>';
     trHtml='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:5px">振替元</div>'+
         accs.map(a=>opt(a,String(UI.trFrom||"")===a.id,"trfrom")).join("")+'</div>'+
@@ -12611,7 +12663,7 @@ function viewEntry(){
     impHtml = (rBusy ? rBusyHtml : UI.pasteOpen
       ? '<div class="card" style="margin-bottom:12px;padding:12px 16px">'+
         '<div class="muted" style="font-size:11px;margin-bottom:8px">レシートを貼る'+infoBtn("レシートの写真をClaudeに読み取らせ、返ってきた文字列をそのまま貼り付けると、まとめて記録に変換します。<br><br>書き方の例は入力欄に薄く表示されています(「#date」「#store」の行のあとに「品目 | 金額」を1行ずつ)。<br><br><b>まとめて</b>: ブロックが2つ以上あれば(チャットにAmazonの注文をまとめて頼んだ時など)、1回の確認でまとめて保存します。<b>記録済みの注文・乗車は飛ばす</b>ので、同じ期間をもう一度貼っても二重になりません。")+'</div>'+
-        '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | 宮城野通→連坊 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
+        '<textarea id="e-paste" class="input" rows="5" placeholder="#date 2026-08-04&#10;#store Amazon&#10;クリーム | 1742&#10;&#10;日付ごとに違う場合:&#10;#store 地下鉄&#10;2026-08-01 | A駅→B駅 | 210" style="width:100%;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:8px">'+esc(UI.pasteText||"")+'</textarea>'+
         '<div class="row" style="gap:8px">'+
         '<button class="btn" style="flex:1;font-size:12px;padding:9px 0" data-a="pcancel">閉じる</button>'+
         '<button class="btn tealb" style="flex:1;font-size:12px;padding:9px 0;font-weight:700" data-a="papply">取り込む</button></div></div>'
@@ -12906,16 +12958,16 @@ function bindEntry(){
           const accs=transferAccounts();
           const fa=accs.find(x=>x.id===String(UI.trFrom)), ta=accs.find(x=>x.id===String(UI.trTo));
           if(!fa||!ta) return;
-          /* v6.12【修正】(ユーザー指摘: 軍資金のツルさん→財布の振替でも警告文が出る)。
+          /* v6.12【修正】(ユーザー指摘: 軍資金の「相手への貸し借り」の置き場→財布の振替でも警告文が出る)。
              **軍資金の置き場どうしの移動は、軍資金の中で動くだけ**(合計は変わらない・doTransferは両側adjust・振替の入出にも数えない)。
              下の振替枠の警告は「外の金で軍資金を太らせる」ことへの警告なので、出所が軍資金なら当たらない。
              v4.57で軍資金を置き場に分けた時、判定が**行き先だけ**(前方一致)のままだったので、
-             ツルさんから返してもらった分を財布の置き場へ移すだけで「負けを外の金で埋める…20年来の漏れ」と出ていた。
+             相手から返してもらった分を財布の置き場へ移すだけで「負けを外の金で埋める…20年来の漏れ」と出ていた。
              残高を超える確認も、置き場どうしでは出さない——**置き場のマイナスは借り**(v4.57の作り)で、
-             ツルさんに借りた現金を財布の置き場へ移せば、ツルさんがマイナスになるのが正しい */
+             相手に借りた現金を財布の置き場へ移せば、相手の置き場がマイナスになるのが正しい */
           const _fromBk = String(fa.id).indexOf(ACC_BANK)===0, _toBk = String(ta.id).indexOf(ACC_BANK)===0;
           const _inBank = _fromBk && _toBk;
-          if(!_inBank && amt>fa.bal && !confirm(fa.name+"の残高 ¥"+fa.bal.toLocaleString("ja-JP")+" を超えます。続けますか?")) return;
+          if(!_inBank && amt>fa.bal && !confirm(fa.name+"の残高 "+yenM(fa.bal)+" を超えます。続けますか?")) return;
           /* v4.10: **軍資金への振替は出所を問わず全て警告する**(ユーザー指摘)。
              v4.05は貯金からの補充だけを見ていたが、**実際に起きるのは所持金からの補充**——
              負けた分をその場の手元金で埋めるのが現実の経路。出所で漏れかどうかは決まらない。
@@ -12938,7 +12990,7 @@ function bindEntry(){
               const msg = "今月の振替枠 ¥"+cap.toLocaleString("ja-JP")+" を超えます。"+
                 "\n\n今月ここまでの差引 "+signYen(used)+"(入−出)"+
                 "\n今回 ¥"+amt.toLocaleString("ja-JP")+" → 枠を ¥"+over.toLocaleString("ja-JP")+" 超過"+
-                "\n現在の軍資金 ¥"+bankBalance().toLocaleString("ja-JP")+
+                "\n現在の軍資金 "+yenM(bankBalance())+
                 "\n\n"+why+"\n負けを外の金で埋めるのが、あなたの20年来の漏れです。"+
                 "\n\n本当に移しますか?";
               if(!confirm(msg)) return;
@@ -12990,7 +13042,7 @@ function bindEntry(){
           const back = (String(prev.bkSrc||"")===srcBk || (isGameCat(prev) && prev.gtTx==null && eBWal(prev)===srcBk)) ? num(prev.amount) : 0;
           const need = amt + (f.extra||[]).reduce((a2,x)=>a2+num(x.amount),0);
           if(need - back > bal){
-            if(!confirm(bankName(srcBk)+"(軍資金)の残高 ¥"+bal.toLocaleString("ja-JP")+" を超えます。\n\n必要 ¥"+need.toLocaleString("ja-JP")+"\n\n続けますか?")) return;
+            if(!confirm(bankName(srcBk)+"(軍資金)の残高 "+yenM(bal)+" を超えます。\n\n必要 ¥"+need.toLocaleString("ja-JP")+"\n\n続けますか?")) return;
           }
         }
         if(svPot && svDraw){
@@ -13000,7 +13052,7 @@ function bindEntry(){
           const need = amt + (f.extra||[]).reduce((a2,x)=>a2+num(x.amount),0);
           if(need - back > bal){
             const pn=(savingsPots().find(p=>String(p.id)===svPot)||{}).name||"貯金";
-            if(!confirm(pn+"の残高 ¥"+bal.toLocaleString("ja-JP")+" を超えます。\n\n必要 ¥"+need.toLocaleString("ja-JP")+"\n\n続けますか?")) return;
+            if(!confirm(pn+"の残高 "+yenM(bal)+" を超えます。\n\n必要 ¥"+need.toLocaleString("ja-JP")+"\n\n続けますか?")) return;
           }
         }
         if(UI.editEntryId!==null){
@@ -13137,12 +13189,12 @@ function viewSession(){
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px">'+
         walletPots().map(w=>'<button class="btn '+(cw===String(w.id)?"sel":"")+'" data-a="swal" data-v="'+w.id+'" style="font-size:11px;padding:6px 4px;min-width:0">'+
           '<span class="ellip" style="display:block">'+esc(w.name)+'</span>'+
-          '<span class="mono muted" style="font-size:11px;display:block">¥'+walletBalance(null,w.id).toLocaleString("ja-JP")+'</span></button>').join("")+'</div>';
+          '<span class="mono muted" style="font-size:11px;display:block">'+yenM(walletBalance(null,w.id))+'</span></button>').join("")+'</div>';
     }
   }
 
   /* v4.57: 遊技(乗打/単独)は軍資金で完結するので、**どの置き場の金で打ったか**を選ぶ。
-     山木の貯玉で打てば勝ち負けは山木に積まれる。代打は報酬が所持金へ入るのでここには出さない */
+     店の貯玉で打てば、勝ち負けはその置き場に積まれる。代打は報酬が所持金へ入るのでここには出さない */
   if(s.mode!=="dai" && bankPots().length>1){
     const cb=String(s.bwal||bankPots()[0].id);
     h += band("軍資金の置き場");
@@ -13862,6 +13914,19 @@ function saveSession(){
    機種マスタ画面
    ============================================================ */
 /* ---------- 店舗データ(プリセット) ---------- */
+/* v6.70: 一覧の行の2行目。**入れてある項目だけ**を出す(総点検 C4。前は、入れていない所が「S換金 —枚 ・ P換金 —玉/貸出 —玉/貯玉 —-—」と線だけ並んだ)。
+   全部入っていれば前と同じ形(「S換金 50枚 ・ P換金 250玉/貸出 250玉/貯玉 125-125」)。1つも無ければ「未設定」 */
+function storeSumText(st){
+  const v=k=>{ const x=st[k]; return (x==null||x===""||x===0) ? "" : String(x).trim(); };
+  const s=v("slotEx"), p=[];
+  if(v("pachiEx")) p.push("P換金 "+v("pachiEx")+"玉");
+  if(v("pachiGenkin")) p.push("貸出 "+v("pachiGenkin")+"玉");
+  if(v("pachiPay") && v("pachiDraw")) p.push("貯玉 "+v("pachiPay")+"-"+v("pachiDraw"));
+  else if(v("pachiPay")) p.push("貯玉払出 "+v("pachiPay"));
+  else if(v("pachiDraw")) p.push("貯玉引落 "+v("pachiDraw"));
+  const out=[]; if(s) out.push("S換金 "+s+"枚"); if(p.length) out.push(p.join("/"));
+  return out.length ? out.join(" ・ ") : "未設定";
+}
 function viewStores(){
   let h = '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">店舗データ'+
@@ -13871,7 +13936,7 @@ function viewStores(){
   (S.stores||[]).forEach(st=>{
     h += '<div class="card" style="margin-bottom:8px"><div class="row between" style="align-items:center">'+
       '<div style="min-width:0;flex:1"><div style="font-size:14px;font-weight:700" class="ellip">'+esc(st.name)+'</div>'+
-      '<div class="muted" style="font-size:11px;margin-top:3px;line-height:1.5">S換金 '+(st.slotEx||"—")+'枚 ・ P換金 '+(st.pachiEx||"—")+'玉/貸出 '+(st.pachiGenkin||"—")+'玉/貯玉 '+(st.pachiPay||"—")+'-'+(st.pachiDraw||"—")+'</div></div>'+
+      '<div class="muted" style="font-size:11px;margin-top:3px;line-height:1.5">'+esc(storeSumText(st))+'</div></div>'+
       '<div class="row" style="gap:6px;flex-shrink:0;margin-left:8px"><button class="btn" style="font-size:11px;padding:3px 12px" data-a="stedit" data-v="'+st.id+'">編集</button>'+
       '<button class="btn" style="font-size:11px;padding:3px 12px;color:var(--red);border-color:var(--red)" data-a="stdel" data-v="'+st.id+'">削除</button></div></div></div>';
   });
