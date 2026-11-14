@@ -448,7 +448,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.67 (localStorage保存・完全オフライン)
+   Tally 6.68 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1267,7 +1267,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.67";
+const APP_VERSION = "6.68";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 function render(){
@@ -5890,14 +5890,52 @@ function monthEntries(mk){
    **対で作られるもの(箱⇄箱・財布⇄財布・軍資金⇄軍資金)は1件にまとめて見せる**——
    利用者にとっては1回の操作なので、2行に見えると「片方だけ消す」事故を招く。
    `key`は保存先と実体を特定できる形にして、**編集も削除も同じ鍵で辿れる**ようにする */
+/* v6.68 **記録(支出・収入)から自動で作られた振替 → その記録**。どの振替が記録とつながっているかは、ここ1か所で数える。
+   sv = 貯金の箱(箱から払った支出の引き出し `svTx`・箱へ入れた収入の入金 `inSvTx`)
+   bk = 軍資金から払った支出の戻し(`bkTx`)/ gt = 所持金から払った遊技の経費・軍資金へ入れた収入の補充(`gtTx`)
+   使う所: 明細の振替の行(transferRows=出さない)・軍資金の画面と貯金の画面の「記録」(× を出さず、押すとその記録が開く)。
+   **片方だけ消せると、支出と振替が食い違って残高が変わる**: v6.67 まで、軍資金の画面・貯金の画面の × で振替の側だけを消せた
+   (軍資金から払った ¥3,000 の戻しを消すと、所持金 −¥3,000・軍資金 +¥3,000 = 所持金から払った扱いに化ける。11/13 に見つけ、11/14 にユーザー「全てお願いします」で直した) */
+function txLinks(){
+  const L={sv:{}, bk:{}, gt:{}};
+  (S.entries||[]).forEach(e=>{
+    if(e.svTx!=null) L.sv[String(e.svTx)]=e;
+    if(e.inSvTx!=null) L.sv[String(e.inSvTx)]=e;
+    if(e.bkTx!=null) L.bk[String(e.bkTx)]=e;
+    if(e.gtTx!=null) L.gt[String(e.gtTx)]=e;
+  });
+  return L;
+}
+/* v6.68 「記録」の一覧の1行(軍資金の画面・貯金の画面で同じ形)。A = その画面のボタンの属性 {open:'data-ba="txnopen"', del:'data-ba="txndel"'}
+   (属性は呼ぶ側に字のまま書く=アクションの検査 actions_test.js が、出力と分岐を突き合わせられるように)。
+   ent = この振替を作った記録(txLinks)。**あれば × を出さない**: 行ごと押せて、その記録が開く(直す・消すのは記録の側から=両方が一緒に変わる)。
+   右は × と同じ幅の箱に矢印(見えない × を入れたボタンで幅を取る=どの書体でも、× の行と金額の右端がそろう)。下の行に、日付と記録の名前。
+   名前の所だけ line-height:1 にする: 行の高さが normal のままだと、漢字・かなの書体の寸法で行が 1px 高くなり、手の行(日付だけ)と高さがずれる */
+function txnRowHtml(A, t, labelHtml, amt, ent){
+  const head='<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+labelHtml+'</div>';
+  const yen='<div class="mono '+clsPM(amt)+'" style="font-size:14px;font-weight:700">'+signYen(amt)+'</div>';
+  if(!ent) return '<div class="listitem">'+head+'<div class="muted mono" style="font-size:11px">'+esc(t.date)+'</div></div>'+yen+
+    '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0" '+A.del+' data-v="'+t.id+'">×</button></div>';
+  const name=String(ent.store||ent.item||ent.category||"").trim();
+  return '<div class="listitem" '+A.open+' data-v="'+esc(ent.id)+'">'+head+
+    '<div class="muted mono ellip" style="font-size:11px">'+esc(t.date)+(name ? '<span style="line-height:1"> ・ '+esc(name)+'</span>' : '')+'</div></div>'+yen+
+    '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0;position:relative" tabindex="-1" aria-hidden="true"><span style="visibility:hidden">×</span>'+
+    '<span class="chevw" style="position:absolute;left:0;right:0;top:0;bottom:0;justify-content:center">'+CHEV+'</span></button></div>';
+}
+/* v6.68 一覧の行から、その振替を作った記録を開く(戻る先は、押した画面) */
+function txnOpenEntry(id, back){
+  const e=(S.entries||[]).find(x=>String(x.id)===String(id)); if(!e) return false;
+  UI.editEntryId=e.id; UI.entryForm=entryFormOf(e); UI.entryReturn=back; UI.screen="entry"; render();
+  return true;
+}
+const TXN_LINK_INFO = what => "右に矢印のある行は、<b>支出や収入の記録から自動で作られた振替</b>です("+what+")。<br><br>"+
+  "ここでは消せません。行を押すと、その記録が開きます。直す・消すのは記録の方でしてください(記録を消すと、この振替も一緒に消えます)。<br><br>"+
+  "振替だけを消すと、記録と食い違って残高が変わってしまうためです。";
 function transferRows(d){
   const sv=(S.savings||{}).txns||[], bk=(S.bank||{}).txns||[], wl=(S.wallet||{}).txns||[];
-  const svLink=new Set((S.entries||[]).filter(e=>e.svTx!=null).map(e=>String(e.svTx))
-    .concat((S.entries||[]).filter(e=>e.inSvTx!=null).map(e=>String(e.inSvTx))));   /* v5.95: 収入を箱へ入れた入金も */
-  /* v5.70: 軍資金から払った支出の戻しも同じく出さない——振替の行として別に直せると、支出と戻しが食い違う */
-  const bkLink=new Set((S.entries||[]).filter(e=>e.bkTx!=null).map(e=>String(e.bkTx)));
-  /* v5.72: 遊技の経費を所持金から払った時の補充も同じく出さない(経費の側が面倒を見る) */
-  const gtLink=new Set((S.entries||[]).filter(e=>e.gtTx!=null).map(e=>String(e.gtTx)));
+  /* 記録とつながった振替は、振替の行として出さない(v5.70 軍資金から払った支出の戻し・v5.72 所持金から払った遊技の経費の補充・v5.95 収入を箱へ入れた入金)。
+     振替の行として別に直せると、支出と食い違う。数え方は txLinks の1か所(v6.68) */
+  const L=txLinks(), svLink=new Set(Object.keys(L.sv)), bkLink=new Set(Object.keys(L.bk)), gtLink=new Set(Object.keys(L.gt));
   const out=[], used=new Set();
   const nameW=id=>{ const p=walletPots().find(x=>String(x.id)===String(id)); return p?p.name:"所持金"; };
   const nameP=id=>{ const p=savingsPots().find(x=>String(x.id)===String(id)); return p?p.name:"貯金"; };
@@ -7986,14 +8024,14 @@ function viewBank(){
   }
   const txns=(b.txns||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
   if(txns.length){
-    h+=band("記録");
+    /* v6.68: 記録とつながった振替(txLinks)には × を出さない。そういう行がある時だけ、見出しに ⓘ(無い画面は前と1字も同じ) */
+    const L=txLinks(), entOf=t=>L.bk[String(t.id)]||L.gt[String(t.id)]||null;
+    h+=band("記録", null, txns.some(entOf) ? TXN_LINK_INFO("軍資金から払った支出・所持金から払った遊技の経費・軍資金へ入れた収入") : null);
     const LBL={topup:"振替(所持金から)",sweep:"振替(貯金へ)",return:"振替(所持金へ)",adjust:"補正"};
     txns.forEach(t=>{
       /* v6.00【修正】所持金へ(return)が「+」の緑で出ていた(月別では「所持金へ −」)。軍資金から出た金なので貯金へと同じくマイナス */
       const amt = t.type==="topup"? num(t.amount) : (t.type==="sweep"||t.type==="return")? -num(t.amount) : num(t.amount);
-      h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+'</div><div class="muted mono" style="font-size:11px">'+esc(t.date)+'</div></div>'+
-        '<div class="mono '+clsPM(amt)+'" style="font-size:14px;font-weight:700">'+signYen(amt)+'</div>'+
-        '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0" data-ba="txndel" data-v="'+t.id+'">×</button></div>';
+      h+=txnRowHtml({open:'data-ba="txnopen"', del:'data-ba="txndel"'}, t, (LBL[t.type]||t.type), amt, entOf(t));
     });
   }
   return h;
@@ -8060,7 +8098,11 @@ function bindBank(){
         save(); render(); return;
       }
       if(a==="adjust"){ const p=prompt("残高のズレを補正(円・マイナス可)\n実際の残高と合わない分を入れてください。",""); if(p===null)return; const amt=num(p); if(amt===0)return; (b.txns=b.txns||[]).push({id:uid(),date:todayStr(),type:"adjust",amount:String(amt)}); save(); render(); return; }
-      if(a==="txndel"){ if(confirm("この記録を削除?")){ b.txns=(b.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
+      if(a==="txnopen"){ txnOpenEntry(v, "bank"); return; }   /* v6.68: 記録とつながった振替の行 → その記録を開く */
+      if(a==="txndel"){
+        /* v6.68: 記録とつながった振替は、ここでは消さない(× は出していない。古い画面が残っていた時などの備え) */
+        { const L=txLinks(); if(L.bk[String(v)]||L.gt[String(v)]){ toast("記録とつながった振替です。記録の方を直してください"); render(); return; } }
+        if(confirm("この記録を削除?")){ b.txns=(b.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
     };
   });
 }
@@ -8472,15 +8514,14 @@ function viewSavings(){
 
   const txns=(sv.txns||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
   if(txns.length){
-    h+=band("記録");
+    /* v6.68: 記録とつながった振替(txLinks)には × を出さない(軍資金の画面と同じ形・同じ関数) */
+    const L=txLinks(), entOf=t=>L.sv[String(t.id)]||null;
+    h+=band("記録", null, txns.some(entOf) ? TXN_LINK_INFO("貯金の箱から払った支出・箱へ入れた収入") : null);
     const LBL={deposit:"振替(所持金から)",withdraw:"振替(所持金へ)",adjust:"調整"};
     txns.forEach(t=>{
       const amt = t.type==="withdraw"? -num(t.amount) : num(t.amount);
-      h+='<div class="listitem"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(LBL[t.type]||t.type)+
-        (pots.length>1?' <span class="muted" style="font-size:11px;font-weight:400">'+esc(potName(txPot(t)))+'</span>':'')+
-        '</div><div class="muted mono" style="font-size:11px">'+esc(t.date)+'</div></div>'+
-        '<div class="mono '+clsPM(amt)+'" style="font-size:14px;font-weight:700">'+signYen(amt)+'</div>'+
-        '<button class="xbtn" style="font-size:13px;margin-left:8px;flex-shrink:0" data-sa="txndel" data-v="'+t.id+'">×</button></div>';
+      h+=txnRowHtml({open:'data-sa="txnopen"', del:'data-sa="txndel"'}, t, (LBL[t.type]||t.type)+
+        (pots.length>1?' <span class="muted" style="font-size:11px;font-weight:400">'+esc(potName(txPot(t)))+'</span>':''), amt, entOf(t));
     });
   }
   return h;
@@ -8686,7 +8727,10 @@ function bindSavings(){
         if(String(UI.trFrom||"")===String(v)) UI.trFrom="";
         if(String(UI.trTo||"")===String(v)) UI.trTo="";
         save(); render(); toast("「"+potName(dest)+"」へ移しました"); return; }
-      if(a==="txndel"){ if(confirm("この記録を削除?")){ sv.txns=(sv.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
+      if(a==="txnopen"){ txnOpenEntry(v, "savings"); return; }   /* v6.68: 記録とつながった振替の行 → その記録を開く */
+      if(a==="txndel"){
+        if(txLinks().sv[String(v)]){ toast("記録とつながった振替です。記録の方を直してください"); render(); return; }   /* v6.68: 軍資金の画面と同じ備え */
+        if(confirm("この記録を削除?")){ sv.txns=(sv.txns||[]).filter(t=>String(t.id)!==String(v)); save(); render(); } return; }
     };
   });
 }
