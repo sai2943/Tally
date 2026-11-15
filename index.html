@@ -458,7 +458,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.72 (localStorage保存・完全オフライン)
+   Tally 6.73 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -781,7 +781,7 @@ let UI = {
   mdbForm:null,                        // 機種マスタドラフト
   msg:"",                              // backup画面メッセージ
   detAsc:false,                        // 明細の並び(v5.57・既定=新しい順。突合の時だけ古い順)
-  recon:false, reconWal:null, bm:null, bmWal:null, bmOpen:{},          // 照合モード(v5.58)。✓自体はエントリのe.chkに保存(v5.60)
+  bm:null, bmWal:null, bmOpen:{},          // 銀行の明細との突き合わせ(v6.18)。v6.73: 照合モード(recon・reconWal)は外した。一致した印はエントリの e.chk(v5.60)
   rcptBusy:null, rcptTest:null                                         // v6.23 写真から読む(読み取り中の印・接続の確認の結果)
 };
 
@@ -1303,7 +1303,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.72";
+const APP_VERSION = "6.73";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -1879,7 +1879,7 @@ function viewAdvDrill(){
 function bmDefaultWal(){
   const p=walletPots();
   const hit=p.find(x=>/ソニー/.test(x.name)) || p.find(x=>/銀行/.test(x.name)) || p[0];
-  return String(UI.reconWal || hit.id);
+  return String(hit.id);   /* v6.73: 照合の財布の絞り込み(UI.reconWal)を外した */
 }
 /* v6.59: 「銀行にあってTallyに無い」の1行。銀行の明細(CSV)の突き合わせと、デビットの通知の突き合わせで**同じ形**にする(2か所に書かない)。
    hide=true の時だけ、右に「この一覧に出さない」の × を付ける(通知の突き合わせは毎日見るので、別の形で記録した支払いを外せるように) */
@@ -1925,7 +1925,7 @@ function viewBankMatch(){
   const loadInfo="銀行の明細を読み込んで、Tallyの記録と自動で突き合わせます。<br><br>"+
     "<b>読み込めるもの</b>: 銀行のサイトから保存した明細のファイル(CSV)か、同じ形でコピーした文字。上の方に「取引日」「摘要」「入金」「出金」「残高」のような見出しの行があれば読めます。ソニー銀行は、PC版のサイトの「通帳」から保存できます。<br><br>"+
     "<b>突き合わせ方</b>: 金額が同じで、日付が近いもの(銀行の日付がTallyより3日早い〜10日遅い)を同じ取引とみなします。1枚のレシートを品目ごとに分けて記録していても、同じ日・同じ店の合計で突き合わせます。貯金や軍資金への振替も相手になります。<br><br>"+
-    "一致した記録には、照合の✓が付きます。読み込んだ明細はTallyには保存しません。";
+    "一致した記録には、画面に出ない印が付きます(次に別の期間の明細を読み込んだ時、前の明細と一致した記録を「金額違い?」などの手がかりの相手にしないため)。記録の金額・日付・財布・種別を直すと、印は外れます。読み込んだ明細はTallyには保存しません。";
   if(!bm || !bm.rows){
     h+='<div class="card" style="margin-bottom:14px">'+
       '<div class="fxl">どの財布の明細か</div>'+(walRow||'<div style="font-size:13px;margin-bottom:10px">'+esc(walName(W))+'</div>')+
@@ -2012,7 +2012,7 @@ function bmLoad(text, src){
   const R=bankMatch(UI.bm), n=bmApplyChk(R), learned=bmLearn(R);
   if(n || learned) save();
   render();
-  toast(p.rows.length+"行を読み込みました"+(n?"(✓ "+n+"件)":""));
+  toast(p.rows.length+"行を読み込みました"+(n?"(新しく一致した記録 "+n+"件)":""));   /* v6.73: 「(✓ N件)」→ ✓ を見る画面(照合)が無くなったので言葉で */
 }
 /* 「銀行にあってTallyに無い」の行を押した時: その日付と金額で記録の画面を開く(v6.59: 2つの突き合わせの画面で使うので、押した先から外に出した) */
 function bmOpenAdd(r, W, mail){
@@ -3087,54 +3087,22 @@ function viewLedgerDetail(mk){
      保存すると戻し忘れて、毎日逆さまの明細を見ることになる。開き直せば新しい順に戻る。 */
   /* v5.72: 遊技の経費は**明細に出さず、遊技タブのセッション欄に出す**(ユーザー判断)。
      v5.71で明細に残したのは「直す場所が無くなる」からだったが、セッション欄から直せるようにしたので理由が消えた。
-     **例外は照合の時だけ**——所持金から払った遊技の経費は銀行の明細に載っているので、消し込めないと照合が閉じない */
-  const detEntries = me.filter(e=>!isNetEntry(e) || (UI.recon && isGameCat(e) && e.gtTx!=null));
+     (v5.72〜v6.72 の例外=照合の時だけ、所持金から払った遊技の経費を出す、は v6.73 で照合と一緒に外した) */
+  const detEntries = me.filter(e=>!isNetEntry(e));
   const byDate = {};
   detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
-  /* v5.57: 日の中の並びも反転する(1日に複数件あると、日だけ揃えても突合の目が飛ぶ)
-     v5.58: 照合の財布絞り込みも同じ関数が行う。空になった日は落とす */
-  Object.keys(byDate).forEach(d0=>{ byDate[d0]=detOrder(byDate[d0]); if(!byDate[d0].length) delete byDate[d0]; });
-  const shown = Object.keys(byDate).reduce((a2,d0)=>a2.concat(byDate[d0]), []);
-  /* v5.58: **照合モード**(ユーザー要望: 金額が合わない時に直近から確認していく仕組みが要る)。
-     ・カード明細は**承認番号順**、Tallyは**記帳順**。承認番号を持っていない以上、
-       どんな規則でも行同士は揃わない——**順番で照合するのを諦める**のがこの機能の前提。
-     ・代わりに**消し込み**にする。銀行の明細を上から見て、対応する行をタップで消す。
-       **残った額が、Tallyにしか無い記録**(二重記帳・金額違い)。銀行にしか無い行=記帳漏れは
-       消えずに手元に残るので、両側から挟める。
-     ・状態は`UI`に置き**保存しない**。照合は一度きりの仕事で、翌日に持ち越すと嘘の✓が残る。 */
-  const rest = reconRest(shown);
+  /* v5.57: 日の中の並びも反転する(1日に複数件あると、日だけ揃えても突合の目が飛ぶ) */
+  Object.keys(byDate).forEach(d0=>{ byDate[d0]=detOrder(byDate[d0]); });
+  /* v6.73【照合を外した】(ユーザー 11/15 04:37「後メール機能を追加した今、家計簿の照合機能も無用となりました、削除で良いですよ」)。
+     v5.58 の照合モード(銀行の明細を見ながら、明細の行を押して ✓ を付けて消し込む・残り○件・財布の絞り込み・「この月の✓を消す」)を外した。
+     その中にあった「銀行の明細を読み込んで突き合わせる」(CSV の突き合わせ)の入口は、管理のタブの「家計簿」の板の一番下の行へ移した
+     (05:03 ユーザー「Bでお願いします」)。✓ のデータ(e.chk)は残す: CSV とデビットの通知の突き合わせが、一致した記録に付けて、
+     次の突き合わせで手がかりの相手から外すのに使っている(bankMatch の freeW)。画面には出さない。
+     「新しい順 ↓」の押せる範囲は、右どなりの「照合」が無くなったので、右を 6 → 16px(「照合」が持っていた幅)に広げた */
   h += band("明細",
-    '<span class="mono hit" style="--ht:20px;--hb:9px;--hl:10px;--hr:6px;font-size:11px;cursor:pointer;color:'+(UI.detAsc?'var(--teal)':'var(--muted)')+'" data-a="detord">'+
-    (UI.detAsc?'古い順 ↑':'新しい順 ↓')+'</span>'+
-    '<span class="mono hit" style="--ht:20px;--hb:9px;--hl:6px;--hr:16px;font-size:11px;cursor:pointer;margin-left:12px;color:'+(UI.recon?'var(--teal)':'var(--muted)')+'" data-a="recon">'+
-    (UI.recon?'照合を終える':'照合')+'</span>');
-  if(UI.recon){
-    const pots=walletPots();
-    h += '<div class="card" style="margin-bottom:10px;border-color:var(--teal)">'+
-      '<div class="row between" style="align-items:baseline">'+
-      '<span class="teal" style="font-size:12px;font-weight:700">照合中'+
-        infoBtn("<b>照合</b>は、Tallyの記録と銀行(カード)の明細を突き合わせて、記録漏れや金額違いを見つける機能です。<br><br>使い方: 銀行の明細を上から順に見て、Tallyに対応する記録があればタップして✓を付けます。<br>最後まで終えた時に<b>✓の付いていない記録</b>が、銀行には無い記録(二重に記録した・金額が違う など)です。逆に、銀行にあるのにTallyに見つからない行は記録漏れです。<br><br>予定(未来の日付)の記録はまだ銀行に載っていないので、照合中は表示しません。財布(口座や現金など、お金の置き場所)が複数ある時は、上のボタンで照合する財布を絞れます。付けた✓は保存されるので、次は続きから照合できます。<br><br>銀行の明細のファイル(CSV)があるなら、下の「銀行の明細を読み込んで突き合わせる」で、機械に突き合わせさせることもできます。一致した記録には自動で✓が付き、銀行にあってTallyに無い行(記帳漏れ)だけが残ります。")+'</span>'+
-      '<span><span class="mono muted" style="font-size:11px">残り '+rest.n+'件</span> '+
-      '<span class="mono teal" style="font-size:17px;font-weight:700">'+signYen(rest.net)+'</span></span></div>'+
-      /* 財布が1つしか無いなら絞り込みは出さない(押す先が1つのボタンは邪魔なだけ) */
-      (pots.length>1
-        ? '<div class="row" style="gap:6px;margin-top:9px;flex-wrap:wrap">'+
-          [{id:null,name:"すべて"}].concat(pots).map(pp=>
-            '<button class="btn'+((String(UI.reconWal||"")===String(pp.id||""))?' sel':'')+'" style="font-size:11px;padding:5px 10px" data-a="rwal" data-v="'+esc(pp.id==null?"all":pp.id)+'">'+esc(pp.name)+'</button>').join("")+
-          '</div>'
-        : '')+
-      /* v6.18: 銀行の明細(CSV)を読み込んで機械に突き合わせさせる入口。手で✓を付けるのは、明細が無い財布(現金など)の時だけになる */
-      '<button class="btn full" style="margin-top:10px;font-size:12px;padding:9px 0;color:var(--teal);font-weight:700" data-a="bmopen">銀行の明細を読み込んで突き合わせる '+CHEV_T+'</button>'+
-      /* v5.75: 使い方の説明は見出しのⓘへ(ユーザー要望: 余計な説明文が嫌) */
-      /* v5.60: ✓が保存されるようになったので**戻す道**が要る。
-         押し間違いを1件ずつ外すのは現実的でない。**照合済みが実在する時だけ出す** */
-      (detEntries.some(e=>e.chk)
-        ? '<div style="text-align:right;margin-top:8px"><button class="navbtn" style="color:var(--muted);font-size:11px;text-decoration:underline" data-a="rclr">この月の✓を消す</button></div>'
-        : '')+
-      '</div>';
-  }
+    '<span class="mono hit" style="--ht:20px;--hb:9px;--hl:10px;--hr:16px;font-size:11px;cursor:pointer;color:'+(UI.detAsc?'var(--teal)':'var(--muted)')+'" data-a="detord">'+
+    (UI.detAsc?'古い順 ↑':'新しい順 ↓')+'</span>');
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
-  else if(!shown.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この財布の記録はこの月にありません。</div>';
   const dayNetOf = list => list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
   /* v6.54: **明細の行の金額は、支出=白・収入=緑**(前は支出=赤)。明細はほぼ全部が支出なので全行が赤になり、赤が何も伝えていなかった
      (v6.50「色に仕事をさせる」)。白にすると収入の緑が一目で拾える。符号(−/+)は字で付いている。
@@ -3149,15 +3117,12 @@ function viewLedgerDetail(mk){
     let h="";
     /* v3.46: 日別折り畳み(ユーザー発案)。既定=今日のみ展開、UI.dayOpenで明示開閉(セッション内保持・render()のscroll復元が効く) */
     const dayNet=dayNetOf(list);
-    /* v5.58: 照合中は件数・純額を**残り**に差し替える(増やさず入れ替える)。
-       既定の開閉も逆にする——照合は全行を見る仕事なので、畳んでいると全部開く手間だけかかる */
-    const dRest=reconRest(list);
-    const dOpen=(UI.dayOpen&&UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(UI.recon?true:(d===todayS));
+    const dOpen=(UI.dayOpen&&UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayS);
     h += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;'+(d>todayS?'opacity:.62;':'')+'" data-a="dtoggle" data-v="'+d+'">'+
       '<span class="mono muted" style="font-size:11px">'+(dOpen?'▾':'▸')+' '+d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')'+
-      '<span style="margin-left:8px;font-size:11px">'+(UI.recon?('残り '+dRest.n+'件'):(list.length+'件'))+'</span></span>'+
-      '<span class="mono '+clsPM(UI.recon?dRest.net:dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(UI.recon?dRest.net:dayNet)+'</span></div>'+
+      '<span style="margin-left:8px;font-size:11px">'+(list.length+'件')+'</span></span>'+
+      '<span class="mono '+clsPM(dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(dayNet)+'</span></div>'+
       (!dOpen?'':'<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
       (()=>{
         /* v5.00: **同じ店は1行にまとめ、タップで品目を出す**(ユーザー要望)。
@@ -3176,12 +3141,8 @@ function viewLedgerDetail(mk){
           /* v5.69: 立替・立替精算は**自分の金ではない**ので、良し悪しの色を付けない(枠だけ無彩色) */
           const cc = isOffPL(e) ? "var(--muted)" : isGameCat(e) ? "var(--amber)" : e.type==="income" ? "var(--teal)" : (e.category==="娯楽" ? "var(--amber)" : e.category==="承認" ? "var(--blue)" : "var(--red)");
           const sep = row++ ? 'border-top:1px solid var(--line);' : '';
-          /* v5.58: 照合中はタップの意味が変わる(✓の付け外し)。**編集は開かない**——
-             消し込みの最中に編集画面が開くと、指が滑るたびに作業が止まる */
-          const ck = UI.recon && !!e.chk;
-          return '<div class="row" style="padding:10px 16px;cursor:pointer;'+sep+(isFuture?'opacity:.62;':'')+(ck?'opacity:.42;':'')+'" data-a="'+(UI.recon?'rchk':'eedit')+'" data-v="'+e.id+'">'+
+          return '<div class="row" style="padding:10px 16px;cursor:pointer;'+sep+(isFuture?'opacity:.62;':'')+'" data-a="eedit" data-v="'+e.id+'">'+
           '<div style="flex:1;min-width:0"><div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
-          (UI.recon?'<span class="mono '+(ck?'teal':'muted')+'" style="font-size:13px;font-weight:700">'+(ck?'✓':'○')+'</span>':'')+
           '<span class="tag" style="border:1px solid '+cc+';color:'+cc+'">'+esc(e.category)+'</span>'+
           (e.src==="slot"||e.src==="mahjong"?'<span class="tag" style="border:1px solid var(--amber);color:var(--amber);font-size:11px">連携</span>':'')+
           (e.src==="fixed"?'<span class="tag" style="border:1px solid var(--muted);color:var(--muted);font-size:11px">定期</span>':'')+
@@ -3199,20 +3160,18 @@ function viewLedgerDetail(mk){
         };
         return groups.map((g,gi)=>{
           if(g.items.length<2) return entryRow(g.items[0]);
-          /* v5.58: 照合中は既定で開く(中の行を1件ずつ消すため)。
-             鍵の並びは detOrder() に一本化されているので絞り込み中でも描画と操作は一致する */
+          /* 鍵の並びは detOrder() に一本化されているので、描画と操作(stgdate・stgdel)は一致する */
           const key=d+"#"+gi;
-          const open=(UI.stOpen&&UI.stOpen[key]!==undefined)?UI.stOpen[key]:!!UI.recon;
+          const open=(UI.stOpen&&UI.stOpen[key]!==undefined)?UI.stOpen[key]:false;
           const net=dayNetOf(g.items);
           const sep = row++ ? 'border-top:1px solid var(--line);' : '';
           return '<div class="row between" style="padding:10px 16px;cursor:pointer;'+sep+'" data-a="stoggle" data-v="'+esc(key)+'">'+
             '<span class="ellip" style="flex:1;min-width:0"><span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+'</span> '+
             '<span style="font-size:12px">'+esc(g.store)+'</span>'+
-            '<span class="mono muted" style="font-size:11px;margin-left:6px">'+(UI.recon?('残り '+reconRest(g.items).n+'件'):(g.items.length+'件'))+'</span></span>'+
-            '<span class="mono '+detCls(UI.recon?reconRest(g.items).net:net)+'" style="font-size:14px">'+signYen(UI.recon?reconRest(g.items).net:net)+'</span></div>'+
+            '<span class="mono muted" style="font-size:11px;margin-left:6px">'+(g.items.length+'件')+'</span></span>'+
+            '<span class="mono '+detCls(net)+'" style="font-size:14px">'+signYen(net)+'</span></div>'+
             (open ? g.items.map(entryRow).join("")+
-              /* v5.58: **照合中はまとめ操作を出さない**。消し込みの最中に削除ボタンが並ぶのは危ない */
-              (UI.recon ? '' :
+              (
               /* v5.29: **開いたときだけ操作行を出す**(ユーザー要望: 日付を間違えたとき1件ずつ直すのが面倒)。
                  畳んだ状態に置くと押し間違いで消える。**固定費を含む店では削除を出さない**——
                  固定費は次回発生日やテンプレの扱いがあり、まとめて消すと壊れる(1件ずつなら既存の導線が面倒を見る) */
@@ -3259,14 +3218,13 @@ function viewLedgerDetail(mk){
   if(futDays.length){
     const fCnt=futDays.reduce((a2,x)=>a2+x[1].length,0);
     const fNet=futDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
-    const fRest=reconRest(futDays.reduce((a2,x)=>a2.concat(x[1]),[]));   /* v5.58 */
     const fOpen=!!UI.futOpen;
     const span=spanOf(futDays);
     hFut += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ftoggle">'+
       '<span class="mono muted" style="font-size:11px">'+(fOpen?'▾':'▸')+' 予定 '+span+
-      '<span style="margin-left:8px;font-size:11px">'+(UI.recon?('残り '+fRest.n+'件'):(fCnt+'件'))+'</span></span>'+
-      '<span class="mono '+clsPM(UI.recon?fRest.net:fNet)+'" style="font-size:13px;font-weight:700">'+signYen(UI.recon?fRest.net:fNet)+'</span></div></div>';
+      '<span style="margin-left:8px;font-size:11px">'+(fCnt+'件')+'</span></span>'+
+      '<span class="mono '+clsPM(fNet)+'" style="font-size:13px;font-weight:700">'+signYen(fNet)+'</span></div></div>';
     if(fOpen) futDays.forEach(x=>{ hFut += dayHtml(x); });
   }
   /* v5.18: **今日より前を1本に畳む**(ユーザー指摘: 1ヶ月分の日付が並んで縦が長すぎる)。
@@ -3284,14 +3242,13 @@ function viewLedgerDetail(mk){
   else if(prevDays.length){
     const pCnt=prevDays.reduce((a2,x)=>a2+x[1].length,0);
     const pNet=prevDays.reduce((a2,x)=>a2+dayNetOf(x[1]),0);
-    const pRest=reconRest(prevDays.reduce((a2,x)=>a2.concat(x[1]),[]));   /* v5.58 */
     const pOpen=!!UI.pastOpen;
     const span=spanOf(prevDays);
     hPast += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;opacity:.62" data-a="ptoggle">'+
       '<span class="mono muted" style="font-size:11px">'+(pOpen?'▾':'▸')+' '+span+
-      '<span style="margin-left:8px;font-size:11px">'+(UI.recon?('残り '+pRest.n+'件'):(pCnt+'件'))+'</span></span>'+
-      '<span class="mono '+clsPM(UI.recon?pRest.net:pNet)+'" style="font-size:13px;font-weight:700">'+signYen(UI.recon?pRest.net:pNet)+'</span></div></div>';
+      '<span style="margin-left:8px;font-size:11px">'+(pCnt+'件')+'</span></span>'+
+      '<span class="mono '+clsPM(pNet)+'" style="font-size:13px;font-weight:700">'+signYen(pNet)+'</span></div></div>';
     if(pOpen) prevDays.forEach(x=>{ hPast += dayHtml(x); });
   }
   /* v5.57: 古い順のときは**過去 → 今日 → 予定**。時間が一方向に流れる並びにする */
@@ -4270,15 +4227,14 @@ function bindMjtList(){
 }
 
 /* v6.72 **すでに同じ ID になっている記録を探す**(v6.71 までの uid() で、まれにできた)。あった時だけ、管理のタブの一番上に一覧を出す(viewTool)。
-   見るのは、ID で「開く・保存する・消す」一覧: 家計簿の記録・所持金/軍資金/貯金の記録・パチスロの稼働・麻雀の記録。
-   **直し(ID の振り直し)は、まだ作っていない**: 記録と振替の紐づけ(svTx・bkTx・gtTx・inSvTx)が絡むと、どちらの物か決められない形がある
-   → ユーザーの実物を見てから作る(ⓘ に「開いたり消したりする前に、写真を送って」と書いた)。v6.72 からは、新しくはできない */
+   見るのは、ID で「開く・保存する・消す」一覧: 家計簿の記録・所持金/軍資金/貯金の記録・パチスロの稼働・麻雀の記録。v6.72 からは、新しくはできない。
+   v6.73: 組の中の物そのもの(items)も返す(振り直しが使う。rows は一覧の字) */
 function dupIdGroups(){
   const out=[], d=x=>x&&x.date ? String(x.date).slice(5).replace("-","/")+" " : "";
   const scan=(kind, list, lab)=>{
     const m=new Map();
     (list||[]).forEach(x=>{ if(!x || x.id==null) return; const k=String(x.id); if(!m.has(k)) m.set(k, []); m.get(k).push(x); });
-    m.forEach((a,k)=>{ if(a.length>1) out.push({kind:kind, id:k, rows:a.map(lab)}); });
+    m.forEach((a,k)=>{ if(a.length>1) out.push({kind:kind, id:k, rows:a.map(lab), items:a}); });
   };
   scan("家計簿の記録", S.entries, e=>d(e)+[e.store||"", e.item||""].filter(Boolean).join(" ")+(e.store||e.item ? " " : (e.category||"")+" ")+yen(num(e.amount)));
   scan("所持金の記録", (S.wallet||{}).txns, t=>d(t)+(t.memo ? t.memo+" " : "")+signYen(num(t.amount)));
@@ -4288,17 +4244,60 @@ function dupIdGroups(){
   scan("麻雀の記録", S.mjSessions, m=>d(m)+(mjWhere(m, " ")||"麻雀"));
   return out;
 }
-const DUPID_INFO="前の版までの不具合で、<b>同じ瞬間に作った2つの記録が、同じ ID になったもの</b>です(レシートや明細をまとめて取り込んだ時などに、まれに起きました)。<br><br>"+
+/* v6.73 **同じ ID の振り直し**(ユーザー 11/15 07:23: v6.72 を入れたら、実機で「同じ ID の記録が 2組」と出た。2組とも家計簿の記録で、
+   同じ日・同じ店・品目が違う=1枚のレシートを取り込んだ時の品目どうし)。一覧の下の「ID を振り直す」を押した時だけ直す(自動では直さない)。
+   直すのは**家計簿の記録だけ**。組ごとに、1件目(S.entries の並びで先の方=今、開くと出る方)の ID はそのまま、2件目から後に新しい ID(uid)を振る。
+   **ID の欄のほかは1字も変えない**。月の合計・残高は ID を見ないので動かない。
+   記録 → 振替の向きの紐づけ(svTx・bkTx・gtTx・inSvTx)は、記録の ID を変えても切れない(振替の側は記録の ID を持っていない)。
+   **振り直さずに知らせるだけにする組**(dupIdBlock が理由を返す。どちらの記録を指していたのか決められない=振り直すと、指されていた方を外すかもしれない):
+   ・家計簿の記録でない(所持金・軍資金・貯金の記録=記録から紐づいている振替がある/稼働・麻雀の記録=家計簿の連携の記録が ID から作られる)
+   ・遊技の連携の記録(ID が "mj-…"・"slot-…"=稼働・麻雀の記録の ID から作った ID。振り直すと連携が切れる)
+   ・ID を外から指している物がある: 貯金の箱の「対象外」(p.useSkip)・稼働と麻雀の経費の「家計簿から振替」の元(fromEntry・fromData.id)
+   ・2件が同じ振替を指している(片方を消すと、もう片方の振替も消える)
+   固定費の記録の ID の末尾の「-f日付」は残す(fixedOccKey が、fixedDate の無い前の記録の身元をここから読む) */
+function dupIdBlock(g){
+  if(!g || g.kind!=="家計簿の記録") return "家計簿の記録ではありません";
+  const id=String(g.id);
+  if(/^(mj|slot)-/.test(id)) return "遊技の連携の記録です";
+  const ref=[];
+  if(savingsPots().some(p=>(p.useSkip||[]).map(String).indexOf(id)>=0)) ref.push("貯金の箱の「対象外」");
+  const xf=s=>(s && s.expenses||[]).some(x=>x && (String(x.fromEntry)===id || (x.fromData && String(x.fromData.id)===id)));
+  if((S.sessions||[]).some(xf) || (S.mjSessions||[]).some(xf)) ref.push("経費の「家計簿から振替」");
+  if(ref.length) return ref.join("・")+"が、この ID を指しています";
+  const share=["svTx","bkTx","gtTx","inSvTx"].some(k=>{ const v=(g.items||[]).map(e=>e[k]).filter(x=>x!=null).map(String); return new Set(v).size<v.length; });
+  if(share) return "2件が同じ振替を指しています";
+  return "";
+}
+/* 振り直す(押した時だけ)。新しい ID が、ほかの記録の ID と重ならないことも確かめる(端末の時計がずれていた記録が、先の時刻の ID を持っている時のため) */
+function dupIdFix(){
+  const gs=dupIdGroups().filter(g=>!dupIdBlock(g));
+  const used=new Set((S.entries||[]).map(e=>String(e.id)));
+  let n=0;
+  gs.forEach(g=>g.items.slice(1).forEach(e=>{
+    const suf=String(e.id).match(/-f\d{4}-\d{2}-\d{2}$/);
+    let nid;
+    do{ nid = suf ? String(uid())+suf[0] : uid(); } while(used.has(String(nid)));
+    used.add(String(nid)); e.id=nid; n++;
+  }));
+  return {groups:gs.length, n:n};
+}
+const DUPID_INFO="前の版までの不具合で、<b>同じ瞬間に作った2つの記録が、同じ ID になったもの</b>です(レシートや明細をまとめて取り込んだ時などに、まれに起きました)。ID は、Tally が記録を1件ずつ見分けるための番号です(画面には出ません)。<br><br>"+
   "同じ ID の記録は、<b>片方を開くともう片方が出る・直して保存すると2件とも同じ中身になる・消すと2件とも消える</b>ことがあります。<br><br>"+
-  "<b>この一覧の記録は、開いたり消したりする前に、この画面の写真を Claude に送ってください</b>(直し方を、形を見てから決めます)。<br><br>"+
+  "<b>「ID を振り直す」</b>を押すと、組ごとに、1件目はそのままで、2件目から後に新しい ID を振ります。<b>記録の中身(日付・店・品目・金額・財布・分類・メモ)は変わらず、月の合計や残高も変わりません</b>。振り直した後は、1件ずつ開いたり直したり消したりできます。<br><br>"+
+  "振り直すのは家計簿の記録だけです。ほかの記録(所持金・軍資金・貯金の記録、稼働、麻雀の記録)と、ほかの所からその ID が使われている記録は、どちらの記録を指しているのか決められないので、振り直さずにそのまま残します(行に理由が出ます)。その時は、開いたり消したりする前に、この画面の写真を Claude に送ってください。<br><br>"+
   "今の版からは、新しく同じ ID ができることはありません。";
+/* 一覧の行の下に出す、振り直せない理由(振り直せる組は何も出さない) */
+function dupIdWhy(x){ const w=dupIdBlock(x); return w ? '<div class="gl-s" style="color:var(--amber)">振り直せません: '+esc(w)+'</div>' : ''; }
 function dupIdHtml(){
   const g=dupIdGroups();
   if(!g.length) return "";
+  /* v6.73: 振り直せる組が1つでもあれば、板の一番下に「ID を振り直す」の行(管理のタブの行と同じ形。押すと確かめの1問)。振り直せない組の行には理由 */
+  const fix=g.some(x=>!dupIdBlock(x));
   return '<div class="gl-h" id="dupid-h"><span class="red">同じ ID の記録が '+g.length+'組あります</span>'+infoBtn(DUPID_INFO)+'</div>'+
     '<div class="card glist" id="dupid">'+g.map(x=>
       '<div class="gl-row" style="cursor:default"><div class="gl-main"><div class="gl-t">'+esc(x.kind)+'</div>'+
-      x.rows.map(r=>'<div class="gl-s">'+esc(r)+'</div>').join("")+'</div></div>').join("")+'</div>';
+      x.rows.map(r=>'<div class="gl-s">'+esc(r)+'</div>').join("")+dupIdWhy(x)+'</div></div>').join("")+
+      (fix ? '<div class="gl-row" id="dupid-fix" data-a="dupfix"><div class="gl-main"><div class="gl-t" style="color:var(--teal)">ID を振り直す</div></div></div>' : '')+'</div>';
 }
 function viewTool(){
   if(UI.screen==="mjtable") return "";  // 別画面で描画
@@ -4341,6 +4340,9 @@ function viewTool(){
       {right:'<span class="gl-sw'+(S.openAddOnLaunch?' on':'')+'" role="switch" aria-checked="'+(S.openAddOnLaunch?'true':'false')+'"><span></span></span>'}),
     /* v6.23: レシートの読み取り(Claude API)の設定。状態(未設定/モデル)を小さく出す */
     _row('data-a="rcptset"', "レシートの読み取り", {sub: rcptKey() ? 'Claude '+esc(rcptModel().name) : 'Claude ・ 未設定'}),
+    /* v6.73: 銀行の明細(CSV)と突き合わせる入口。v6.18〜v6.72 は家計簿のタブの明細の「照合」の中にあった(照合を外したので、ここへ移した)。
+       押した先は今までと同じ bmopen。突き合わせの画面の「戻る」は UI.screen="main" なので、ここへ戻る */
+    _row('data-a="bmopen"', "銀行の明細と突き合わせ"),
   ]);
   h += _head("麻雀");
   h += _list([
@@ -6526,11 +6528,11 @@ function mjlOyaPick(k){
 }
 /* 新しい記録の画面の、何も触っていない形(起動時に開く形と同じ) */
 function mjlNewEntryForm(){ return {date:todayStr(),type:"expense",category:"消費",amount:"",store:"",item:"",memo:"",tmode:"",tfrom:"",tto:"",tplace:""}; }
-/* しばらく離れて戻った時に、半荘の記録へ移してよい画面か: タブの画面(照合モードは除く)と、**何も触っていない**新しい記録の画面だけ。
+/* しばらく離れて戻った時に、半荘の記録へ移してよい画面か: タブの画面と、**何も触っていない**新しい記録の画面だけ。
    v6.31の見直しで厳しくした: 打った文字だけを見ていたので、振替の元/先・日付・交通の種類・財布を選んだだけの記録の画面も動かしていた。
-   照合モードは銀行のアプリと行き来しながら使うので、戻るたびに動かすと照合が続けられない */
+   (v6.31〜v6.72 は「照合モードの明細は除く」=銀行のアプリと行き来しながら使うので。v6.73 で照合モードを外した) */
 function mjlResting(){
-  if(UI.screen==="main") return !UI.recon;
+  if(UI.screen==="main") return true;
   if(UI.screen!=="entry" || UI.editEntryId!=null || UI.rcptBusy || UI.pasteOpen || UI.entryReturn) return false;
   const f=UI.entryForm||{}, D=mjlNewEntryForm(), blank=v=> v==null || v==="" || (Array.isArray(v) && !v.length);
   return Object.keys(D).every(k=>String(f[k]==null?"":f[k])===D[k]) && Object.keys(f).every(k=>(k in D) || blank(f[k]));
@@ -6837,35 +6839,15 @@ function mjLogTotals(){
 /* v5.57: **明細の並び順を決める唯一の関数**(ユーザー要望: デビットカードの明細と突合するとき順番を合わせたい)。
    既定は新しい順(false)、突合のときだけ古い順(true)。
    **描画とまとめ操作(stgdate/stgdel)の両方がここを通ること**——`storeGroups`の鍵は
-   `日付#並び順`なので、片方だけ反転させると**別の店を消す**(v5.29で実際にズレを検出している)。 */
+   `日付#並び順`なので、片方だけ反転させると**別の店を消す**(v5.29で実際にズレを検出している)。
+   v6.73: 照合モードの絞り込み(未来を出さない・財布で絞る・軍資金から払った支出と遊技の経費を出さない)を、照合と一緒に外した=並びの反転だけ */
 function detOrder(list){
   let a=(list||[]);
-  if(UI.recon){
-    /* v5.59【重要】**未来は照合できない**(ユーザー指摘)。まだ引き落とされていないので
-       銀行の明細に相手がいない。残したままだと**「残り」が永久に0にならず**、
-       残額がズレの正体を指すという照合カードの役目そのものが壊れる。 */
-    const t=todayStr();
-    a=a.filter(e=>e.date<=t);
-    /* v5.58: 財布の絞り込みも**ここで**。並びと同じで、描画とまとめ操作が
-       同じ関数を通っていないと`日付#並び順`の鍵がズレて別の店を指す */
-    if(UI.reconWal) a=a.filter(e=>eWal(e)===String(UI.reconWal));
-    /* v5.70: **軍資金から払った支出は照合に出さない**。財布は経由しただけで、銀行の明細には載らない。
-       残すと消せない行が「残り」に居座る(v5.59の予定と同じ理由) */
-    /* v5.71/v5.72: 遊技の経費のうち**軍資金から出したもの**は出さない(所持金が動かず、銀行の明細に相手がいない)。
-       所持金から払ったもの(gtTxあり)は銀行の明細に載るので消し込み対象に残す */
-    a=a.filter(e=>!e.bkSrc && !(isGameCat(e) && e.gtTx==null));
-  }
   return UI.detAsc ? a.slice().reverse() : a;
 }
-/* v5.58: 未照合だけの件数と純額。照合の「残り」はこれで数える。
-   v5.60: **照合済みは保存する**(ユーザー要望: 一度照合したやつはそのまま照合済にして欲しい)。
-   照合は一度きりの仕事ではなく**通帳と同じで積み上がる仕事**だった——毎回月初からやり直すなら道具にならない。
-   置き場所は`e.chk`(エントリ自身)。**消えた記録の✓が残らない**し、同期もバックアップも
-   エントリごと運ばれるので、別表を持って孤児を掃除する必要が無い。 */
-function reconRest(list){
-  const rest=(list||[]).filter(e=>!e.chk);
-  return {n:rest.length, net:rest.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0)};
-}
+/* v5.60: **照合済み(✓)は保存する**。置き場所は`e.chk`(エントリ自身)。**消えた記録の✓が残らない**し、同期もバックアップも
+   エントリごと運ばれるので、別表を持って孤児を掃除する必要が無い。
+   v6.73: 照合モードと、その「残り」を数える reconRest を外した。✓ は突き合わせ(CSV・デビットの通知)が付け、手がかりの相手を選ぶ所で使う */
 /* ============================================================
    v6.18 銀行の明細と突き合わせ(ユーザー: ソニー銀行が合わないのが圧倒的に多い。記帳漏れの原因追求の時間が重い)。
    照合(v5.58)は銀行アプリを見ながら1件ずつ✓を付ける手作業で、**探す作業そのものが人の目**だった。
@@ -8118,7 +8100,6 @@ function bindWallet(){
         (((S.invest||{}).holdings)||[]).forEach(h=>(h.buys||[]).forEach(b=>{ if(b && b.walId!=null && String(b.walId)===String(v)) b.walId=String(dest); }));
         (((S.invest||{}).bufferTxns)||[]).forEach(t=>{ if(t && t.walId!=null && String(t.walId)===String(v)) t.walId=String(dest); });
         Object.keys(S.bankMemo||{}).forEach(k=>{ const o=(S.bankMemo[k]||{}).other; if(o && o[String(v)]){ o[String(dest)]=(o[String(dest)]||0)+o[String(v)]; delete o[String(v)]; } });
-        if(String(UI.reconWal||"")===String(v)) UI.reconWal=null;
         if(String(UI.bmWal||"")===String(v)) UI.bmWal=null;
         if(UI.bm && String(UI.bm.walId||"")===String(v)) UI.bm.walId=String(dest);
         W.pots=(W.pots||[]).filter(x=>String(x.id)!==String(v));
@@ -10061,6 +10042,15 @@ function bindMain(){
       else if(a==="csv") exportCsv();
       else if(a==="fixed"){ UI.screen="fixed"; UI.fixForm=null; render(); }
       else if(a==="wishlist"){ UI.screen="wishlist"; render(); }
+      /* v6.73: 同じ ID の振り直し(管理のタブの一番上の一覧の下) */
+      else if(a==="dupfix"){
+        const gs=dupIdGroups(), fx=gs.filter(g=>!dupIdBlock(g));
+        if(!fx.length) return;
+        const n0=fx.reduce((s,g)=>s+g.items.length-1,0), rest=gs.length-fx.length;
+        if(!confirm("同じ ID の家計簿の記録 "+fx.length+"組の、2件目から後("+n0+"件)に、新しい ID を振ります。\n\n記録の中身・月の合計・残高は変わりません。"+
+          (rest ? "\n\n振り直せない "+rest+"組は、そのまま残ります。" : ""))) return;
+        const r=dupIdFix(); save(); render(); toast("ID を振り直しました("+r.n+"件)");
+      }
       else if(a==="invest"){ UI.screen="invest"; render(); }
       else if(a==="bank"){ UI.screen="bank"; render(); }
       else if(a==="setpre"){ UI.screen="budget"; UI.budForm=null; render(); }
@@ -10173,33 +10163,11 @@ function bindMain(){
       /* v5.57: 明細の並び順。**古い順にした時は過去も開く**——古い順にする理由は突合しかなく、
          突合には過去が要る。戻すときは触らない(閉じたい人は自分で閉じている) */
       else if(a==="detord"){ UI.detAsc=!UI.detAsc; if(UI.detAsc) UI.pastOpen=true; renderKeepScroll(); }
-      /* v5.58: 照合モード。**入る時に過去を開き、出る時にチェックを捨てる**——
-         照合は一度きりの仕事で、翌日に持ち越すと嘘の✓が残る(だからSにも保存しない) */
-      else if(a==="recon"){
-        UI.recon=!UI.recon;
-        if(UI.recon) UI.pastOpen=true; else UI.reconWal=null;
-        renderKeepScroll();
-      }
-      /* v5.60: ✓は**保存する**。次に照合を開いた時、前回消し込んだ分は消えたままで、
-         新しく増えた分だけが「残り」に出る(通帳の続きから見るのと同じ) */
-      else if(a==="rchk"){
-        const e0=(S.entries||[]).find(x=>String(x.id)===String(v));
-        if(!e0) return;
-        if(e0.chk) delete e0.chk; else e0.chk=true;
-        save(); renderKeepScroll();
-      }
-      else if(a==="rwal"){ UI.reconWal=(v==="all")?null:String(v); renderKeepScroll(); }
-      else if(a==="bmopen"){ if(UI.bm && UI.bm.mail) UI.bm=null;   /* v6.59: 照合の入口からは、明細を選ぶ所から(メールの突き合わせの結果は、家計簿タブの板か、この先のボタンで開く) */
-        UI.bmWal=UI.reconWal||null; if(UI.bm && UI.reconWal) UI.bm.walId=String(UI.reconWal); UI.screen="bankmatch"; render(); }   /* v6.18 */
+      /* v6.73: 照合モードの押した先(recon・rchk・rwal・rclr)は、照合と一緒に外した。
+         bmopen は管理のタブの「銀行の明細と突き合わせ」の行から(v6.18〜v6.72 は照合中の板のボタン) */
+      else if(a==="bmopen"){ if(UI.bm && UI.bm.mail) UI.bm=null;   /* v6.59: この入口からは、明細を選ぶ所から(メールの突き合わせの結果は、家計簿タブの板か、この先のボタンで開く) */
+        UI.bmWal=null; UI.screen="bankmatch"; render(); }   /* v6.18。v6.73: 照合の財布の絞り込み(UI.reconWal)を外した=前の「絞り込み無し」の時と同じ形 */
       else if(a==="dbtopen"){ dbtOpen(); }   /* v6.59 */
-      else if(a==="rclr"){
-        const mk0=monthKey();
-        const n0=(S.entries||[]).filter(e=>e.date&&e.date.startsWith(mk0)&&e.chk).length;
-        if(!n0){ toast("この月に照合済みはありません"); return; }
-        if(!confirm("この月の照合済み "+n0+"件を未照合に戻しますか?")) return;
-        (S.entries||[]).forEach(e=>{ if(e.date&&e.date.startsWith(mk0)) delete e.chk; });
-        save(); render(); toast(n0+"件を未照合に戻しました");
-      }
       /* v5.30: **振替の修正・削除**(ユーザー要望: 間違えても直せない)。
          **対で作られた振替は両側を揃えて直す**——片方だけ動かすと残高が壊れる。
          保存先(sv/wl/bk)は行が覚えているので、3種類を同じ導線で扱える */
@@ -10708,7 +10676,7 @@ function receiptDedupe(blocks){
 }
 function receiptNewRows(r, rows){ return receiptDedupe([{r:r, rows:rows}])[0]; }
 /* v6.35【残高で確かめる】履歴に写っている一番新しい残高(`#balance 日付 金額`)と、取り込んだ後のTallyの財布の残高(その日の終わり)を比べる。
-   合えば、その日までの記録漏れは無い(チャージも含めて)。合わなければ、ずれの額を出す(どこがずれたかは所持金の照合で) */
+   合えば、その日までの記録漏れは無い(チャージも含めて)。合わなければ、ずれの額を出す(どこがずれたかは明細で。v6.73 まで「所持金の照合で」) */
 function receiptBalanceClaim(list){
   let best=null;
   (list||[]).forEach(x=>{
@@ -10724,7 +10692,7 @@ function receiptBalanceClaim(list){
 function receiptBalanceText(c, add){   /* add = これから足す分(保存前の見込み)。保存した後は 0 */
   const tally=walletBalance(c.date, c.wal)+(add||0), d=Math.abs(tally-c.amt), md=c.date.slice(5).replace("-","/"), yen=v=>"¥"+Math.round(v).toLocaleString("ja-JP");
   return d===0 ? walName(c.wal)+"の残高("+md+"): 履歴 "+yen(c.amt)+"・Tally "+yen(tally)+" で合っています"
-    : walName(c.wal)+"の残高("+md+")が "+yen(d)+" 合いません(履歴 "+yen(c.amt)+"・Tally "+yen(tally)+")。チャージ・この履歴より前の記録漏れ・二重の記録が無いか、所持金の照合で確かめてください";
+    : walName(c.wal)+"の残高("+md+")が "+yen(d)+" 合いません(履歴 "+yen(c.amt)+"・Tally "+yen(tally)+")。チャージ・この履歴より前の記録漏れ・二重の記録が無いか、明細で確かめてください";   /* v6.73: 「所持金の照合で」→ 照合を外したので「明細で」 */
 }
 /* v6.28: **まとめて取り込む**(Amazonの注文をGmailからまとめて・1枚の写真に複数のレシート・履歴の複数ブロック)。
    list = [{r: parseReceipt の結果, open: 途中で切れたブロックか}]。**確認は1回**で、記録済みは飛ばす。
@@ -11808,7 +11776,7 @@ function dbtAuto(){
   dbtCheck(false);
   return true;
 }
-/* 突き合わせの画面を開く(家計簿タブの板・照合の先のボタンから)。結果が無い・古い時は、開いたついでに確かめ直す */
+/* 突き合わせの画面を開く(家計簿タブの板・突き合わせの画面の「メールで確かめる」から)。結果が無い・古い時は、開いたついでに確かめ直す */
 function dbtOpen(){
   const have=!!(UI.dbt && UI.dbt.bm);
   UI.bm = have ? UI.dbt.bm : {mail:true, walId:String(rcptBank().id||"")};
@@ -11817,7 +11785,7 @@ function dbtOpen(){
 }
 function dbtInfo(){
   return "ソニー銀行のデビット(Sony Bank WALLET)で払うと届く<b>「ご利用のお知らせ」</b>のメールと、Tallyの記録を突き合わせて、<b>まだ記録していない支払い</b>を見つけます。<br><br>"+
-    "<b>突き合わせ方</b>: 銀行の明細の突き合わせと同じです。金額が同じで、日付が近いもの(通知の日付がTallyより3日早い〜10日遅い)を同じ取引とみなします。1枚のレシートを品目ごとに分けて記録していても、同じ日・同じ店の合計で突き合わせます。一致した記録には、照合の✓が付きます。<br><br>"+
+    "<b>突き合わせ方</b>: 銀行の明細の突き合わせと同じです。金額が同じで、日付が近いもの(通知の日付がTallyより3日早い〜10日遅い)を同じ取引とみなします。1枚のレシートを品目ごとに分けて記録していても、同じ日・同じ店の合計で突き合わせます。一致した記録には、画面に出ない印が付きます(銀行の明細の突き合わせと同じ印)。<br><br>"+
     "<b>差し引いた残高</b> = Tallyの残高から、まだ記録していないデビットの支払いを引いた額です。銀行のアプリの残高がこの額なら、ずれの原因はこの画面に出ている支払いだけです。違う時は、デビット以外(ATM・振込・口座振替)か、見ている期間より前の分です。その時は、銀行の明細(CSV)の突き合わせで調べられます。<br><br>"+
     "<b>見ている期間</b>: デビットの通知は、14日前から今日まで(「いつのメールから」の方が新しければ、その日から)。それより古い記録漏れは、この画面にも「差し引いた残高」にも入りません(Gmailには読む量の上限があり、通知は毎日増えるので、読む分を絞っています)。Amazonの発送メールは「いつのメールから」の日から。<br><br>"+
     "<b>自動で確かめる</b>: Tallyを開いた時と、しばらくして戻った時に、裏で確かめます(10分に1回まで)。記録していない支払いがあった時だけ、家計簿のタブに「デビットの未記帳」が出ます。画面の一番下にも「メール照合 時刻 未記帳 N件」と出ます(知らせることが無い時は、何も出ません)。取り込めるAmazonの発送メールや、読めなかったAmazonのメールがある時も、板と画面の一番下に出ます。切るのは、管理 → レシートの読み取り。<br><br>"+
@@ -14608,9 +14576,9 @@ function dataAudit(){
   ok("軍資金の合計 = 置き場の合計", bsum!==bankBalance(), signYen(bsum)+" ≠ "+signYen(bankBalance())+"(消えた置き場を指す記録があります)");
   const wsum=walletPots().reduce((a,p)=>a+walletBalance(null,p.id),0);
   ok("所持金の合計 = 財布の合計", wsum!==walletBalance(null), signYen(wsum)+" ≠ "+signYen(walletBalance(null))+"(消えた財布を指す記録があります)");
-  /* 照合 */
+  /* 突き合わせの印(v6.73: 照合を外したので、言い方を「照合済み・✓」から変えた。数え方は同じ) */
   const t=todayStr(), futChk=E.filter(e=>e.chk&&e.date>t).length;
-  ok("未来の記録の照合済み", futChk, futChk+"件(まだ起きていない記録に✓が付いています)");
+  ok("未来の記録の突き合わせ済み", futChk, futChk+"件(まだ起きていない日付の記録に、銀行の明細と一致した印が付いています)");
   return out;
 }
 
