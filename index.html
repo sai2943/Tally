@@ -459,7 +459,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.76 (localStorage保存・完全オフライン)
+   Tally 6.77 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1072,31 +1072,8 @@ const slotMachines = (s, who) => (s.machines||[]).filter(m => m.kind==="slot" &&
 const personSlotYen = (s, who) => incomeMachines(s, who).reduce((a,m)=>a+machYenS(m, s), 0);
 const poolTotal = s => personSlotYen(s,"me") + personSlotYen(s,"partner");
 const expTotal = s => (s.expenses||[]).reduce((a,e)=>a+num(e.amount),0);
-/* ---------- 家計簿→セッション経費への振替 ----------
-   候補: 支出・非連携(src無し)・セッション日±3日・未選択。元記録の削除は保存時に実行(トランザクション) */
-function xferCandidates(dateStr, expenses){
-  const used = new Set((expenses||[]).map(x=>String(x.fromEntry)).filter(x=>x!=="undefined"&&x!=="null"));
-  const base = new Date((dateStr||todayStr())+"T00:00:00");
-  return (S.entries||[]).filter(e=>{
-    if(e.type!=="expense" || e.src) return false;
-    if(used.has(String(e.id))) return false;
-    const d = Math.abs((new Date((e.date||"")+"T00:00:00") - base)/86400000);
-    return d<=3;
-  }).sort((a,b)=> a.date<b.date?1:-1).slice(0,8);
-}
-function xferRowsHtml(list, act){
-  if(!list.length) return '<div class="muted" style="font-size:11px;margin:6px 0">直近±3日に振替できる支出がありません</div>';
-  return list.map(e=>{
-    const lbl = e.item || e.store || e.memo || e.category || "支出";
-    return '<button class="btn" style="width:100%;text-align:left;margin-top:6px;padding:8px 12px;font-size:12px;display:flex;gap:8px;align-items:center" data-a="'+act+'" data-v="'+e.id+'">'+
-      '<span class="muted mono" style="font-size:11px">'+esc((e.date||"").slice(5))+'</span>'+
-      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(lbl)+'</span>'+
-      '<span class="mono">'+yen(num(e.amount))+'</span></button>';
-  }).join("");
-}
-/* v5.75: 説明はⓘへ。**定数にすると infoBtn より先に評価される**ので関数にする */
-const xferHint = () => '<div class="row" style="align-items:center;margin:8px 0 0"><span class="muted" style="font-size:11px">家計簿の支出から選ぶ</span>'+
-  infoBtn("家計簿にすでに記録してある支出(この日の前後3日分)を、この稼働(1回分の遊技の記録)の<b>経費</b>として取り込みます。<br><br>取り込んだ支出は、稼働を保存した時に<b>家計簿からは削除</b>されます。同じ支出が家計簿と稼働の両方に残って、二重に数えられるのを防ぐためです。")+'</div>';
+/* v6.77: ここにあった「家計簿→稼働の経費への振替」の候補(xferCandidates・xferRowsHtml・xferHint)は、稼働の画面の「⇄ 家計簿から振替」を外したので一緒に外した
+   (麻雀の記録の振替は v6.72 で外してある)。前に振り替えた経費の行は、消すと家計簿へ戻す(_restore)。保存の時に元の記録を消す所(saveSession の _xf)も残す */
 /* 乗り打ちの折半調整: myShareが入力されていればそれを自分の取り分に使う(なければ折半) */
 /* v6.10: **iPhoneの数字キーボードには「−」が無い**(ユーザー指摘: 負けた日に取り分をマイナスで入れられない)。
    符号はボタンで持ち、欄には数字だけを打つ。myShare は "-123" / "123" / ""(=折半) のどれか。
@@ -1320,7 +1297,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.76";
+const APP_VERSION = "6.77";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -4336,6 +4313,93 @@ function dupIdHtml(){
       x.rows.map(r=>'<div class="gl-s">'+esc(r)+'</div>').join("")+dupIdWhy(x)+'</div></div>').join("")+
       (fix ? '<div class="gl-row" id="dupid-fix" data-a="dupfix"><div class="gl-main"><div class="gl-t" style="color:var(--teal)">ID を振り直す</div></div></div>' : '')+'</div>';
 }
+/* v6.77【稼働の経費を、遊技経費へ移す】(ユーザー 11/15 15:28「後セットで経費に入れてたのも全て遊戯経費に移行したいです」・
+   15:34「パチスロの経費も移したいです / 全て遊戯経費で管理したいです。 / 後はオススメで良いですよ」)。
+   麻雀の記録(セット・フリー)と、パチスロの稼働(乗打・単独・代打)に残っている経費の行を、1行ずつ家計簿の**遊技経費**の記録にして、記録からは経費を外す。
+   管理のタブの一番上の板の行を押した時だけ(自動では移さない)。押すと確かめの1問、移す前に控え(自動スナップショット「移す前」)。
+   ・遊技経費の記録の形は、記帳の画面で遊技経費を入れた時と同じ(日付=記録の日・店と品目=経費の行のまま・メモ=[店,品目] を空白で)
+   ・麻雀・乗打・単独: 記録の主の置き場(gspPrimary=記録の最終収支の残りが入る所)の**軍資金から払った**遊技経費(補充は立てない)。
+     記録の最終収支が経費の分だけ上がり、同じ置き場から同じ額が経費で出るので、**置き場の残高・遊技の日と月の合計は動かない**
+   ・代打: **報酬を受け取った財布から払った**遊技経費(記帳の画面で財布を選んだ時と同じく、財布→軍資金の補充を1本ずつ立てる=entryGtSync)。
+     報酬(副業の収入)は経費を引く前の額になり、同じ額が補充で財布から出るので、**財布の残高は動かない**。
+     その月の 副業の収入(+)・振替(入)(+)・遊技の月の合計(経費の分 −)は動く(確かめの1問と ⓘ で伝える)
+   ・金額が0・空の行は、遊技経費にせずに外すだけ
+   **移さない記録**(板に日付と理由を出す。記録も家計簿も1字も変えない):
+   ・金額がマイナスの経費の行がある(遊技経費は支出なので、マイナスにできない)
+   ・家計簿の連携の記録が、記録から作る物と違う(点検の「稼働と家計簿の金額」のずれ・置き場の違い)。移すと書き直すので、ずれの分だけ残高が動いてしまう
+   失うもの: 麻雀の成績(店・ルール別など)から経費が外れる(収支(ゲーム代込)・1時間あたりが経費の分だけ上がる)。経費と卓の紐づけ。
+   家計簿から振り替えた経費を、経費から外して家計簿へ戻す動き(_restore)。記録を消しても、遊技経費の記録は残る */
+const gexpPos = s => (s.expenses||[]).filter(x=>num(x&&x.amount)>0);   /* 遊技経費にする行(0・空の行は外すだけ) */
+const gexpName = r => r.kind==="mj" ? "麻雀("+(r.s.category==="free"?"フリー":"セット")+")" : modeLabel(r.s.mode);
+/* 家計簿の連携の記録が、今の記録から作る物と同じか。比べるのはお金の所だけ(日付・置き場か財布・符号付きの金額)。メモや ID の形は比べない */
+function gexpSync(r){
+  const key=e=>e.date+"|"+(isNet(e) ? "b"+eBWal(e) : "w"+eWal(e))+"|"+(e.type==="income"?e.amount:-e.amount);
+  const now=S.entries.filter(e=>isLinkOf(e, (r.kind==="mj"?"mj-":"slot-")+r.s.id)).map(key).sort().join(",");
+  return now===(r.kind==="mj" ? mjEntriesOf(r.s) : sessEntriesOf(r.s)).map(key).sort().join(",");
+}
+/* 経費の行のある記録を、移す(ok)と移さない(ng・理由つき)に分ける */
+function gexpMoveList(){
+  const all=(S.mjSessions||[]).map(s=>({kind:"mj", s:s})).concat((S.sessions||[]).map(s=>({kind:"slot", s:s})))
+    .filter(r=>(r.s.expenses||[]).length);
+  all.forEach(r=>{ r.why = (r.s.expenses||[]).some(x=>num(x&&x.amount)<0) ? "経費にマイナスの金額があります"
+                         : !gexpSync(r) ? "家計簿の連携の記録と金額が合っていません(開いて保存し直すと直ります)" : ""; });
+  return {ok:all.filter(r=>!r.why), ng:all.filter(r=>r.why)};
+}
+/* 移す記録の数と金額(板・確かめの1問は、これだけを見る) */
+function gexpTally(ok){
+  const t={mj:0, slot:0, n:0, sum:0, dai:0, daiSum:0};
+  ok.forEach(r=>{ const rows=gexpPos(r.s), v=rows.reduce((a,x)=>a+num(x.amount),0);
+    t[r.kind]++; t.n+=rows.length; t.sum+=v;
+    if(r.kind==="slot" && r.s.mode==="dai" && rows.length){ t.dai++; t.daiSum+=v; } });
+  t.what=[t.mj ? "麻雀 "+t.mj+"件" : "", t.slot ? "パチスロ "+t.slot+"件" : ""].filter(Boolean).join("・");   /* 「麻雀 2件・パチスロ 3件」(0件の方は書かない) */
+  return t;
+}
+/* 移す。終わった後に、軍資金(置き場ごと・合計)と所持金(財布ごと・合計)の残高を前と比べ、1円でも違えば全部元へ戻して null
+   (上の gexpSync で確かめてあるので起きないはずだが、お金の記録を一度にたくさん書き直すので、念のため) */
+function gexpMove(){
+  const ok=gexpMoveList().ok;
+  const bal=()=>JSON.stringify([bankPots().map(p=>bankBalance(p.id)), bankBalance(), walletPots().map(w=>walletBalance(null, w.id)), walletBalance(null)]);
+  const b0=bal(), e0=S.entries.slice(), t0=((S.bank||{}).txns||[]).slice(), x0=ok.map(r=>r.s.expenses);
+  let n=0, sum=0;
+  ok.forEach(r=>{
+    const sx=r.s, dai=(r.kind==="slot" && sx.mode==="dai");
+    const wal=dai ? daiWal(sx) : String(walletPots()[0].id);   /* 代打は報酬を受け取った財布。ほかは記帳の画面と同じく一番上の財布を入れておくだけ(補充は立てない) */
+    const bwal=dai ? String(bankPots()[0].id) : gspPrimary(sx);
+    gexpPos(sx).forEach(x=>{
+      const store=String(x.store||"").trim(), item=String(x.item!=null ? x.item : (x.label||"")).trim();
+      const e={id:uid(), date:sx.date, type:"expense", category:"遊技経費", amount:num(x.amount), store:store, item:item,
+        memo:[store,item].filter(Boolean).join(" "), wal:wal, src:"gexp", bwal:bwal};
+      S.entries.push(e);
+      if(dai) entryGtSync(e, wal, e.amount, e.date, bwal);   /* 代打: 財布→軍資金の補充(記帳の画面で財布から払った遊技経費と同じ) */
+      n++; sum+=e.amount;
+    });
+    sx.expenses=[];
+    if(r.kind==="mj") writeMjEntries(sx); else writeSessEntries(sx);
+  });
+  if(bal()!==b0){
+    S.entries=e0; if(S.bank) S.bank.txns=t0; ok.forEach((r,i)=>{ r.s.expenses=x0[i]; });
+    return null;
+  }
+  return {recs:ok.length, n:n, sum:sum};
+}
+const GEXP_INFO="麻雀の記録とパチスロの稼働に、前に入れた<b>経費</b>が残っています(今は、経費は家計簿の<b>遊技経費</b>で記録します)。<br><br>"+
+  "<b>「遊技経費へ移す」</b>を押すと、経費の行を1行ずつ、家計簿の遊技経費の記録(日付は記録の日)にして、記録からは経費を外します。<br><br>"+
+  "<b>軍資金・所持金の残高は変わりません</b>。記録の最終収支が経費の分だけ上がり、同じ額が遊技経費として引かれます(麻雀・乗打・単独は、記録の置き場の軍資金から払った形)。<br><br>"+
+  "<b>代打</b>の経費は、報酬を受け取った財布から払った形にします。代打の報酬(副業の収入)は経費を引く前の額になり、所持金→軍資金の振替が1本ずつ立ちます(その月の振替(入)に数わります)。<br><br>"+
+  "麻雀の成績(店・ルール別など)の収支は、経費を引かない額になります。<br><br>"+
+  "移す前のデータは、控え(バックアップの画面の自動スナップショット「移す前」)に取ってから移します。";
+function gexpMoveHtml(){
+  const L=gexpMoveList();
+  if(!L.ok.length && !L.ng.length) return "";
+  const t=gexpTally(L.ok);
+  return '<div class="gl-h" id="gexp-h">稼働に残っている経費'+infoBtn(GEXP_INFO)+'</div>'+
+    '<div class="card glist" id="gexp">'+
+    (L.ok.length ? '<div class="gl-row" id="gexp-move" data-a="gexpmove"><div class="gl-main"><div class="gl-t" style="color:var(--teal)">遊技経費へ移す</div>'+
+      '<div class="gl-s">'+t.what+' ・ 合計 '+yen(t.sum)+'</div></div></div>' : '')+
+    (L.ng.length ? '<div class="gl-row" id="gexp-ng" style="cursor:default"><div class="gl-main"><div class="gl-t">移せない記録 '+L.ng.length+'件</div>'+
+      L.ng.map(r=>'<div class="gl-s">'+esc(String(r.s.date||"").replace(/-/g,"/")+" "+gexpName(r))+'</div>'+
+        '<div class="gl-s" style="color:var(--amber)">'+esc(r.why)+'</div>').join("")+'</div></div>' : '')+'</div>';
+}
 function viewTool(){
   if(UI.screen==="mjtable") return "";  // 別画面で描画
   /* v6.48: **節ごとに1枚の板**(ユーザー: 管理の中は最初は良いと思ったが、やや煩く見えてきた。
@@ -4366,7 +4430,7 @@ function viewTool(){
   /* v6.57: **「漏れ係数」の行を外した**(ユーザー: 使ってないから消して良いです)。家計簿の板は6行→5行、管理は全部で13行。
      行の右に値を出していたのはこの行だけだったので、そのための .gl-r / .gl-val(CSS)も一緒に外した。
      また値を右に出す行が要る時は、v6.56 の index.html のこの行と CSS の2行を見る */
-  let h = dupIdHtml()+_head("家計簿");   /* v6.72: 同じ ID の記録があった時だけ、一番上に */
+  let h = dupIdHtml()+gexpMoveHtml()+_head("家計簿");   /* v6.72: 同じ ID の記録があった時だけ、一番上に。v6.77: 稼働に経費が残っている時だけ、その下に */
   h += _list([
     _row('data-a="fixed"', "固定費"),
     /* v5.50: **予算の設定に管理タブから入れる**(ユーザー指摘: どこから期間を変えるの)。
@@ -5640,12 +5704,10 @@ function mjtToKakei(){
     splits:(prev[0]&&prev[0].splits)||undefined,
     fromTable:t.id };
   S.mjSessions.push(sess);
-  const fin=mjFinal(sess);
-  const linkId="mj-"+sess.id;
+  const fin=mjFinal(sess);   /* 下の知らせに出す額(家計簿へ書く額と同じ関数) */
   if(!sess.bwal) delete sess.bwal;
   if(!sess.splits) delete sess.splits;
-  writeGameEntries(linkId, {date:sess.date, src:"mahjong", category:"遊技",
-    memo:mjMemo(sess)}, fin, sess);   /* v5.74 / v6.02: メモはmjMemo(店名も入る) */
+  writeMjEntries(sess);   /* v5.74 / v6.02: メモはmjMemo(店名も入る)。v6.77: 書く所は writeMjEntries の1か所に */
   t.reflectedKey = pi+":"+c.net;   /* 反映済みキー: スコア/チップ/レート編集で自動的に未反映へ戻る */
   save();
   render();
@@ -7915,16 +7977,53 @@ function gspClean(sess){
 }
 /* その稼働の連携エントリか(本体 or 分け先) */
 function isLinkOf(e, linkId){ const id=String(e&&e.id); return id===linkId || id.indexOf(linkId+"~")===0; }
-/* 連携エントリを書き直す。古い本体・分け先は**全部消してから**書く(分け先を減らした時に残骸を残さない) */
-function writeGameEntries(linkId, base, fin, sess){
-  S.entries = S.entries.filter(e=>!isLinkOf(e, linkId));
+/* 連携エントリを作る(S.entries には触らない)。本体=残りを主の置き場へ・分け先=分け先の置き場へ。
+   v6.77: 作る所と書く所を分けた——経費を遊技経費へ移す前に、**今の家計簿の連携の記録が、記録から作る物と同じか**を比べる(gexpSync)ため。作る物は v6.76 までと同じ */
+function gameEntriesOf(linkId, base, fin, sess){
   const sp=gspList(sess).filter(x=>x && x.bwal && gspVal(x)!==0);
   const rest=fin - sp.reduce((a,x)=>a+gspVal(x),0);
   const mk=(id,amt,bw,suf)=>({id:id, date:base.date, src:base.src, type:amt>0?"income":"expense",
     category:base.category, amount:Math.abs(amt), bwal:String(bw), memo:base.memo+(suf||"")});
-  if(rest!==0) S.entries.push(mk(linkId, rest, gspPrimary(sess), ""));
-  sp.forEach((x,i)=>S.entries.push(mk(linkId+"~"+(i+1), gspVal(x), x.bwal, " → "+bankName(x.bwal))));
+  const out=[];
+  if(rest!==0) out.push(mk(linkId, rest, gspPrimary(sess), ""));
+  sp.forEach((x,i)=>out.push(mk(linkId+"~"+(i+1), gspVal(x), x.bwal, " → "+bankName(x.bwal))));
+  return out;
 }
+/* 連携エントリを書き直す。古い本体・分け先は**全部消してから**書く(分け先を減らした時に残骸を残さない)。
+   v6.77: 本体の中からは呼ばなくなった(下の writeLinkEntries・writeMjEntries・writeSessEntries が書く)。検査一式が前の版でも同じ書き方で記録を置くのに使うので、同じ名前・同じ動きで残す */
+function writeGameEntries(linkId, base, fin, sess){
+  S.entries = S.entries.filter(e=>!isLinkOf(e, linkId)).concat(gameEntriesOf(linkId, base, fin, sess));
+}
+/* v6.77: **稼働の家計簿の連携の記録を作る所を1つに**(麻雀の記録・パチスロの稼働)。保存(saveMj・saveSession)・スコア表からの反映(mjtToKakei)・
+   経費を遊技経費へ移す(gexpMove)が、同じ関数で作って書く(同じ作り方を何か所にも持たない)。中身は v6.76 までの各所の字のまま */
+/* 代打の報酬を受け取った財布(未設定なら一番上の財布)。報酬の連携の記録(sessEntriesOf)と、代打の経費を移す時(gexpMove)が同じ決まりを使う */
+const daiWal = s => String(s.wal || walletPots()[0].id);
+const mjEntriesOf = sess => gameEntriesOf("mj-"+sess.id, {date:sess.date, src:"mahjong", category:"遊技", memo:mjMemo(sess)}, mjFinal(sess), sess);   /* v6.02: 店名も入れる(メモの形はmjMemoの1箇所) */
+function sessEntriesOf(cleaned){
+  const linkId = "slot-"+cleaned.id;
+  const fin = finalOwn(cleaned);
+  const isDai = cleaned.mode==="dai";
+  /* v5.74: 乗打/単独は置き場を分けられる。代打は従来どおり1行(所持金の財布へ) */
+  if(!isDai){
+    return gameEntriesOf(linkId, {date:cleaned.date, src:"slot", category:"遊技",
+      memo:modeLabel(cleaned.mode)+(cleaned.store?" @"+cleaned.store:"")}, fin, cleaned);
+  }
+  if(fin===0) return [];
+  /* v4.56: **代打報酬をどの財布で受け取ったか**を持たせる(ユーザー指摘)。
+     現金で受け取ることが多いのに、未設定だと移行で先頭の財布(口座)に寄ってしまい実態とズレる。
+     遊技(乗打/単独)は軍資金で完結し所持金に触れないので財布は不要——代打のときだけ効く */
+  return [{id:linkId, date:cleaned.date,
+    src: isDai ? "daida" : "slot",
+    type: fin>0?"income":"expense",
+    category: isDai ? "副業" : "遊技",
+    amount: Math.abs(fin),
+    wal: isDai ? daiWal(cleaned) : undefined,   /* v6.77: 決まりは daiWal の1か所に(出る値は v6.76 と同じ) */
+    bwal: isDai ? undefined : String(cleaned.bwal || bankPots()[0].id),   /* v4.57: どの置き場の金か */
+    memo: modeLabel(cleaned.mode)+(cleaned.store?" @"+cleaned.store:"")}];
+}
+const writeLinkEntries = (linkId, rows) => { S.entries = S.entries.filter(e=>!isLinkOf(e, linkId)).concat(rows); };
+const writeMjEntries = sess => writeLinkEntries("mj-"+sess.id, mjEntriesOf(sess));
+const writeSessEntries = cleaned => writeLinkEntries("slot-"+cleaned.id, sessEntriesOf(cleaned));
 function eBWal(e){ return String(e.bwal || bankPots()[0].id); }
 function tBWal(t){ return String(t.bwal || bankPots()[0].id); }
 function bankSeed(bw){
@@ -9529,6 +9628,8 @@ function mjLogRename(m, from, to){
 /* 今までの欄を畳む行。開くと、その下に v6.70 までと同じ欄が同じ順で出る */
 /* v6.72: 卓の外の ⓘ。金額で入れる記録では、ここは内訳(最終収支は投資・回収で決まる)——v6.71 までは「内訳(分かる分だけ)」の ⓘ に書いてあったが、
    フリーではその見出しを出さなくなったので、ここに書く */
+/* v6.77: 麻雀の記録・パチスロの稼働の経費の ⓘ の最後の一言(2つの ⓘ で同じ字) */
+const GEXP_HINT="<br><br>管理のタブの「遊技経費へ移す」で、家計簿の遊技経費へまとめて移せます(移せない記録は、そこに理由が出ます)。";
 /* v6.76: add = 卓の外を最終収支に足す記録(印 extAdd)。金額で入れる形でも、足す記録では「回収とは別のお金として足す」と書く。
    印の無い記録(前に作った記録で、卓の外に金額の入っている物)は、v6.75 までと同じ「内訳」の文 + この形のままの理由 */
 function mjExtInfo(cash, add){
@@ -9541,7 +9642,7 @@ function mjExtInfo(cash, add){
       : "<br><br>この記録は<b>金額で入れる</b>形なので、ここは<b>内訳(記録用)</b>です。最終収支は、投資と回収だけで決まります。結果の欄では、麻雀だけの勝ち負けを、ここに入れた分と残り(スコア分)に分けて出します。<br><br>前に作った記録で、卓の外に金額の入っている物は、金額が変わらないように、この形のままにしてあります(新しく作る記録では、卓の外は最終収支に足します)。");
 }
 const MJ_EXP_INFO="麻雀の記録に経費を足す機能は、やめました(交通費・飲食などは、家計簿に<b>遊技</b>の経費として記録します)。<br><br>"+
-  "この記録には、前に入れた経費が残っているので出しています。<b>直す・消す</b>はできます。最終収支からは、今までどおり引かれます。";
+  "この記録には、前に入れた経費が残っているので出しています。<b>直す・消す</b>はできます。最終収支からは、今までどおり引かれます。"+GEXP_HINT;   /* v6.77 */
 function mjRawFoldHtml(raw){
   const open=!!UI.mjRawOpen;
   return '<div class="row between" style="align-items:center;padding:12px 16px;margin-bottom:'+(open?'12px':'4px')+';background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer" data-a="mjrawtog">'+
@@ -9727,8 +9828,8 @@ function viewMj(){
         '<button class="btn" style="flex:1;padding:10px 0;font-size:13px" data-a="mjepreset" data-v="'+v+'">'+l+'</button>').join("")+
       '<button class="btn" style="flex:1;padding:10px 0;font-size:13px" data-a="mjeadd">＋ ほか</button></div>';
     if((m.extras||[]).length){
-      h += '<div class="muted mono" style="font-size:11px;margin-top:6px;text-align:right">合計 '+
-        signYen(mjExtraTotal(m))+'</div>';
+      h += '<div class="muted mono" id="mj-extot" style="font-size:11px;margin-top:6px;text-align:right">合計 '+
+        signYen(mjExtraTotal(m))+'</div>';   /* v6.77: 打つたびに refreshMj が書き換える(前は保存し直すまで前の額のままだった) */
     }
   }
   const hRaw=h; h="";   /* v6.71: 3麻/4麻・入れ方・スコアとチップ・着順の回数・同卓者・ゲーム代・卓の外 */
@@ -10038,6 +10139,7 @@ function refreshMj(){
   const su=document.getElementById("mj-summary"); if(su) su.innerHTML=mjSummary(m);
   const hn=document.getElementById("mj-hanchan"); if(hn) hn.textContent="半荘数 "+mjHanchan(m)+(mjAvgRank(m)!==null?" / 平均着順 "+mjAvgRank(m).toFixed(2):"");
   const ff=document.getElementById("mj-feeformula"); if(ff) ff.textContent=mjFeeFormula(m);
+  const xt=document.getElementById("mj-extot"); if(xt) xt.textContent="合計 "+signYen(mjExtraTotal(m));   /* v6.77: 卓の外の合計 */
   const fa=document.getElementById("mj-feeauto"); if(fa) fa.textContent="¥"+mjGameFee(m).toLocaleString("ja-JP");
   { const ld=document.getElementById("mj-logdiff"); if(ld && mjHasLog(m)) ld.innerHTML=mjLogDiffHtml(m); }   /* v6.71 */
   /* v5.74: 最終収支が動けば「残り」も動く(スコアや投資を直しながら分け先を見ても嘘にならないように) */
@@ -10079,11 +10181,8 @@ function saveMj(){
     mjlUiFresh();
     UI.mjlPending=false;
   }
-  const linkId = "mj-"+m.id;
-  const fin = mjFinal(cleaned);
-  /* v5.74: 置き場を分けていれば分け先ごとに書く(分けていなければ従来と同じ1行) */
-  writeGameEntries(linkId, {date:cleaned.date, src:"mahjong", category:"遊技",
-    memo:mjMemo(cleaned)}, fin, cleaned);   /* v6.02: 店名も入れる(メモの形はmjMemoの1箇所) */
+  /* v5.74: 置き場を分けていれば分け先ごとに書く(分けていなければ従来と同じ1行)。v6.77: 書く所は writeMjEntries の1か所に */
+  writeMjEntries(cleaned);
   /* 家計簿からの振替: 選択元の記録をここで削除(保存とワンセット) */
   const _xf = new Set((cleaned.expenses||[]).map(x=>String(x.fromEntry)).filter(x=>x!=="undefined"&&x!=="null"));
   if(_xf.size) S.entries = S.entries.filter(e=>!_xf.has(String(e.id)));
@@ -10111,6 +10210,20 @@ function bindMain(){
         if(!confirm("同じ ID の家計簿の記録 "+fx.length+"組の、2件目から後("+n0+"件)に、新しい ID を振ります。\n\n記録の中身・月の合計・残高は変わりません。"+
           (rest ? "\n\n振り直せない "+rest+"組は、そのまま残ります。" : ""))) return;
         const r=dupIdFix(); save(); render(); toast("ID を振り直しました("+r.n+"件)");
+      }
+      /* v6.77: 稼働の経費を遊技経費へ移す(管理のタブの一番上の板)。確かめ → 控え → 移す */
+      else if(a==="gexpmove"){
+        const L=gexpMoveList(); if(!L.ok.length) return;
+        const t=gexpTally(L.ok);
+        if(!confirm("稼働の経費 "+t.n+"行(合計 "+yen(t.sum)+")を、家計簿の遊技経費へ移します("+t.what+")。\n\n"+
+          "軍資金・所持金の残高は変わりません。経費は記録から外れ、同じ日の遊技経費になります。\n\n麻雀の成績の収支は、経費を引かない額になります。"+
+          (t.dai ? "\n\n代打 "+t.dai+"件の経費("+yen(t.daiSum)+")は、報酬を受け取った財布から払った形にします(代打の報酬は経費を引く前の額になり、所持金→軍資金の振替が立ちます)。" : "")+
+          (L.ng.length ? "\n\n移せない記録 "+L.ng.length+"件は、そのまま残ります。" : "")+
+          "\n\n移す前のデータを、控え(自動スナップショット「移す前」)に取ります。")) return;
+        takeSnap("移す前");
+        const r=gexpMove();
+        if(!r){ alert("移せませんでした。残高が変わってしまうので、何も変えずに元へ戻しました。"); render(); return; }
+        save(); render(); toast("遊技経費へ移しました("+r.n+"件)");
       }
       else if(a==="invest"){ UI.screen="invest"; render(); }
       else if(a==="bank"){ UI.screen="bank"; render(); }
@@ -13504,6 +13617,9 @@ function nameHints(){
   return seen.slice(0,5);
 }
 
+/* v6.77: 稼働の経費の ⓘ(麻雀の記録の MJ_EXP_INFO と同じ形) */
+const SESS_EXP_INFO="稼働に経費を足す機能は、やめました(飲食などは、家計簿に<b>遊技経費</b>として記録します)。<br><br>"+
+  "この稼働には、前に入れた経費が残っているので出しています。<b>直す・消す</b>はできます。最終収支からは、今までどおり引かれます。"+GEXP_HINT;
 function viewSession(){
   const s = UI.draft;
   let h = '<div class="hdr"><button class="navbtn" data-a="back">‹ 戻る</button>'+
@@ -13607,7 +13723,12 @@ function viewSession(){
   }
 
   /* ----- 経費 ----- */
-  h += band("経費(飲食など)");
+  /* v6.77【稼働の経費をやめた】(ユーザー 11/15 15:34「パチスロの経費も移したいです / 全て遊戯経費で管理したいです。」)。麻雀の記録(v6.72)と同じ形:
+     「＋ 経費を追加」と「⇄ 家計簿から振替」を外した。**前の稼働に経費が入っている時だけ**、その行を出す(直す・消すはできる。足せない)。
+     計算(expTotal → finalOwn)と、家計簿から振り替えた行を消した時に家計簿へ戻す動き(_restore)は、そのまま。
+     残っている経費は、管理のタブの「遊技経費へ移す」で遊技経費の記録へ移せる(gexpMove) */
+  if((s.expenses||[]).length){
+  h += band("経費(飲食など)", null, SESS_EXP_INFO);
   (s.expenses||[]).forEach(x=>{
     h += '<div class="row" style="gap:6px;margin-bottom:6px">'+
       '<input class="input sm" placeholder="店名" value="'+esc(x.store||"")+'" style="flex:1" data-in="xstore" data-v="'+x.id+'">'+
@@ -13615,9 +13736,7 @@ function viewSession(){
       '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="金額" value="'+esc(x.amount)+'" style="flex:0.9;min-width:72px" data-in="xamount" data-v="'+x.id+'">'+
       '<button class="xbtn" data-a="xdel" data-v="'+x.id+'">×</button></div>';
   });
-  h += '<button class="btn dash full" data-a="xadd">＋ 経費を追加</button>';
-  h += '<button class="btn dash full" style="margin-top:6px" data-a="xfopen">⇄ 家計簿から振替</button>';
-  if(UI.xferOpen){ h += xferHint() + xferRowsHtml(xferCandidates(s.date, s.expenses), "xfpick"); }
+  }
 
   /* ----- サマリー ----- */
   h += band("このセッションの結果");
@@ -13639,7 +13758,7 @@ function sessionSummary(s){
         '<span class="mono '+clsPM(dai)+'" style="font-size:16px;font-weight:700">'+signYen(dai)+'</span></div></div>';
     }
     h += srow("報酬", num(s.fee));
-    h += srow("経費(自分負担分)", -expTotal(s));
+    if(expTotal(s)) h += srow("経費(自分負担分)", -expTotal(s));   /* v6.77: 経費がある時だけ(足す所を外したので、ほとんどの稼働は0) */
     const fin = finalOwn(s);
     h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>'+
       '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">代打ち報酬(家計簿の収入へ)'+infoBtn("代打ち(依頼を受けて、他人の代わりに打つこと)でもらう報酬は<b>働いて得た収入</b>なので、家計簿の収入(分類: 副業)として記録します。遊技の勝ち負けではないので、軍資金には入りません。")+'</span>'+
@@ -13674,7 +13793,7 @@ function sessionSummary(s){
     if(adjusted) h += '<div class="muted" style="font-size:11px;margin-bottom:2px">折半'+signYen(half)+'から調整済み(差'+signYen(mine-half)+')</div>';
   }
   if(s.mode==="nori"){
-    h += srow("経費(自分負担分)", -expTotal(s));
+    if(expTotal(s)) h += srow("経費(自分負担分)", -expTotal(s));   /* v6.77: 経費がある時だけ(足す所を外したので、ほとんどの稼働は0) */
     const fin = finalOwn(s);
     h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>'+
       '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">最終収支(家計簿へ連携)</span>'+
@@ -13682,7 +13801,7 @@ function sessionSummary(s){
     return h;
   }
   h += srow("自分の収支", grossOwn(s));
-  h += srow("経費(自分負担分)", -expTotal(s));
+  if(expTotal(s)) h += srow("経費(自分負担分)", -expTotal(s));   /* v6.77 */
   const fin = finalOwn(s);
   h += '<div style="height:1px;background:var(--line);margin:8px 0"></div>'+
     '<div class="row between" style="align-items:baseline"><span style="font-size:12px;font-weight:700">最終収支(家計簿へ連携)</span>'+
@@ -14207,7 +14326,7 @@ function bindSessionActions(){
         const m=s.machines.find(x=>String(x.id)===String(mid));
         if(m){ m.segments=(m.segments||[]).filter(x=>String(x.id)!==String(gid)); render(); }
       }
-      else if(a==="xadd"){ s.expenses.push({id:uid(),store:"",item:"",amount:""}); render(); }
+      /* v6.77: 「＋ 経費を追加」(xadd)と「⇄ 家計簿から振替」(xfopen・xfpick)は外した。消す(xdel)は残す */
       else if(a==="xdel"){
         const x = s.expenses.find(e=>String(e.id)===String(v));
         if(x && x.fromData){
@@ -14215,11 +14334,6 @@ function bindSessionActions(){
           (s._restore=s._restore||[]).push(x.fromData);
         }
         s.expenses=s.expenses.filter(e=>String(e.id)!==String(v)); render();
-      }
-      else if(a==="xfopen"){ UI.xferOpen=!UI.xferOpen; render(); }
-      else if(a==="xfpick"){
-        const e=(S.entries||[]).find(x=>String(x.id)===String(v));
-        if(e){ s.expenses.push({id:uid(), store:e.store||"", item:(e.item||e.memo||e.category||"支出"), amount:String(num(e.amount)), fromEntry:e.id, fromData:Object.assign({},e)}); UI.xferOpen=false; render(); }
       }
       else if(a==="sdel"){
         if(!confirm("この稼働記録を削除しますか?(家計簿の連携分も消えます)")) return;
@@ -14254,29 +14368,8 @@ function saveSession(){
   if(num(cleaned.pExchange)>0) S.rates.pExchange = cleaned.pExchange;
   if(num(cleaned.pushPayout)>0) S.rates.pushPayout = cleaned.pushPayout;
   if(num(cleaned.pushDraw)>0) S.rates.pushDraw = cleaned.pushDraw;
-  /* 家計簿連携 */
-  const linkId = "slot-"+s.id;
-  const fin = finalOwn(cleaned);
-  const isDai = cleaned.mode==="dai";
-  /* v5.74: 乗打/単独は置き場を分けられる。代打は従来どおり1行(所持金の財布へ) */
-  if(!isDai){
-    writeGameEntries(linkId, {date:cleaned.date, src:"slot", category:"遊技",
-      memo:modeLabel(cleaned.mode)+(cleaned.store?" @"+cleaned.store:"")}, fin, cleaned);
-  }
-  else S.entries = S.entries.filter(e=>!isLinkOf(e, linkId));
-  if(isDai && fin!==0){
-    /* v4.56: **代打報酬をどの財布で受け取ったか**を持たせる(ユーザー指摘)。
-       現金で受け取ることが多いのに、未設定だと移行で先頭の財布(口座)に寄ってしまい実態とズレる。
-       遊技(乗打/単独)は軍資金で完結し所持金に触れないので財布は不要——代打のときだけ効く */
-    S.entries.push({id:linkId, date:cleaned.date,
-      src: isDai ? "daida" : "slot",
-      type: fin>0?"income":"expense",
-      category: isDai ? "副業" : "遊技",
-      amount: Math.abs(fin),
-      wal: isDai ? String(cleaned.wal || walletPots()[0].id) : undefined,
-      bwal: isDai ? undefined : String(cleaned.bwal || bankPots()[0].id),   /* v4.57: どの置き場の金か */
-      memo: modeLabel(cleaned.mode)+(cleaned.store?" @"+cleaned.store:"")});
-  }
+  /* 家計簿連携(v6.77: 書く所は writeSessEntries の1か所に。中身は v6.76 までここにあった字のまま) */
+  writeSessEntries(cleaned);
   /* 家計簿からの振替: 選択元の記録をここで削除(保存とワンセット) */
   const _xf = new Set((cleaned.expenses||[]).map(x=>String(x.fromEntry)).filter(x=>x!=="undefined"&&x!=="null"));
   if(_xf.size) S.entries = S.entries.filter(e=>!_xf.has(String(e.id)));
@@ -14457,7 +14550,7 @@ function snapListHtml(){
   let h = '<div class="card" style="padding:2px 16px;margin-bottom:4px">'+
     '<div class="row" style="align-items:center;gap:8px;padding:9px 0">'+
     '<div style="flex:1;font-size:12px">'+sn.length+'世代保持中 <span class="muted" style="font-size:11px">・最新 '+fmt(sn[0].ts)+'</span>'+
-      infoBtn("データ全体の控え(スナップショット)です。1日1回の起動時と、復元やクラウド同期でデータを上書きする直前(と、半荘の記録で名前をまとめる直前)に、この端末の中へ自動で保存されます。<br><br>上書きで困ったことが起きても、「表示」から一覧を開いて前の状態に戻せます。")+'</div>'+
+      infoBtn("データ全体の控え(スナップショット)です。1日1回の起動時と、復元やクラウド同期でデータを上書きする直前(と、半荘の記録で名前をまとめる直前・稼働の経費を遊技経費へ移す直前)に、この端末の中へ自動で保存されます。<br><br>上書きで困ったことが起きても、「表示」から一覧を開いて前の状態に戻せます。")+'</div>'+
     '<button class="btn" style="padding:7px 12px;font-size:12px;color:var(--text)" data-a="snaptoggle">'+(UI.snapOpen?"閉じる":"表示")+'</button></div>';
   if(UI.snapOpen){
     h += sn.map((s,i)=>{
