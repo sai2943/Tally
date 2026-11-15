@@ -206,6 +206,7 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .mjl-tbl td.no{width:34px; color:var(--muted); font-size:11px;}
   .mjl-tbl td.x{width:26px; color:var(--red);}
+  .mjl-tbl td.tm{color:var(--muted); font-size:11px;}   /* v6.75: 締めた記録の表の右端の時刻(その半荘を記録した時刻) */
   .mjl-tbl tr.nm td{font-family:inherit; font-size:11px; color:var(--muted); background:var(--surface2); padding:5px 2px;}
   .mjl-tbl tr.ed td{background:rgba(242,179,61,.12);}
   .mjl-tbl td.oya{box-shadow:inset 0 0 0 1px rgba(242,179,61,.55); border-radius:6px;}   /* v6.36: その半荘の親の席 */
@@ -458,7 +459,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.74 (localStorage保存・完全オフライン)
+   Tally 6.75 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1302,7 +1303,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.74";
+const APP_VERSION = "6.75";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -2307,7 +2308,7 @@ function viewMjConf(){
       'data-mc="seats" data-v="'+n+'">'+n+'麻</button>').join("")+
     '</div>'+
     /* v6.70: 一番下の文(「チップ・飛びをOFFにすると…」)は ⓘ へ(総点検 A6) */
-    tog("チップを使う"+infoBtn("チップ・飛びを OFF にすると、記録の画面に出さず、精算でも数えません。"), c.useChip, 'data-mc="chip"')+
+    tog("チップを使う"+infoBtn("チップ・飛びを OFF にすると、記録の画面に出さず、精算でも数えません。<br><br>チップは、はじめは OFF です(チップを付けた卓では ON のまま)。"), c.useChip, 'data-mc="chip"')+
     tog("飛びを使う", c.useTobi, 'data-mc="tobi"')+
     tog("馬身を使う", c.useUma, 'data-mc="uma"')+
     '</div>';
@@ -2756,7 +2757,7 @@ function bindMjLog(){
         const snap=mjlSnap();   /* v6.71: この卓の半荘の記録の写し(麻雀の記録に持たせる) */
         const rc=[1,2,3,4].slice(0,c.seats).map(k=>String(t.rank[k]||0));
         UI.mjDraft={
-          id:uid(), date:todayStr(), shop:"", store:"", category:"free", rule:String(c.seats),
+          id:uid(), date:(mjlStartDay()||todayStr()), shop:"", store:"", category:"free", rule:String(c.seats),   /* v6.75: 打ち始めた日(分からなければ締めた日) */
           /* v5.65: 半荘の記録は**卓の精算額**を持っていて、買った額・換金額は知らない。
              無い数字を作らず、この経路は素点(=金額)モードのままにする */
           calc:"score", inAmt:"", outAmt:"",
@@ -6087,7 +6088,11 @@ function mjLogConf(){
           seats:num(c.seats)||3,
           useUma:(c.useUma===undefined ? true : !!c.useUma),
           useTobi:(c.useTobi===undefined ? true : !!c.useTobi),
-          useChip:(c.useChip===undefined ? true : !!c.useChip)};   /* v6.17 */
+          /* v6.17。v6.75【既定は OFF】(ユーザー 11/15 07:23「3もそれでいい」・11:25「フリーだけです、セットは確実にチップはカウントするので使います」)。
+             半荘の記録はフリーの卓の物(締めるとフリーの記録になる。セットはスコア表で付ける=ここは見ない)ので、ここの既定を OFF にする。
+             **この卓にチップが1枚でも入っていれば ON のまま**(既定を変えただけで、打ちかけの卓の数えたチップが精算から外れないように)。
+             設定で一度でも押してあれば(true/false が入っていれば)、その選び方のまま */
+          useChip:(c.useChip===undefined ? num(c.chip)!==0 : !!c.useChip)};
 }
 /* v5.90: 精算の内訳(ゲーム代・スコア分・卓の外・最終収支)。**精算欄を打っている最中も書き換えられるよう関数に切り出した**
    (欄そのものは描き直さない=キーボードが閉じない) */
@@ -6144,6 +6149,8 @@ function mjlTableParts(o){
   const hidLab=(hid>1 ? '1〜'+hid : '1')+'半荘目';
   const E=i=> live ? ' data-ml="edit" data-v="'+i+'"' : '';                          /* 行を押して直す */
   const X=i=> live ? '<td class="x" data-ml="del" data-v="'+i+'">✕</td>' : '';      /* ✕で消す */
+  /* v6.75: 右端の時刻の列(o.tm。締めた記録の表だけ)。その半荘を記録した時刻 t。持っていない行(v6.30 までの行)は空 */
+  const TM=r=> o.tm ? '<td class="tm">'+(num(r&&r.t) ? tsHM(r.t) : '')+'</td>' : '';
   let prev=null, body='';
   if(hid) body+='<tr class="more"><td colspan="'+(ncol+2)+'" data-ml="histtog">'+
     (all ? '▾ '+hidLab+'を畳む' : '▸ '+hidLab+'も見る')+'</td></tr>';
@@ -6155,7 +6162,7 @@ function mjlTableParts(o){
       if(vis) body+='<tr'+edc+'><td class="no"'+E(i)+'>'+(i+1)+'</td>'+
         '<td colspan="'+ncol+'"'+E(i)+' style="font-family:inherit;text-align:left;padding-left:8px">'+
         '<b>自分 '+(r.rank||'-')+'着</b>'+(o.useUma&&num(r.uma)?' <span class="muted">馬身'+(num(r.uma)>0?'+':'−')+Math.abs(num(r.uma))+'</span>':'')+'</td>'+
-        X(i)+'</tr>';
+        X(i)+TM(r)+'</tr>';
       prev=null; return;
     }
     const brk=(!prev || prev.join(",")!==st.join(",") || r.ev==="卓移動");
@@ -6183,7 +6190,8 @@ function mjlTableParts(o){
           if(pid==null) return '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>';
           const chg=!mv && prev && prev[k]!==pid;
           return '<td style="'+(pid==="me"?'font-weight:700;color:var(--text)':'')+(chg?';color:var(--amber)':'')+(mv?';border-top:2px solid var(--blue)':'')+'">'+esc(name(pid))+'</td>'; }).join("")+
-        (live ? '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>' : '')+'</tr>';
+        (live ? '<td'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>' : '')+
+        (o.tm ? '<td class="tm"'+(mv?' style="border-top:2px solid var(--blue)"':'')+'></td>' : '')+'</tr>';
       prev=st;
     }
     if(vis) body+='<tr'+edc+'><td class="no"'+E(i)+'>'+(i+1)+'</td>'+
@@ -6193,7 +6201,7 @@ function mjlTableParts(o){
         const col= rk===1 ? RK[0] : (rk===st.length ? RK[RK.length-1] : (RK[rk-1]||"var(--text)"));
         const oy=(r.oya!=null && num(r.oya)===k);   /* v6.36: その半荘の親の席に「親」(並びが斜めに続かない所が、親が飛んだ所) */
         return '<td'+E(i)+(oy?' class="oya"':'')+' style="color:'+col+(pid==="me"?';font-weight:700':'')+'">'+(oy?'<span class="oyl">親</span>':'')+(rk||'')+'</td>'; }).join("")+
-      X(i)+'</tr>';
+      X(i)+TM(r)+'</tr>';
   });
   return {ncol:ncol, body:body};
 }
@@ -6322,6 +6330,12 @@ function mjlStartHM(){
   if(first && first-t0>MJL_T0_STALE_MS) return "";
   return tsHM(t0);
 }
+/* v6.75【記録の日付を、打ち始めた日に】(ユーザー 11/15 07:23「1の記録の日付を打ち始めた日にするのはok」。1 = v6.72 を渡した時の案③)。
+   締めた時の下書きの日付を、締めた日から**始まり(t0 = 席を決めた時刻)の日**にする。日をまたいで打った卓が、次の日の記録にならないように
+   (月・予算の期間も、打ち始めた日の側で数える)。**始まりの時刻が下書きに入る時(mjlStartHM() が空でない時)だけ**——
+   t0 が無い卓(v6.72 より前から打っている卓)・席を決めてから最初の半荘まで3時間より空いた卓は、今までどおり締めた日。欄はそのまま直せる */
+function tsDay(t){ const d=new Date(num(t)); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function mjlStartDay(){ return mjlStartHM() ? tsDay((S.mjLog||{}).t0) : ""; }
 function mjlEndHM(){
   const last=mjlLastT(), now=Date.now();
   return (last && now-last>MJL_END_LATE_MS) ? tsHM(last) : tsHM(now);
@@ -9360,6 +9374,7 @@ const mjLogNm = (m, id) => id==="me" ? "自分" : String(((m.log||{}).people||{}
 const mjBetOf = (m, k) => ((m&&m.extras)||[]).find(x=>x && x.k===k) || null;   /* 「卓の外」の行のうち、その相手との差し馬(sa:)・馬身(um:)の行 */
 const MJ_LOG_INFO="締めた時の<b>半荘の記録</b>を、そのまま残した物です。列は席(A・B・C…)、マスはその半荘の着順です。<b>親</b>は、その半荘の親の席。途中で人が替わった所には、名前の行が入ります(交代・卓移動・席替え)。<br><br>"+
   "この表は<b>見るだけ</b>です。着順の回数やスコアを直す時は、一番下の「数字を直す」を開いてください(表は、締めた時のまま残ります)。<br><br>"+
+  "右の端の<b>時刻</b>は、その半荘を記録した時刻(着順がそろった時刻)です。<br><br>"+
   "表の下の小さい字は、締めた時のチップと飛びの数、店での精算の額です。";
 const MJ_VS_INFO="半荘ごとの全員の着順から、相手ごとの成績を出しています。<b>上</b> = 自分の方が上の着順だった回数、<b>下</b> = 相手の方が上だった回数です。<br><br>"+
   "<b>差し馬・馬身は、締めた後からでも足せます。</b>ボタンを押すと、その相手との分が「卓の外」に入り、最終収支に足されます。もう一度押すと外れます。締める前に選んだ分は、押してある形で出ます。<br><br>"+
@@ -9371,7 +9386,9 @@ const MJ_RAW_INFO="半荘の記録から入った数字を、手で直す所で�
 /* 半荘ごとの着順(締めた時の写し。見るだけ)。表の中身は、半荘の記録の画面と同じ mjlTableParts */
 function mjLogCardHtml(m){
   const G=m.log, rows=mjLogRowsOf(m), seats=num(G.seats)||mjRankCount(m);
-  const tb=mjlTableParts({rows:rows, seats:seats, name:id=>mjLogNm(m,id), useUma:true});
+  /* v6.75【表に半荘ごとの時刻】(ユーザー 11/15 07:23「5と6もそれで」。6 = 案⑧のうち時刻)。行が時刻を1つでも持っていれば、右端に時刻の列 */
+  const tm=rows.some(r=>num(r.t)>0);
+  const tb=mjlTableParts({rows:rows, seats:seats, name:id=>mjLogNm(m,id), useUma:true, tm:tm});
   const cnt=mjLogCnt(m);
   const RANKS=[1,2,3,4].slice(0, seats);
   const foot=[];
@@ -9386,7 +9403,7 @@ function mjLogCardHtml(m){
       RANKS.map(k=>'<span class="muted" style="margin-left:8px">'+k+'着 <span style="color:var(--text);font-weight:700">'+(cnt[k]||0)+'</span></span>').join("")+
     '</span></div>'+
     '<table class="mjl-tbl"><thead><tr><th style="width:34px">回</th>'+
-    MJL_SEATS.slice(0,tb.ncol).map(L=>'<th>'+L+'</th>').join("")+'</tr></thead>'+
+    MJL_SEATS.slice(0,tb.ncol).map(L=>'<th>'+L+'</th>').join("")+(tm ? '<th style="width:40px">時刻</th>' : '')+'</tr></thead>'+
     '<tbody>'+tb.body+'</tbody></table>'+
     '<div style="padding:8px 6px;border-top:1px solid var(--line);font-size:11px">'+
       (foot.length ? '<div class="muted mono">締めた時: '+esc(foot.join(" ・ "))+'</div>' : '')+
@@ -9791,7 +9808,8 @@ function mjSummary(m){
         h += sub(nm, -num(x.amount));
       });
     }
-    h += '<div style="height:1px;background:var(--line);margin:12px 0 8px"></div>';
+    /* v6.75: 上に何も無い時(投資・回収・経費が空)は、線と上の空きを出さない=最終収支の1行だけ(ユーザー 11/15 07:23「5と6もそれで」。5 = 案⑦) */
+    if(h) h += '<div style="height:1px;background:var(--line);margin:12px 0 8px"></div>';
     h += srow("最終収支(家計簿へ連携)", mjFinal(m), true);
     return h;
   }
