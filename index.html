@@ -459,7 +459,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.77 (localStorage保存・完全オフライン)
+   Tally 6.78 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1297,7 +1297,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.77";
+const APP_VERSION = "6.78";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -6683,6 +6683,8 @@ function mjlSetupDraft(){
 }
 /* 名前のボタンに出す人: 前の卓の人(リセットした卓) → 最近の麻雀の記録の同卓者(新しい日から)。仮称・消した名前は出さない。
    ボタンは8人まで(all=true なら全員。名前を消す一覧で使う) */
+/* v6.78: 名前のボタンの形(半荘の記録の席を聞くカードと、手で入れる麻雀の記録の同卓者で同じ形) */
+const MJ_NAME_BTN='style="font-size:14px;padding:9px 14px;font-weight:600"';
 function mjlSetupCands(all){
   const out=[], seen=new Set(), hid=mjlHiddenNames();
   const add=nm=>{ nm=String(nm==null?"":nm).trim(); if(!nm || nm==="自分" || mjlIsX(nm) || hid.has(nm) || seen.has(nm)) return; seen.add(nm); out.push(nm); };
@@ -6696,7 +6698,7 @@ const MJL_SETUP_INFO="卓の座順を A・B・C(4麻なら D)として、<b>自�
   "決めた後に変える時は、座席の「交代」と「自分の席」で。リセットした後と卓を締めた後は、次の卓でまたここから聞きます。";
 function viewMjlSetup(){
   const d=mjlSetupDraft(), n=d.pick.length, me=d.pick.indexOf("me"), cands=mjlSetupCands();
-  const B='style="font-size:14px;padding:9px 14px;font-weight:600"';
+  const B=MJ_NAME_BTN;   /* v6.78: 形は MJ_NAME_BTN の1か所に(字は前と同じ) */
   let h='<div class="card" style="margin-bottom:12px">'+
     '<div class="fxl">この卓の席'+infoBtn(MJL_SETUP_INFO)+'</div>'+
     '<div class="row between" style="align-items:center;gap:8px;padding:4px 0 10px">'+
@@ -9650,6 +9652,35 @@ function mjRawFoldHtml(raw){
     '<span class="muted" style="font-size:11px;flex-shrink:0;margin-left:8px">スコア・回数・ゲーム代</span></div>'+
     (open ? raw : '');
 }
+/* v6.78【(キ)】手で入れる麻雀の記録の、同卓者の名前のボタンとゲーム代を畳む行 */
+const MJ_PLAYERS_INFO="一緒に打った人を、<b>名前のボタン</b>で選びます(自分は入れません。最大5名)。もう一度押すと外れます。<br><br>"+
+  "名前のボタンは、半荘の記録で席を聞く時と同じです(前の卓の人と、最近の麻雀の記録の同卓者。名前のボタンから消した名前は出しません)。ボタンに無い人は「名前を入れる」から。<br><br>"+
+  "稼働の一覧のカードに表示されます。";
+/* 選んでいる同卓者(空と前後の空白は落とす) */
+const mjPlayersSel = m => (m.players||[]).map(p=>String(p==null?"":p).trim()).filter(Boolean);
+/* 押した名前を選ぶ/外す。足した時 true(5名を超える時は足さずに知らせる) */
+function mjPlayerToggle(m, nm){
+  nm=String(nm==null?"":nm).trim(); if(!nm) return false;
+  const pl=mjPlayersSel(m);
+  if(pl.indexOf(nm)>=0){ m.players=pl.filter(p=>p!==nm); return false; }
+  if(pl.length>=5){ toast("同卓者は5名までです"); return false; }
+  m.players=pl.concat([nm]); return true;
+}
+/* ゲーム代の設定が1つでも入っているか */
+const mjFeeSet = m => !!(num(m.baseFee) || num(m.topBonus) || num(m.feeBack) || num(m.drinkFee));
+/* ゲーム代の欄を開いて出すか。押した時の状態は、開いている下書き(UI.mjDraft の中身そのもの)にだけ効く=記録を開き直すと、また既定の形
+   既定: 新しい記録は開く(過去のルールのボタンを押すと畳む)・前の記録はゲーム代の設定が入っていれば畳む */
+function mjFeeOpen(m){
+  const st=UI.mjFeeOpen;
+  if(st && st.d===m) return st.open;
+  return !!UI.mjIsNew || !mjFeeSet(m);
+}
+/* 畳んだ行の字: 入っている設定だけ(何も無ければ「設定なし」)。狭い画面(幅 375 など)で2行になる時も、1つの設定の途中では折らない(・の所で折る) */
+function mjFeeLine(m){
+  const fp=[num(m.baseFee)?"基本 "+num(m.baseFee):"", num(m.topBonus)?"トップ賞 "+num(m.topBonus):"",
+    num(m.feeBack)?"バック "+num(m.feeBack)+(mjBackFixed(m)?"(固定)":"(1半荘)"):"", num(m.drinkFee)?"ドリンク "+num(m.drinkFee):""].filter(Boolean);
+  return fp.length ? fp.map(x=>'<span class="nw">'+x+'</span>').join(" ・ ") : "設定なし";
+}
 function viewMj(){
   const m = UI.mjDraft;
   const lg = mjHasLog(m);   /* v6.71: 半荘の記録から来た記録(締めた時の写しを持つ) */
@@ -9692,11 +9723,20 @@ function viewMj(){
     '<input class="input mono" type="time" id="mj-tstart" value="'+esc(m.startAt||"")+'" style="flex:1">'+
     '<span class="muted" style="font-size:12px">〜</span>'+
     '<input class="input mono" type="time" id="mj-tend" value="'+esc(m.endAt||"")+'" style="flex:1"></div>';
+  /* v6.78【(キ) 手で入れる画面を短く】(ユーザー 11/15 07:23「4もそれで」= v6.72 を渡した時の案4・18:05「これで良いです」= 18:02 の絵の形)。
+     ①手で入れる記録(半荘の記録の写しの無い記録)では、フリー・セットと 4麻・3麻 を1行に(つながった帯 .seg を2つ横に)。
+     半荘の記録から締めた記録は、今までどおり フリー・セットはここ・4麻・3麻は「数字を直す」の中(画面を変えないと伝えた) */
+  if(lg){
   h += '<div class="row" style="gap:8px;margin-bottom:10px">'+
     [["free","フリー"],["set","セット"]].map(([v,l])=>
       '<button class="btn '+(m.category===v?"sel":"")+'" style="flex:1" data-a="mjcat" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
+  } else {
+    h += '<div class="row" id="mj-kind" style="gap:8px;margin-bottom:12px">'+
+      segHtml(2, [{at:'data-a="mjcat" data-v="free"', html:"フリー", cls:isFree?"sel":""}, {at:'data-a="mjcat" data-v="set"', html:"セット", cls:isFree?"":"sel"}], "flex:1")+
+      segHtml(2, [{at:'data-a="mjrule" data-v="4"', html:"4麻", cls:m.rule==="4"?"sel":""}, {at:'data-a="mjrule" data-v="3"', html:"3麻", cls:m.rule==="3"?"sel":""}], "flex:1")+'</div>';
+  }
   const hTop=h; h="";   /* v6.71: ここまでが 日付・店・ルール・実働・フリー/セット。ここから下を塊に分ける(並べるのは最後) */
-  h += '<div class="row" style="gap:8px;margin-bottom:12px">'+
+  if(lg) h += '<div class="row" style="gap:8px;margin-bottom:12px">'+   /* v6.78: 手で入れる記録では、上の1行(フリー・セットの右)へ */
     [["4","4麻"],["3","3麻"]].map(([v,l])=>
       '<button class="btn '+(m.rule===v?"sel":"")+'" style="flex:1" data-a="mjrule" data-v="'+v+'">'+l+'</button>').join("")+'</div>';
 
@@ -9756,6 +9796,19 @@ function viewMj(){
   h += '</div>';
   h += '<div class="muted mono" style="font-size:11px;text-align:right" id="mj-hanchan">半荘数 '+mjHanchan(m)+(mjAvgRank(m)!==null?' / 平均着順 '+mjAvgRank(m).toFixed(2):'')+'</div>';
 
+  /* v6.78: ②手で入れる記録の同卓者は、名前のボタンで選ぶ(押すと選ぶ・もう一度で外す・最大5名)。ボタンに出す人は、半荘の記録で席を聞く時と同じ(mjlSetupCands)。
+     ボタンに無い人は「名前を入れる」→ 欄に打って「足す」。半荘の記録から締めた記録は、今までどおりの欄(画面を変えないと伝えた) */
+  if(!lg){
+    h += band("同卓者", null, MJ_PLAYERS_INFO);
+    const sel=mjPlayersSel(m), cands=mjlSetupCands();
+    h += '<div class="row" id="mj-players" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">'+
+      sel.filter(nm=>cands.indexOf(nm)<0).concat(cands).map(nm=>
+        '<button class="btn'+(sel.indexOf(nm)>=0?' sel':'')+'" '+MJ_NAME_BTN+' data-a="mjpick" data-v="'+esc(nm)+'">'+esc(nm)+'</button>').join("")+
+      '<button class="btn" style="font-size:13px;padding:9px 12px" data-a="mjpname">名前を入れる</button></div>';
+    if(UI.mjPNew && UI.mjPNew.d===m) h += '<div class="row" style="gap:8px;margin-bottom:6px">'+
+      '<input class="input" id="mj-pnew" placeholder="名前" value="'+esc(UI.mjPNew.v||"")+'" style="flex:1">'+
+      '<button class="btn sel" style="padding:9px 16px;flex-shrink:0" data-a="mjpnew">足す</button></div>';
+  } else {
   h += band("同卓者", null, "一緒に打った人の名前を入れておく欄です(自分は入れません。任意・最大5名)。<br><br>稼働の一覧のカードに表示されます。スコア表から反映した記録には自動で入ります。");
   (m.players||[]).forEach((p,i)=>{
     h += '<div class="row" style="gap:8px;margin-bottom:6px;align-items:center">'+
@@ -9763,8 +9816,16 @@ function viewMj(){
       '<button class="btn" style="padding:9px 13px;color:var(--red);border-color:var(--red);flex-shrink:0" data-a="mjpdel" data-v="'+i+'">×</button></div>';
   });
   if((m.players||[]).length<5) h += '<button class="btn dash full" style="padding:10px 0;margin-bottom:6px" data-a="mjpadd">＋ 同卓者を追加</button>';
+  }
 
-  if(isFree){
+  /* v6.78: ③手で入れるフリーの記録のゲーム代は、ルールを選んだ後(過去のルールのボタンを押した後・ゲーム代の入っている前の記録を開いた時)は1行に畳む。
+     行には設定(基本・トップ賞・バック・ドリンク)だけを出す(金額はすぐ下の「この日の結果」にある)。押すと今の欄が開く。半荘の記録から締めた記録は今までどおり */
+  if(isFree && !lg && !mjFeeOpen(m)){
+    h += '<div id="mj-feefold" style="padding:11px 16px;margin:14px 0 4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer" data-a="mjfeeopen">'+
+      '<div style="font-size:13px;font-weight:700"><span class="mono muted" style="font-size:11px;font-weight:400;margin-right:6px">▸</span>ゲーム代(フリー)</div>'+
+      '<div class="muted" style="font-size:11px;margin:3px 0 0 17px">'+mjFeeLine(m)+'</div></div>';
+  }
+  else if(isFree){
     h += band("ゲーム代(フリー・自動計算)");
     h += '<div class="grid2" style="margin-bottom:6px">'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">基本ゲーム代(1半荘)</div>'+
@@ -9994,6 +10055,11 @@ function bindMj(){
   { const _ms=document.getElementById("mj-shop"); if(_ms) _ms.oninput = e=>m.shop=e.target.value; }   /* v6.02 */
   const mts=document.getElementById("mj-tstart"); if(mts) mts.oninput = e=>m.startAt=e.target.value;
   const mte=document.getElementById("mj-tend"); if(mte) mte.oninput = e=>m.endAt=e.target.value;
+  /* v6.78: 同卓者の「名前を入れる」の欄。打った字は UI に持つ(描き直しても消えない)。Enter で「足す」と同じ。
+     **日本語の変換を確定する Enter では足さない**(変換中は isComposing。Safari は確定の Enter を keyCode 229 で送る)= 「タロウ」と確定してから「さん」を続けて打てる */
+  { const mpn=document.getElementById("mj-pnew");
+    if(mpn){ mpn.oninput = e=>{ if(UI.mjPNew) UI.mjPNew.v=e.target.value; };
+      mpn.onkeydown = e=>{ if(e.key==="Enter" && !e.isComposing && e.keyCode!==229){ e.preventDefault(); const b=document.querySelector('#app [data-a="mjpnew"]'); if(b) b.click(); } }; } }
   document.querySelectorAll("[data-in]").forEach(el=>{
     const kind=el.dataset.in, v=el.dataset.v;
     el.oninput = ()=>{
@@ -10052,6 +10118,7 @@ function bindMj(){
              signYen(before)+" → "+signYen(after)+"\n\n反映しますか?")) return;
         }
         mjApplyRule(m, r);
+        if(mjFeeSet(m)) UI.mjFeeOpen={d:m, open:false};   /* v6.78: ルールを選んだ後は、ゲーム代を1行に畳む(設定の無いルールなら開いたまま) */
         render();
         toast(mjWhere({shop:r.shop,store:r.name})+" を反映("+r.rule+"麻・"+(r.category==="free"?"フリー":"セット")+
           "・単価"+(r.scoreRate||"-")+"/チップ"+(r.chipRate||"-")+")");
@@ -10082,6 +10149,13 @@ function bindMj(){
         m.ranks[i]=String(cur); render();
       }
       else if(a==="mjpadd"){ (m.players=m.players||[]).push(""); render(); }
+      /* v6.78【(キ)】同卓者の名前のボタン・名前を入れる・ゲーム代を畳んだ行 */
+      else if(a==="mjpick"){ mjPlayerToggle(m, v); render(); }
+      else if(a==="mjpname"){ UI.mjPNew={d:m, v:""}; render(); const _e=document.getElementById("mj-pnew"); if(_e && _e.focus) _e.focus(); }
+      else if(a==="mjpnew"){ const nm=String((UI.mjPNew&&UI.mjPNew.v)||"").trim(); if(!nm) return;
+        if(mjPlayersSel(m).indexOf(nm)<0 && !mjPlayerToggle(m, nm)) return;   /* 5名を超える時は、欄を残す(知らせは mjPlayerToggle) */
+        UI.mjPNew=null; render(); }
+      else if(a==="mjfeeopen"){ UI.mjFeeOpen={d:m, open:true}; render(); }
       else if(a==="mjpdel"){ (m.players=m.players||[]).splice(num(v),1); render(); }
       else if(a==="mjdel"){
         if(!confirm("この麻雀記録を削除しますか?")) return;
@@ -10149,6 +10223,9 @@ function refreshMj(){
 function saveMj(){
   const m = UI.mjDraft;
   if(!m.date) return;
+  /* v6.78: 同卓者の「名前を入れる」の欄に打ったまま、「足す」を押さずに保存した時は、その名前も入れる(打った名前が黙って消えないように。
+     もう選んでいる名前なら何もしない・5名を超える時は知らせて入れない=mjPlayerToggle)。欄は閉じる */
+  if(UI.mjPNew && UI.mjPNew.d===m){ const _pn=String(UI.mjPNew.v||"").trim(); if(_pn && mjPlayersSel(m).indexOf(_pn)<0) mjPlayerToggle(m, _pn); UI.mjPNew=null; }
   const cleaned = Object.assign({}, m);
   const _rs = cleaned._restore||[]; delete cleaned._restore;
   gspClean(cleaned); UI.gspPick=false;   /* v5.74 */
