@@ -458,7 +458,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.73 (localStorage保存・完全オフライン)
+   Tally 6.74 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -780,7 +780,6 @@ let UI = {
   entryForm:null, editEntryId:null,    // 家計簿ドラフト
   mdbForm:null,                        // 機種マスタドラフト
   msg:"",                              // backup画面メッセージ
-  detAsc:false,                        // 明細の並び(v5.57・既定=新しい順。突合の時だけ古い順)
   bm:null, bmWal:null, bmOpen:{},          // 銀行の明細との突き合わせ(v6.18)。v6.73: 照合モード(recon・reconWal)は外した。一致した印はエントリの e.chk(v5.60)
   rcptBusy:null, rcptTest:null                                         // v6.23 写真から読む(読み取り中の印・接続の確認の結果)
 };
@@ -1303,7 +1302,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.73";
+const APP_VERSION = "6.74";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -3081,27 +3080,23 @@ function viewLedgerDetail(mk){
   const isNetEntry = isNet;
   const income = me.filter(e=>e.type==="income").reduce((s,e)=>s+e.amount,0);
   let h="";
-  /* v5.57: **並び順の切り替え**。既定は新しい順のまま——明細のゴール(v4.68)は
-     「上から3行で今日と昨日が読める」ことで、日々の用途はそちら。
-     古い順は**突合という別の仕事のための一時的な姿**なので`UI`に置く(保存しない)。
-     保存すると戻し忘れて、毎日逆さまの明細を見ることになる。開き直せば新しい順に戻る。 */
+  /* v6.74【並び順の切り替えを外した】(ユーザー 11/15 09:42「古い順、新しい順も消していいです」)。
+     v5.57 の「新しい順 ↓/古い順 ↑」は、銀行の明細と目で突合するための一時的な姿だった。v6.73 で照合を外し、突合は機械(CSV・デビットの通知)がするので、
+     明細はいつも新しい順(予定 → 今日 → 過去・日の中は monthEntries() の並び=登録の逆順)。明細のゴール(v4.68)「上から3行で今日と昨日が読める」の形だけ残る */
   /* v5.72: 遊技の経費は**明細に出さず、遊技タブのセッション欄に出す**(ユーザー判断)。
      v5.71で明細に残したのは「直す場所が無くなる」からだったが、セッション欄から直せるようにしたので理由が消えた。
      (v5.72〜v6.72 の例外=照合の時だけ、所持金から払った遊技の経費を出す、は v6.73 で照合と一緒に外した) */
   const detEntries = me.filter(e=>!isNetEntry(e));
   const byDate = {};
   detEntries.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
-  /* v5.57: 日の中の並びも反転する(1日に複数件あると、日だけ揃えても突合の目が飛ぶ) */
-  Object.keys(byDate).forEach(d0=>{ byDate[d0]=detOrder(byDate[d0]); });
+  /* (v5.57〜v6.73 は、ここで日の中の並びを detOrder() に通していた=古い順の時だけ反転。v6.74 で外した。日の中は monthEntries() の並びのまま) */
   /* v6.73【照合を外した】(ユーザー 11/15 04:37「後メール機能を追加した今、家計簿の照合機能も無用となりました、削除で良いですよ」)。
      v5.58 の照合モード(銀行の明細を見ながら、明細の行を押して ✓ を付けて消し込む・残り○件・財布の絞り込み・「この月の✓を消す」)を外した。
      その中にあった「銀行の明細を読み込んで突き合わせる」(CSV の突き合わせ)の入口は、管理のタブの「家計簿」の板の一番下の行へ移した
      (05:03 ユーザー「Bでお願いします」)。✓ のデータ(e.chk)は残す: CSV とデビットの通知の突き合わせが、一致した記録に付けて、
      次の突き合わせで手がかりの相手から外すのに使っている(bankMatch の freeW)。画面には出さない。
-     「新しい順 ↓」の押せる範囲は、右どなりの「照合」が無くなったので、右を 6 → 16px(「照合」が持っていた幅)に広げた */
-  h += band("明細",
-    '<span class="mono hit" style="--ht:20px;--hb:9px;--hl:10px;--hr:16px;font-size:11px;cursor:pointer;color:'+(UI.detAsc?'var(--teal)':'var(--muted)')+'" data-a="detord">'+
-    (UI.detAsc?'古い順 ↑':'新しい順 ↓')+'</span>');
+     「新しい順 ↓」の押せる範囲は、右どなりの「照合」が無くなったので、右を 6 → 16px(「照合」が持っていた幅)に広げた(v6.74 で、並び順の切り替えそのものを外した) */
+  h += band("明細");
   if(!detEntries.length) h += '<div style="text-align:center;padding:28px 0;font-size:13px" class="muted">この月の記録はまだありません。<br>下の「記録」から記帳できます。</div>';
   const dayNetOf = list => list.reduce((a2,e)=>a2+(e.type==="income"?e.amount:-e.amount),0);
   /* v6.54: **明細の行の金額は、支出=白・収入=緑**(前は支出=赤)。明細はほぼ全部が支出なので全行が赤になり、赤が何も伝えていなかった
@@ -3160,7 +3155,7 @@ function viewLedgerDetail(mk){
         };
         return groups.map((g,gi)=>{
           if(g.items.length<2) return entryRow(g.items[0]);
-          /* 鍵の並びは detOrder() に一本化されているので、描画と操作(stgdate・stgdel)は一致する */
+          /* 鍵は「日付#並び順」。描画と操作(stgdate・stgdel)は、どちらも monthEntries() の並びのまま storeGroups() に通すので一致する(v6.74 で detOrder を外した) */
           const key=d+"#"+gi;
           const open=(UI.stOpen&&UI.stOpen[key]!==undefined)?UI.stOpen[key]:false;
           const net=dayNetOf(g.items);
@@ -3207,9 +3202,8 @@ function viewLedgerDetail(mk){
      **消さずに畳む**のは、手で入れた未来の予定支出が埋もれると困るため。畳んだ姿はv2.83の
      「🔒 X〜Y回戦 確定済み」バーと同じ語彙で、新しい概念を増やさない。
      **明細のゴール = 上から3行で今日と昨日が読めて、下へ行けば月全体を付け合わせできる。** */
-  /* v5.57: 日の並びも切り替える。**節の順番(予定/今日/過去)も一緒に入れ替える**——
-     日付だけ反転して節が「予定→今日→過去」のままだと、通しで読んだとき時間が2回巻き戻る */
-  const allDays = Object.entries(byDate).sort((a,b)=> UI.detAsc ? (a[0]<b[0]?-1:1) : (a[0]<b[0]?1:-1));
+  /* 日は新しい順(v5.57〜v6.73 は、古い順の時だけ逆にして、節の順番も入れ替えていた。v6.74 で外した) */
+  const allDays = Object.entries(byDate).sort((a,b)=> a[0]<b[0]?1:-1);
   const futDays = allDays.filter(x=>x[0]>todayS), pastDays = allDays.filter(x=>x[0]<=todayS);
   /* 期間の表記は**並び順に依らず古い〜新しい**で出す(バーの中身は畳まれていて向きが見えないため) */
   const spanOf = ds => { const a2=ds.map(x=>x[0]).slice().sort();
@@ -3251,8 +3245,8 @@ function viewLedgerDetail(mk){
       '<span class="mono '+clsPM(pNet)+'" style="font-size:13px;font-weight:700">'+signYen(pNet)+'</span></div></div>';
     if(pOpen) prevDays.forEach(x=>{ hPast += dayHtml(x); });
   }
-  /* v5.57: 古い順のときは**過去 → 今日 → 予定**。時間が一方向に流れる並びにする */
-  h += UI.detAsc ? (hPast + hToday + hFut) : (hFut + hToday + hPast);
+  /* 予定 → 今日 → 過去(v5.57〜v6.73 は、古い順のときだけ 過去 → 今日 → 予定) */
+  h += hFut + hToday + hPast;
   return h;
 }
 
@@ -6836,15 +6830,8 @@ function mjLogTotals(){
           /* **最終収支 = 卓の精算 + 差し馬 + 馬身 + バック**(差し馬と馬身は卓の外でやり取りする) */
           net: settled ? settle+sashiY+umaY+back : 0, c:c};
 }
-/* v5.57: **明細の並び順を決める唯一の関数**(ユーザー要望: デビットカードの明細と突合するとき順番を合わせたい)。
-   既定は新しい順(false)、突合のときだけ古い順(true)。
-   **描画とまとめ操作(stgdate/stgdel)の両方がここを通ること**——`storeGroups`の鍵は
-   `日付#並び順`なので、片方だけ反転させると**別の店を消す**(v5.29で実際にズレを検出している)。
-   v6.73: 照合モードの絞り込み(未来を出さない・財布で絞る・軍資金から払った支出と遊技の経費を出さない)を、照合と一緒に外した=並びの反転だけ */
-function detOrder(list){
-  let a=(list||[]);
-  return UI.detAsc ? a.slice().reverse() : a;
-}
+/* v6.74: detOrder(v5.57。明細の並び順を決める唯一の関数=古い順の時だけ反転)を外した。並び順の切り替えが無くなったので、
+   描画とまとめ操作(stgdate/stgdel)は、どちらも monthEntries() の並びのまま storeGroups() に通す(`日付#並び順` の鍵がズレないのは、両方が同じ並びを使うから=v5.29 の決まり) */
 /* v5.60: **照合済み(✓)は保存する**。置き場所は`e.chk`(エントリ自身)。**消えた記録の✓が残らない**し、同期もバックアップも
    エントリごと運ばれるので、別表を持って孤児を掃除する必要が無い。
    v6.73: 照合モードと、その「残り」を数える reconRest を外した。✓ は突き合わせ(CSV・デビットの通知)が付け、手がかりの相手を選ぶ所で使う */
@@ -10160,9 +10147,7 @@ function bindMain(){
       else if(a==="ftoggle"){ UI.futOpen=!UI.futOpen; render(); }
       /* v5.18: 今日より前の開閉。既定は畳んだまま(UI.pastOpenの未定義=false) */
       else if(a==="ptoggle"){ UI.pastOpen=!UI.pastOpen; render(); }
-      /* v5.57: 明細の並び順。**古い順にした時は過去も開く**——古い順にする理由は突合しかなく、
-         突合には過去が要る。戻すときは触らない(閉じたい人は自分で閉じている) */
-      else if(a==="detord"){ UI.detAsc=!UI.detAsc; if(UI.detAsc) UI.pastOpen=true; renderKeepScroll(); }
+      /* v6.74: 明細の並び順の切り替え(detord・v5.57)を外した(ユーザー 11/15 09:42) */
       /* v6.73: 照合モードの押した先(recon・rchk・rwal・rclr)は、照合と一緒に外した。
          bmopen は管理のタブの「銀行の明細と突き合わせ」の行から(v6.18〜v6.72 は照合中の板のボタン) */
       else if(a==="bmopen"){ if(UI.bm && UI.bm.mail) UI.bm=null;   /* v6.59: この入口からは、明細を選ぶ所から(メールの突き合わせの結果は、家計簿タブの板か、この先のボタンで開く) */
@@ -10193,8 +10178,8 @@ function bindMain(){
         const sp=String(v).split("#"), d0=sp[0], gi=parseInt(sp[1],10);
         const mk0=String(d0).slice(0,7);
         /* `isNetEntry`は描画関数のローカルなのでここからは見えない。同じ判定を直に書く */
-        /* v5.57: **並び順の切り替えも同じ関数を通す**。描画だけ反転させると鍵がズレて別の店を消す */
-        const dayList=detOrder(monthEntries(mk0).filter(e=>e.date===d0 && !isNet(e)));
+        /* 描画と同じ並び(monthEntries() のまま)。v5.57〜v6.73 は、両方とも detOrder() を通していた(古い順の時に反転) */
+        const dayList=monthEntries(mk0).filter(e=>e.date===d0 && !isNet(e));
         const g=storeGroups(dayList)[gi];
         if(!g || !g.items.length) return;
         const nm=g.store||"この記録", n=g.items.length;
@@ -12854,11 +12839,13 @@ function viewEntry(){
          収入の行き先に軍資金の置き場・貯金の箱を選ぶと、財布(経由)と行き先の**両方が同じ琥珀の選択**で出ていた。
          データは正しい(財布にいったん入って移す・財布は増減ゼロ・v5.95)が、2か所に入るように読める。
          行き先がある時は見出しを「経由する財布」にし、財布は**点線の枠**で示すだけにする(琥珀の選択は行き先の1つだけ)。
-         財布を隠さない(v4.93のように)のは、照合でこの財布の明細と突き合わせるため——銀行振込なら銀行、現金なら現金を選べる必要がある */
+         財布を隠さない(v4.93のように)のは、銀行の明細との突き合わせで、この財布の明細と突き合わせるため——銀行振込なら銀行、現金なら現金を選べる必要がある
+         (v6.74: ⓘ の「照合(銀行などの明細との突き合わせ)では、この財布の明細と突き合わせます」を「銀行の明細との突き合わせ(管理のタブ)では、この財布の明細と比べます」に。
+          ユーザー 11/15 09:42「照合の字は治してください」。「突き合わせます」を「比べます」にしたのは、1字長くなって、幅 402 の ⓘ の板で最後の「い。」だけが4行目に落ちたため=3行のまま) */
       const _via = isInc && !!(String(f.bkSrc||"") || String(f.svPot||""));
       /* v4.38: **等幅**にする(ユーザー指摘)。名前の長さでボタンの大きさが変わると押す位置が毎回ずれる */
       src.push('<div class="fxl">'+
-          (isInc ? (_via ? "経由する財布"+infoBtn("軍資金や貯金に入れる収入は、<b>いったんこの財布に入ってから移す</b>扱いです。財布の残高は増えも減りもしません。<br><br>照合(銀行などの明細との突き合わせ)では、この財布の明細と突き合わせます。銀行振込で受け取ったなら銀行、現金で受け取ったなら現金を選んでください。") : "入金先") : "支払い元")+'</div>'+
+          (isInc ? (_via ? "経由する財布"+infoBtn("軍資金や貯金に入れる収入は、<b>いったんこの財布に入ってから移す</b>扱いです。財布の残高は増えも減りもしません。<br><br>銀行の明細との突き合わせ(管理のタブ)では、この財布の明細と比べます。銀行振込で受け取ったなら銀行、現金で受け取ったなら現金を選んでください。") : "入金先") : "支払い元")+'</div>'+
         segHtml(segCols(walletPots().length), walletPots().map(w=>{
           const on=cur===String(w.id);
           return segPot('data-a="ewal" data-v="'+esc(w.id)+'"', w.name, walletBalance(null,w.id), _via ? (on?"via":"") : (((isInc||!_bk)&&on)?"sel":""));
