@@ -209,8 +209,10 @@
   .mjl-tbl td.tm{color:var(--muted); font-size:11px;}   /* v6.75: 締めた記録の表の右端の時刻(その半荘を記録した時刻) */
   .mjl-tbl tr.nm td{font-family:inherit; font-size:11px; color:var(--muted); background:var(--surface2); padding:5px 2px;}
   .mjl-tbl tr.ed td{background:rgba(242,179,61,.12);}
-  .mjl-tbl td.oya{box-shadow:inset 0 0 0 1px rgba(242,179,61,.55); border-radius:6px;}   /* v6.36: その半荘の親の席 */
-  .mjl-tbl td.oya .oyl{font-family:inherit; font-size:11px; font-weight:700; color:var(--amber); margin-right:2px; vertical-align:1px;}
+  .mjl-tbl td.oya{position:relative; box-shadow:inset 0 0 0 1px rgba(242,179,61,.55); border-radius:6px;}   /* v6.36: その半荘の親の席 */
+  /* v6.83:「親」はマスの左上の隅へ(ユーザー 11/22: 親の表記と着順がくっついて「親1」「親3」に見えて見づらい)。
+     着順の数字は、ほかのマスと同じく真ん中のまま(縦に読んだ時に数字の位置がずれない) */
+  .mjl-tbl td.oya .oyl{position:absolute; left:4px; top:3px; font-family:inherit; font-size:11px; line-height:1; font-weight:700; color:var(--amber);}
   /* v6.41: 店・ルール別 成績の収支(名前 | 1半荘平均 | 合計 の3列。列の幅を揃えて縦に読めるように) */
   .mjm-row{display:grid; grid-template-columns:minmax(0,1fr) 64px 88px; column-gap:6px; align-items:baseline; font-size:12px; margin:5px 0;}
   .mjm-row > .mono{text-align:right; white-space:nowrap;}
@@ -459,7 +461,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.82 (localStorage保存・完全オフライン)
+   Tally 6.83 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1110,8 +1112,24 @@ const mjGameFee = m => m.category==="free"
 /* v6.16: **固定額のバックにも対応**(ユーザー要望: たまに半荘単位ではなく固定額。1000バック・3000円など)。
    `feeBackUnit:"fixed"`なら`feeBack`をそのまま1回分として数える(ドリンク/入場と同じく半荘数に関係なく)。
    無い記録は今までどおり半荘ごと——**過去の記録の数字は動かない** */
-const mjBackFixed = m => !!(m && m.feeBackUnit==="fixed");
-const mjFeeBack = m => m.category==="free" ? (mjBackFixed(m) ? num(m.feeBack) : num(m.feeBack)*mjHanchan(m)) : 0;
+/* v6.83【バックの種類を4つに】(ユーザー 11/22: ある店で、ある人と同卓している時だけ 1半荘150円のバックをもらっている。これを計算したい。
+   今だけかもしれないので、オフやバックの種類を選べるように)。種類は feeBackUnit に持つ:
+   無し(今までの記録)= 1ゲーム(半荘数 × 額) / "fixed" = 固定(1回) / "with" = 同卓(feeBackWho の人と同卓したゲームの数 feeBackN × 額) /
+   "none" = なし(数えない。額と人は残す=また付いたら押すだけで戻る)。**種類を読むのはここ1か所**(mjBackKind)。知らない字は今までどおり 1ゲーム */
+const mjBackKind = m => { const u=m && m.feeBackUnit; return (u==="fixed" || u==="with" || u==="none") ? u : "per"; };
+/* 種類を持たせる(1ゲームは印を持たない=前からの記録と同じ形。知らない字も 1ゲーム)。チップを押した時・締める時・ルールを当てる時 */
+const mjBackSet = (o, v) => { const k=mjBackKind({feeBackUnit:v}); if(k==="per") delete o.feeBackUnit; else o.feeBackUnit=k; };
+/* 種類と同卓の人を src から o へ(ルールを当てる時・1画面目のルールで卓を始める時)。額は呼ぶ側で */
+const mjBackCopy = (o, src) => { mjBackSet(o, mjBackKind(src)); const w=String((src && src.feeBackWho)||"").trim(); if(w) o.feeBackWho=w; else delete o.feeBackWho; };
+/* バックを数えるゲームの数(1ゲーム = 半荘数・同卓 = feeBackN。固定・なしは 0)。feeBackN は締めた時に表から数えて入れる数で、記録の画面で直せる */
+const mjBackGames = m => { const k=mjBackKind(m); return k==="per" ? mjHanchan(m) : (k==="with" ? Math.max(0, num(m.feeBackN)) : 0); };
+const mjFeeBack = m => m.category!=="free" ? 0 : (mjBackKind(m)==="fixed" ? num(m.feeBack) : num(m.feeBack)*mjBackGames(m));   /* なし は mjBackGames が 0 */
+/* v6.83: バックの種類のチップ(記録の画面と卓の設定で、同じ並び・同じ字) */
+const MJ_BACK_KINDS=[["none","なし"],["per","1ゲーム"],["fixed","固定"],["with","同卓"]];
+const MJ_BACK_INFO="<b>1ゲーム</b>: ゲームの数 × 額。<br><b>固定</b>: ゲームの数に関係なく、1回だけその額。<br>"+
+  "<b>同卓</b>: 選んだ人が座っていたゲームだけ数えます(交代や卓移動でいなかったゲームは数えません)。<br>"+
+  "<b>なし</b>: 数えません。額と人は覚えたままなので、また付いたら押すだけで戻ります。<br><br>"+
+  "店とルールを選ぶと、前の記録の種類・人・額が戻ります。締めた記録には、その人と同卓したゲームの数が入ります(記録の画面で直せます。収支だけ記録では、手で入れます)。";
 const mjScoreYen = m => Math.round(fnum(m.score)*fnum(m.scoreRate));
 const mjChipYen = m => Math.round(fnum(m.chips)*fnum(m.chipRate));
 /* v5.65: **金額で入れる卓**(ユーザー設計)。雀荘は「チップを買って最後に換金」。
@@ -1189,7 +1207,7 @@ function mjRuleHints(){
       const sh=String(s.shop||"").trim();
       m[sh+"\u0001"+n]={shop:sh, name:n, date:String(s.date||""), category:s.category||"free", rule:String(s.rule||"4"),
         scoreRate:s.scoreRate, chipRate:s.chipRate,
-        baseFee:s.baseFee, topBonus:s.topBonus, feeBack:s.feeBack, feeBackUnit:(s.feeBackUnit==="fixed"?"fixed":""), drinkFee:s.drinkFee};   /* v6.16: バックの単位も */
+        baseFee:s.baseFee, topBonus:s.topBonus, feeBack:s.feeBack, feeBackUnit:(mjBackKind(s)==="per"?"":mjBackKind(s)), feeBackWho:String(s.feeBackWho||"").trim(), drinkFee:s.drinkFee};   /* v6.16: バックの単位も。v6.83: なし・同卓 と、同卓の人も(同卓したゲームの数は、その日の数なので持たない) */
     });
   return Object.keys(m).map(k=>m[k]).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
 }
@@ -1226,7 +1244,9 @@ function mjApplyRule(m, r){
   if(r.shop && !String(m.shop||"").trim()) m.shop=r.shop;
   m.scoreRate=r.scoreRate; m.chipRate=r.chipRate;
   m.baseFee=r.baseFee; m.topBonus=r.topBonus; m.feeBack=r.feeBack; m.drinkFee=r.drinkFee;
-  if(r.feeBackUnit==="fixed") m.feeBackUnit="fixed"; else delete m.feeBackUnit;   /* v6.16 */
+  /* v6.16。v6.83: なし・同卓 と、同卓の人も(mjBackCopy)。同卓したゲームの数は、写し(締めた時の表)を持つ記録なら表から数える。持たない記録は今の数のまま(手で入れる) */
+  mjBackCopy(m, r);
+  if(mjBackKind(m)==="with" && mjHasLog(m)) m.feeBackN=String(mjBackRecN(m));
   return m;
 }
 const mjAvgRank = m => {
@@ -1297,7 +1317,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.82";
+const APP_VERSION = "6.83";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -2277,6 +2297,24 @@ const MJ_CONF_FIELDS=[
   ["feeBack","ゲーム代バック","円/ゲーム"],
   ["drinkFee","ドリンク代","円/1回(卓ごと)"]   /* v5.91: 初期値で入れる(ユーザー要望) */
 ];
+/* v6.83: 卓の設定のバックの欄。見出しの行に種類のチップ 4つ(なし・1ゲーム・固定・同卓。押した時にすぐ効く=人数や ON/OFF と同じ)。
+   単位の字(円/ゲーム など)は出さない(選んだチップが単位。4つのチップと並ぶと、幅 375 で見出しの行に入らない)。
+   なし: 額の欄を出さない(額は持ったまま) / 同卓: 下に「誰と同卓の時」の名前のボタン(この卓の人と、最近の同卓者)と「名前を入れる」 */
+function mjcBackHtml(c, d, i){
+  const bk=c.feeBackUnit, who=c.feeBackWho;
+  let h='<div id="mc-back" style="'+(i?'margin-top:12px':'')+'">'+
+    '<div class="fxl">ゲーム代バック'+infoBtn(MJ_BACK_INFO)+
+    '<span class="row" style="float:right;gap:3px">'+MJ_BACK_KINDS.map(([v,l])=>'<button class="chip'+(bk===v?" sel":"")+'" style="padding:1px 6px;font-size:11px;line-height:1.3" data-mc="backunit" data-v="'+v+'">'+l+'</button>').join("")+'</span></div>';
+  if(bk!=="none") h+='<input class="input mono r" type="number" inputmode="numeric" id="mc-feeBack" value="'+esc(String(d.feeBack!==undefined?d.feeBack:c.feeBack))+'">';
+  if(bk==="with"){
+    const list=mjlSetupCands(); if(who && list.indexOf(who)<0) list.unshift(who);
+    h+='<div class="fxl" style="margin-top:10px">誰と同卓の時</div>'+
+      '<div class="row" id="mc-backwho" style="gap:6px;flex-wrap:wrap">'+list.map(nm=>
+        '<button class="btn'+(nm===who?' sel':'')+'" '+MJ_NAME_BTN+' data-mc="backwho" data-v="'+esc(nm)+'">'+esc(nm)+'</button>').join("")+
+      '<button class="btn" style="font-size:13px;padding:9px 12px" data-mc="backwhoname">名前を入れる</button></div>';
+  }
+  return h+'</div>';
+}
 function viewMjConf(){
   const c=mjLogConf();
   let h='<div class="hdr"><button class="navbtn" data-mc="back">‹ 戻る</button>'+
@@ -2285,11 +2323,10 @@ function viewMjConf(){
      見た目は古い値なのに「保存する」で打った値が入る食い違いがあった */
   const _d=UI.mjcDraft||{};
   h+='<div class="card" style="margin-bottom:14px">'+
-    MJ_CONF_FIELDS.map(([k,lab,unit],i)=>
+    /* v6.79: バックの「1ゲーム/固定」(麻雀の記録の欄と同じ小さいチップ。押した時にすぐ効く=人数やON/OFFと同じ)。v6.83: バックの欄は mjcBackHtml */
+    MJ_CONF_FIELDS.map(([k,lab,unit],i)=> k==="feeBack" ? mjcBackHtml(c, _d, i) :
       '<div style="'+(i?'margin-top:12px':'')+'">'+
-      '<div class="fxl">'+lab+'<span class="muted" style="font-size:11px;margin-left:6px">'+(k==="feeBack" && c.feeBackUnit==="fixed" ? "円/1回(卓ごと)" : unit)+'</span>'+
-        /* v6.79: バックの「1ゲーム/固定」(麻雀の記録の欄と同じ小さいチップ。押した時にすぐ効く=人数やON/OFFと同じ) */
-        (k==="feeBack" ? '<span class="row" style="float:right;gap:3px">'+[["per","1ゲーム"],["fixed","固定"]].map(([v,l])=>'<button class="chip'+(c.feeBackUnit===v?" sel":"")+'" style="padding:1px 6px;font-size:11px;line-height:1.3" data-mc="backunit" data-v="'+v+'">'+l+'</button>').join("")+'</span>' : '')+'</div>'+
+      '<div class="fxl">'+lab+'<span class="muted" style="font-size:11px;margin-left:6px">'+unit+'</span></div>'+
       '<input class="input mono r" type="number" inputmode="numeric" id="mc-'+k+'" value="'+esc(String(_d[k]!==undefined?_d[k]:c[k]))+'"></div>').join("")+
     '</div>';
   /* v6.17: **チップを使う**を足す(ユーザー要望: チップと飛びは使わない時は隠したい)。並びは記録の画面と同じ チップ → 飛び → 馬身。
@@ -2326,7 +2363,16 @@ function bindMjConf(){
       if(a==="back"){ UI.mjcDraft=null; UI.screen="mjlog"; render(); return; }
       /* 人数とON/OFFは押した瞬間に効く(選んだ状態が見えるので確認が要らない) */
       if(a==="seats"){ S.mjLog.seats=num(v); save(); render(); return; }
-      if(a==="backunit"){ if(v==="fixed") S.mjLog.feeBackUnit="fixed"; else delete S.mjLog.feeBackUnit; save(); render(); return; }   /* v6.79 */
+      /* v6.79。v6.83: 種類は なし・1ゲーム・固定・同卓(1ゲームは印を持たない=前からの卓と同じ)。額と人は消さない(押し間違えて戻しても消えない) */
+      if(a==="backunit"){ mjBackSet(S.mjLog, v); save(); render(); return; }
+      /* v6.83: 同卓のバックの人(名前のボタン・名前を入れる)。同じ人をもう一度押しても外さない(同卓の時は人がいる) */
+      if(a==="backwho"){ const nm=String(v==null?"":v).trim(); if(nm){ S.mjLog.feeBackWho=nm; save(); render(); } return; }
+      if(a==="backwhoname"){
+        const nm0=prompt("同卓の時だけバックをもらう人の名前", S.mjLog.feeBackWho||""); if(nm0===null) return;
+        const nm=String(nm0).trim(); if(!nm) return;
+        if(nm==="自分" || mjlIsX(nm)){ toast("「"+nm+"」は選べません"); return; }
+        S.mjLog.feeBackWho=nm; mjlShowName(nm); save(); render(); return;
+      }
       if(a==="uma"){ S.mjLog.useUma=!mjLogConf().useUma; save(); render(); return; }
       /* v6.17: 打ちかけの卓に数が残っているのにOFFにした時は、数えなくなることを知らせる(消してはいない。ONで戻る) */
       if(a==="chip"||a==="tobi"){
@@ -2790,7 +2836,11 @@ function bindMjLog(){
           bwal:String(S.mjLog.bwal||(bankPots()[0]||{}).id||""),
           log:snap.log   /* v6.71: 半荘ごとの着順・親・印・チップ・飛び・精算・単価(mjlSnap) */
         };
-        if(c.feeBackUnit==="fixed") UI.mjDraft.feeBackUnit="fixed";   /* v6.79: 固定のバック */
+        mjBackSet(UI.mjDraft, c.feeBackUnit);   /* v6.79: 固定のバック。v6.83: 同卓・なし も(1ゲームは印を持たない) */
+        /* v6.83: 同卓の人(1ゲーム・固定・なし の時も、選んであれば持つ=また同卓にした時に戻る)。
+           同卓なら、その人が座っていたゲームの数(精算と同じ数=mjLogTotals)を記録の数に */
+        if(c.feeBackWho) UI.mjDraft.feeBackWho=c.feeBackWho;
+        if(c.feeBackUnit==="with") UI.mjDraft.feeBackN=String(t.backN);
         UI.mjIsNew=true;
         /* 締めた印。**保存されたら記録を空にする**——保存前に消すと戻れなくなる。
            v6.31【見直しで直した】印は**この下書きの id**にする。true だと、締めるを押してから戻った後に、
@@ -6191,7 +6241,8 @@ function mjLogConf(){
      入力するのは**卓の精算額**だけ。実額から引くので**端数処理(50円単位の切上/切捨)を知らなくてよい** */
   return {chipUnit:fnum(c.chipUnit)||50, umaUnit:fnum(c.umaUnit)||0, sashiUnit:fnum(c.sashiUnit)||0, tobiUnit:fnum(c.tobiUnit)||0,
           gameFee:fnum(c.gameFee)||0, topBonus:fnum(c.topBonus)||0, feeBack:fnum(c.feeBack)||0,
-          feeBackUnit:(c.feeBackUnit==="fixed" ? "fixed" : "per"),   /* v6.79: バックの「1ゲーム/固定」(固定=その卓で1回もらう額。麻雀の記録の v6.16 と同じ) */
+          feeBackUnit:mjBackKind(c),   /* v6.79: バックの「1ゲーム/固定」(固定=その卓で1回もらう額。麻雀の記録の v6.16 と同じ)。v6.83: なし・同卓 も(読むのは mjBackKind の1か所) */
+          feeBackWho:String(c.feeBackWho==null?"":c.feeBackWho).trim(),   /* v6.83: 同卓のバックの人(名前) */
           /* v5.91: ドリンク代。**未設定なら麻雀の記録で最後に使った額**(S.rates.mjDrink)を初期値にする。0と入れれば0 */
           drinkFee:(c.drinkFee!=null && String(c.drinkFee).trim()!=="") ? fnum(c.drinkFee) : (fnum((S.rates||{}).mjDrink)||0),
           seats:num(c.seats)||3,
@@ -6226,7 +6277,7 @@ function mjlBreakdownHtml(){
     h+='<div style="margin-top:6px;border-top:1px solid var(--line)"></div>';
     h+=head("卓の外", outSum);
     t.outs.forEach(x=>{ if(x.yen) h+=sub(x.kind+(x.who?" "+esc(x.who):"")+" "+(x.n>=0?"+":"−")+Math.abs(x.n), x.yen); });
-    if(t.back) h+=sub(c.feeBackUnit==="fixed" ? "ゲーム代バック(固定)" : "ゲーム代バック "+t.n+"ゲーム", t.back);
+    if(t.back) h+=sub(c.feeBackUnit==="fixed" ? "ゲーム代バック(固定)" : "ゲーム代バック "+t.backN+"ゲーム"+(c.feeBackUnit==="with" ? "("+esc(c.feeBackWho)+"と同卓)" : ""), t.back);   /* v6.83: 同卓は、その人と同卓したゲームの数 */
   }
   h+='<div class="row between sumline" style="align-items:baseline;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--line)">'+
     '<span style="font-size:13px;font-weight:700">最終収支</span>'+
@@ -6785,9 +6836,13 @@ function mjlMergeName(from, to){
   if(!from || !to || from===to) return null;
   const c=mjlMergePlan(from, to), same=x=>String(x==null?"":x).trim()===from;
   const has=(arr,nm)=>(arr||[]).some(x=>String(x==null?"":x).trim()===nm);
+  /* v6.83: 同卓のバックの人の名前も(同卓者と同じく、同じ記録に両方の名前がある時は書き換えない)。
+     同卓者を書き換える前に見る(書き換えた後だと、同卓者にまとめ先の名前が入っていて、両方ある記録と見分けられない) */
+  (S.mjSessions||[]).forEach(m=>{ if(same(m.feeBackWho) && !has(m.players,to)) m.feeBackWho=to; });
   (S.mjSessions||[]).forEach(m=>{ if(has(m.players,from) && !has(m.players,to)){ m.players=m.players.map(x=>same(x) ? to : x); mjLogRename(m, from, to); } });   /* v6.71: 締めた時の写しの名前も */
   (S.mjTables||[]).forEach(t=>{ if(Array.isArray(t.players) && has(t.players,from) && !has(t.players,to)) t.players=t.players.map(x=>same(x) ? to : x); });
   (S.sessions||[]).forEach(s=>{ if(same(s.partnerName)) s.partnerName=to; });
+  if(S.mjLog && same(S.mjLog.feeBackWho) && !mjLogRows().length) S.mjLog.feeBackWho=to;   /* v6.83: 打っている卓のバックの人は、ゲームの記録が無い時だけ(人の名前と同じ) */
   if(S.mjLog && !mjLogRows().length){ const P=mjlPeople(), P2={}; Object.keys(P).forEach(k=>{ P2[k]=same(P[k]) ? to : P[k]; }); S.mjLog.people=P2; }
   mjlShowName(to);
   if(c.clash) mjlHideName(from); else mjlShowName(from);   /* 残った所(両方がある記録)の「タロウさん」はボタンに出さない */
@@ -6897,6 +6952,17 @@ function mjlPrune(){
    v5.78: **差し馬と馬身は別の賭け**(ユーザー: どっちも欲しい。どのパターンもある)。
    ・差し馬 = 1半荘ごとに相手より上なら+1、下なら−1(着順の差は関係ない)→ sa = 上 − 下
    ・馬身   = 着順の差(相手の着順 − 自分の着順。自分が上なら＋)→ uma */
+/* v6.83: その名前の人が座っていたゲーム(行)の数。席(st)か全員の着順(ranks)にその人がいる行を数える(交代・卓移動でいなかった行は数えない)。
+   席も全員の着順も無い古い行(自分の着順だけ)は、誰がいたか分からないので数えない。名前で見る(交代で戻ってきた人が別の id でも、同じ名前なら数える)。
+   打っている卓(mjLogTotals)と、締めた記録の写し(mjBackRecN)の両方がここを通る */
+function mjBackRowsN(rows, nameOf, who){
+  who=String(who==null?"":who).trim(); if(!who) return 0;
+  let n=0;
+  (rows||[]).forEach(r=>{ if(!r || typeof r!=="object") return;
+    const ids=Array.isArray(r.st) ? r.st : (r.ranks ? Object.keys(r.ranks) : []);
+    if(ids.some(id=>id!=="me" && String(nameOf(id)==null?"":nameOf(id)).trim()===who)) n++; });
+  return n;
+}
 function mjlVs(rows){   /* v6.71: rows を渡すと、その行で数える(締めた記録が持っている写し)。渡さなければ、今打っている卓 */
   const res={};
   (rows||mjLogRows()).forEach(r=>{ if(!r || !r.ranks) return; const me=num(r.ranks.me); if(!me) return;
@@ -6939,7 +7005,10 @@ function mjLogTotals(){
   /* v5.40【修正】**トップ賞は勝った側が追加で払う**(ユーザー指摘)。
      トップだとゲーム代が 300+200=500円になる。v5.39で「もらう」と取り違えていた */
   const top   = -Math.round((rank[1]||0)*c.topBonus);
-  const back  =  c.feeBackUnit==="fixed" ? (n ? Math.round(c.feeBack) : 0) : Math.round(n*c.feeBack);          /* ゲーム代バック(卓の外でもらう)。v6.79: 固定なら卓で1回(ゲームが1つも無い時は 0) */
+  /* ゲーム代バック(卓の外でもらう)。v6.79: 固定なら卓で1回(ゲームが1つも無い時は 0)。
+     v6.83: 同卓なら、その人が座っていたゲームの数だけ(mjBackRowsN)・なし は 0。backN = バックを数えたゲームの数(内訳と、締めた記録の数) */
+  const backN = c.feeBackUnit==="with" ? mjBackRowsN(rows, mjlName, c.feeBackWho) : (c.feeBackUnit==="per" ? n : 0);
+  const back  = c.feeBackUnit==="fixed" ? (n ? Math.round(c.feeBack) : 0) : Math.round(backN*c.feeBack);   /* なし は backN が 0 */
   /* v5.91: ドリンク代は**店での精算の中**(麻雀の記録と同じくゲーム代の仲間)。最終収支は変わらず、スコア分が正しくなる */
   const drink = n ? -Math.round(c.drinkFee) : 0;
   const chipY = chip*c.chipUnit, umaY = uma*c.umaUnit, tobiY = tobi*c.tobiUnit, sashiY = sashi*c.sashiUnit;
@@ -6950,7 +7019,7 @@ function mjLogTotals(){
   const settle = num(L.settle);
   const score = settled ? settle-known : 0;
   return {n:n, rank:rank, uma:uma, sashi:sashi, chip:chip, tobi:tobi, drink:drink, outs:outs,
-          fee:fee, top:top, back:back, chipY:chipY, umaY:umaY, sashiY:sashiY, tobiY:tobiY,
+          fee:fee, top:top, back:back, backN:backN, chipY:chipY, umaY:umaY, sashiY:sashiY, tobiY:tobiY,
           known:known, settled:settled, settle:settle, score:score,
           /* **最終収支 = 卓の精算 + 差し馬 + 馬身 + バック**(差し馬と馬身は卓の外でやり取りする) */
           net: settled ? settle+sashiY+umaY+back : 0, c:c};
@@ -9519,6 +9588,8 @@ function bindFixed(){
 const mjLogRowsOf = m => { const r=((m||{}).log||{}).rows; return Array.isArray(r) ? r.filter(x=>x && typeof x==="object") : []; };
 const mjHasLog = m => mjLogRowsOf(m).length>0;
 const mjLogNm = (m, id) => id==="me" ? "自分" : String(((m.log||{}).people||{})[id] || "?");
+/* v6.83: 同卓のバックの人(feeBackWho)と同卓したゲームの数を、締めた時の写しの表から数える(記録の画面で人を選んだ時・同卓にした時・ルールを当てた時) */
+const mjBackRecN = m => mjBackRowsN(mjLogRowsOf(m), id=>mjLogNm(m,id), m.feeBackWho);
 const mjBetOf = (m, k) => ((m&&m.extras)||[]).find(x=>x && x.k===k) || null;   /* 「卓の外」の行のうち、その相手との差し馬(sa:)・馬身(um:)の行 */
 const MJ_LOG_INFO="締めた時の<b>ゲームの記録</b>を、そのまま残した物です。列は席(A・B・C…)、マスはそのゲームの着順です。<b>親</b>は、そのゲームの親の席。途中で人が替わった所には、名前の行が入ります(交代・卓移動・席替え)。<br><br>"+
   "この表は<b>見るだけ</b>です。着順の回数やスコアを直す時は、一番下の「数字を直す」を開いてください(表は、締めた時のまま残ります)。<br><br>"+
@@ -9671,20 +9742,51 @@ function mjPlayerToggle(m, nm){
   if(pl.length>=5){ toast("同卓者は5名までです"); return false; }
   m.players=pl.concat([nm]); return true;
 }
-/* ゲーム代の設定が1つでも入っているか */
-const mjFeeSet = m => !!(num(m.baseFee) || num(m.topBonus) || num(m.feeBack) || num(m.drinkFee));
+/* ゲーム代の設定が1つでも入っているか(v6.83: バックが「なし」なら、額が残っていても入っていない扱い) */
+const mjFeeSet = m => !!(num(m.baseFee) || num(m.topBonus) || (mjBackKind(m)!=="none" && num(m.feeBack)) || num(m.drinkFee));
+/* v6.83: 同卓のバックで、同卓したゲームの数をまだ入れていない、写しの無い記録(収支だけ記録)。数を入れる欄が見えるように、ゲーム代を畳まない */
+const mjBackNeedN = m => mjBackKind(m)==="with" && !mjHasLog(m) && num(m.feeBack)>0 && String(m.feeBackN==null?"":m.feeBackN).trim()==="";
 /* ゲーム代の欄を開いて出すか。押した時の状態は、開いている下書き(UI.mjDraft の中身そのもの)にだけ効く=記録を開き直すと、また既定の形
    既定: 新しい記録は開く(過去のルールのボタンを押すと畳む)・前の記録はゲーム代の設定が入っていれば畳む */
 function mjFeeOpen(m){
   const st=UI.mjFeeOpen;
   if(st && st.d===m) return st.open;
-  return !!UI.mjIsNew || !mjFeeSet(m);
+  return !!UI.mjIsNew || !mjFeeSet(m) || mjBackNeedN(m);   /* v6.83: 同卓したゲームの数がまだ無ければ開く */
 }
 /* 畳んだ行の字: 入っている設定だけ(何も無ければ「設定なし」)。狭い画面(幅 375 など)で2行になる時も、1つの設定の途中では折らない(・の所で折る) */
 function mjFeeLine(m){
+  const bk=mjBackKind(m), who=String(m.feeBackWho||"").trim();   /* v6.83: 同卓は「(誰と同卓)」・なし は出さない */
   const fp=[num(m.baseFee)?"基本 "+num(m.baseFee):"", num(m.topBonus)?"トップ賞 "+num(m.topBonus):"",
-    num(m.feeBack)?"バック "+num(m.feeBack)+(mjBackFixed(m)?"(固定)":""):"", num(m.drinkFee)?"ドリンク "+num(m.drinkFee):""].filter(Boolean);   /* v6.79: 1ゲームごとのバックは「(1ゲーム)」を付けない(基本・トップ賞と同じ。字が長くなり幅 402 でも2行になったので)。固定の時だけ「(固定)」 */
+    (bk!=="none" && num(m.feeBack))?"バック "+num(m.feeBack)+(bk==="fixed"?"(固定)":(bk==="with"?"("+(who?esc(who)+"と":"")+"同卓)":"")):"", num(m.drinkFee)?"ドリンク "+num(m.drinkFee):""].filter(Boolean);   /* v6.79: 1ゲームごとのバックは「(1ゲーム)」を付けない(基本・トップ賞と同じ。字が長くなり幅 402 でも2行になったので)。固定の時だけ「(固定)」 */
   return fp.length ? fp.map(x=>'<span class="nw">'+x+'</span>').join(" ・ ") : "設定なし";
+}
+/* v6.83: 記録の画面のバックの欄(ゲーム代の枠の下の1段)。
+   v5.47: **ゲーム代バックはここ**(ゲーム代と対になるもの)。v6.16: 単位を「1半荘 / 固定」で切り替える(固定=その日に1回もらう額)。めったに触らないので小さいチップで、ラベルの行に置く。
+   チップはラベルの行の右に**重ねて**置く(行の高さを変えない)。v6.79: 見出しは「バック」だけ(節の見出しが「ゲーム代」・畳んだ行も「バック」)。
+   v6.83: 種類のチップは なし・1ゲーム・固定・同卓 の4つ(枠の半分の幅に入らないので、枠の下の1段に)。
+   なし: 額の欄を出さない(額は持ったまま=また付いたら押すだけで戻る) / 同卓: 誰と(名前のボタン)と、同卓したゲームの数の欄 */
+function mjBackFieldHtml(m){
+  const bk=mjBackKind(m), who=String(m.feeBackWho||"").trim();
+  let h='<div id="mj-back" style="margin-top:12px">'+
+    '<div style="position:relative"><div class="muted" style="font-size:11px;margin-bottom:2px">バック'+infoBtn(MJ_BACK_INFO)+'</div>'+
+    '<span class="row" style="position:absolute;right:0;top:-3px;gap:3px">'+
+    MJ_BACK_KINDS.map(([v,l])=>'<button class="chip'+(bk===v?" sel":"")+'" style="padding:1px 6px;font-size:11px;line-height:1.3" data-a="mjbackunit" data-v="'+v+'">'+l+'</button>').join("")+
+    '</span></div>';
+  if(bk==="none") return h+'</div>';
+  h+='<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.feeBack)+'" data-in="mjf" data-v="feeBack">';
+  if(bk==="with"){
+    let list=[];
+    (m.players||[]).concat(mjlSetupCands()).forEach(nm=>{ nm=String(nm==null?"":nm).trim(); if(nm && nm!=="自分" && !mjlIsX(nm) && list.indexOf(nm)<0) list.push(nm); });
+    list=list.slice(0,8); if(who && list.indexOf(who)<0) list.unshift(who);
+    h+='<div class="muted" style="font-size:11px;margin:10px 0 4px">誰と同卓の時</div>'+
+      (list.length ? '<div class="row" id="mj-backwho" style="gap:6px;flex-wrap:wrap">'+list.map(nm=>
+        '<button class="btn'+(nm===who?' sel':'')+'" '+MJ_NAME_BTN+' data-a="mjbackwho" data-v="'+esc(nm)+'">'+esc(nm)+'</button>').join("")+'</div>'
+        : '<div class="muted" style="font-size:12px">同卓者に名前を入れると、ここで選べます</div>')+
+      '<div class="row between" style="align-items:center;gap:8px;margin-top:8px">'+
+      '<span class="muted" style="font-size:11px">'+(who ? esc(who)+'と同卓したゲーム' : '同卓したゲーム')+'</span>'+
+      '<input class="input sm mono r" type="number" inputmode="numeric" placeholder="0" value="'+esc(m.feeBackN==null?"":String(m.feeBackN))+'" style="width:96px;flex-shrink:0" data-in="mjf" data-v="feeBackN"></div>';
+  }
+  return h+'</div>';
 }
 /* v6.79【半荘の記録を「＋ 麻雀」にまとめる】(ユーザー 11/15 18:07「更に言えば半荘の記録という入り口を消してセッションの麻雀の中に統合しても良い /
    半荘じゃ無い場合もあるから、ゲームの記録の場合と収支のみ記録の場合で分ければ良いのでは？」・18:10「オッケーです、お願いします」・
@@ -9726,7 +9828,7 @@ function mjlStartFrom(m){
   L.seats = num(m.rule)===4 ? 4 : 3;
   if(UI.mjRuleOf===m){
     L.gameFee=fnum(m.baseFee)||0; L.topBonus=fnum(m.topBonus)||0; L.feeBack=fnum(m.feeBack)||0; L.drinkFee=fnum(m.drinkFee)||0;
-    if(m.feeBackUnit==="fixed") L.feeBackUnit="fixed"; else delete L.feeBackUnit;
+    mjBackCopy(L, m);   /* v6.83: なし・同卓 と、同卓の人も(ルールのとおりに) */
     if(fnum(m.chipRate)) L.chipUnit=fnum(m.chipRate);
   }
   const sh=String(m.shop||"").trim(), st=String(m.store||"").trim();
@@ -9743,7 +9845,7 @@ function mjlWhereHtml(setup){
   return '<div class="card" id="mjl-where" style="margin-bottom:12px;padding:12px 16px">'+
     '<div style="font-size:14px;font-weight:700">'+esc(w)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:3px">'+esc(d.slice(5).replace("-","/"))+'('+"日月火水木金土"[new Date(d+"T12:00:00").getDay()]+') ・ フリー ・ '+c.seats+'麻</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:2px">'+mjFeeLine({baseFee:c.gameFee, topBonus:c.topBonus, feeBack:c.feeBack, feeBackUnit:c.feeBackUnit, drinkFee:c.drinkFee})+'</div></div>';
+    '<div class="muted" style="font-size:11px;margin-top:2px">'+mjFeeLine({baseFee:c.gameFee, topBonus:c.topBonus, feeBack:c.feeBack, feeBackUnit:c.feeBackUnit, feeBackWho:c.feeBackWho, drinkFee:c.drinkFee})+'</div></div>';
 }
 function viewMj(){
   const m = UI.mjDraft;
@@ -9893,25 +9995,18 @@ function viewMj(){
   }
   else if(isFree){
     h += band("ゲーム代(フリー・自動計算)");
+    /* v6.83: バックは枠の下の1段へ(mjBackFieldHtml。種類のチップが4つになり、枠の半分の幅に入らないので)。枠は 基本・トップ賞 / ドリンク・ゲーム代(自動) */
     h += '<div class="grid2" style="margin-bottom:6px">'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">基本ゲーム代(1ゲーム)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.baseFee)+'" data-in="mjf" data-v="baseFee"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">トップ賞(1着毎)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.topBonus)+'" data-in="mjf" data-v="topBonus"></div>'+
-      /* v5.47: **ゲーム代バックはここ**(ゲーム代と対になるもの)。半荘ごとにもらう額 */
-      /* v6.16: 単位を「1半荘 / 固定」で切り替える(固定=その日に1回もらう額)。めったに触らないので小さいチップで、ラベルの行に置く */
-      /* チップはラベルの行の右に**重ねて**置く(行の高さを変えない=隣のドリンク/入場の欄と高さが揃う) */
-      /* v6.79: 見出しは「バック」だけ(チップの字が「1ゲーム」になって長くなり、幅 375 で見出しの字に当たったので。節の見出しが「ゲーム代」・畳んだ行も「バック」) */
-      '<div style="position:relative"><div class="muted" style="font-size:11px;margin-bottom:2px">バック</div>'+
-        '<span class="row" style="position:absolute;right:0;top:-3px;gap:3px">'+
-        [["per","1ゲーム"],["fixed","固定"]].map(([v,l])=>'<button class="chip'+((mjBackFixed(m)?"fixed":"per")===v?" sel":"")+'" style="padding:1px 6px;font-size:11px;line-height:1.3" data-a="mjbackunit" data-v="'+v+'">'+l+'</button>').join("")+
-        '</span>'+
-      '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.feeBack)+'" data-in="mjf" data-v="feeBack"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ドリンク/入場(1回)</div>'+
       '<input class="input sm mono r" type="number" inputmode="numeric" value="'+esc(m.drinkFee)+'" data-in="mjf" data-v="drinkFee"></div>'+
       '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代(自動)</div>'+
       '<div class="input sm mono r" id="mj-feeauto" style="border-style:dashed">'+"¥"+mjGameFee(m).toLocaleString("ja-JP")+'</div></div></div>';
     h += '<div class="muted mono" style="font-size:11px" id="mj-feeformula">'+mjFeeFormula(m)+'</div>';
+    h += mjBackFieldHtml(m);
   } else {
     h += band("ゲーム代(セット・手入力)");
     h += '<div><div class="muted" style="font-size:11px;margin-bottom:2px">ゲーム代 合計(場代・トップ賞・奢り込み)</div>'+
@@ -10074,8 +10169,10 @@ function mjSummary(m){
         if(num(m.baseFee)&&H) h += sub("基本 "+num(m.baseFee)+"×"+H+"ゲーム", -num(m.baseFee)*H);
         if(num(m.topBonus)&&top) h += sub("トップ賞 "+num(m.topBonus)+"×"+top+"回", -num(m.topBonus)*top);
         if(num(m.drinkFee)) h += sub("ドリンク/入場", -num(m.drinkFee));
-        if(mjBackFixed(m)){ if(num(m.feeBack)) h += sub("バック(固定)", num(m.feeBack)); }   /* v6.16 */
-        else if(num(m.feeBack)&&H) h += sub("バック "+num(m.feeBack)+"×"+H+"ゲーム", num(m.feeBack)*H);
+        { const bk=mjBackKind(m), bn=mjBackGames(m), who=String(m.feeBackWho||"").trim();
+          if(bk==="fixed"){ if(num(m.feeBack)) h += sub("バック(固定)", num(m.feeBack)); }   /* v6.16 */
+          /* v6.83: 同卓は、その人と同卓したゲームの数で(「(誰と同卓)」を付ける)・なし は出さない(mjBackGames が 0) */
+          else if(num(m.feeBack)&&bn) h += sub("バック "+num(m.feeBack)+"×"+bn+"ゲーム"+(bk==="with" ? (who ? "("+esc(who)+"と同卓)" : "(同卓)") : ""), num(m.feeBack)*bn); }
       }
     }
     }   /* v5.74: _hasCash */
@@ -10133,6 +10230,7 @@ function bindMj(){
       if(kind==="mjf"){
         /* v6.72: 隠していた「半荘の記録から: …」の上から打ち始めた時は、元の文を memoAuto へ移してから書き換える(消さない) */
         if(v==="memo" && mjMemoAuto(m.memo)) m.memoAuto=m.memo;
+        if(v==="feeBackN") UI.mjFeeOpen={d:m, open:true};   /* v6.83: 同卓したゲームの数を入れた後に描き直しても、ゲーム代を畳まない */
         m[v]=el.value; refreshMj(); }
       else if(kind==="gsp"){ gspInput(m, num(v), el.value, mjFinal(m)); }   /* v5.74 */
       else if(kind==="mjxstore"||kind==="mjxitem"||kind==="mjxamount"){
@@ -10186,7 +10284,7 @@ function bindMj(){
         }
         mjApplyRule(m, r);
         UI.mjRuleOf=m;   /* v6.79: この下書きでルールを選んだ(ゲームごとに記録する時は、このルールの単価で卓を始める) */
-        if(mjFeeSet(m)) UI.mjFeeOpen={d:m, open:false};   /* v6.78: ルールを選んだ後は、ゲーム代を1行に畳む(設定の無いルールなら開いたまま) */
+        if(mjFeeSet(m) && !mjBackNeedN(m)) UI.mjFeeOpen={d:m, open:false};   /* v6.78: ルールを選んだ後は、ゲーム代を1行に畳む(設定の無いルールなら開いたまま)。v6.83: 同卓したゲームの数がまだ無い時も開いたまま */
         render();
         toast(mjWhere({shop:r.shop,store:r.name})+" を反映("+r.rule+"麻・"+(r.category==="free"?"フリー":"セット")+
           "・単価"+(r.scoreRate||"-")+"/チップ"+(r.chipRate||"-")+")");
@@ -10205,7 +10303,14 @@ function bindMj(){
       else if(a==="mjrawtog"){ UI.mjRawOpen=!UI.mjRawOpen; render(); }   /* v6.71: 今までの欄を開く/畳む */
       else if(a==="mjvs"){ mjVsTap(m, v); }                              /* v6.71: 差し馬・馬身を足す/外す */
       /* v6.16: バックの単位。額はそのまま残す(押し間違えて戻しても消えない)。結果は描き直しで追従 */
-      else if(a==="mjbackunit"){ if(v==="fixed") m.feeBackUnit="fixed"; else delete m.feeBackUnit; render(); }
+      /* v6.83: 種類は なし・1ゲーム・固定・同卓。同卓にした時、写しを持つ記録で、人が決まっていて数がまだ無ければ、表から数える */
+      else if(a==="mjbackunit"){
+        mjBackSet(m, v);
+        if(mjBackKind(m)==="with" && mjHasLog(m) && String(m.feeBackWho||"").trim() && String(m.feeBackN==null?"":m.feeBackN).trim()==="") m.feeBackN=String(mjBackRecN(m));
+        render(); }
+      /* v6.83: 同卓のバックの人。写しを持つ記録なら、その人と同卓したゲームの数を表から数え直す(持たない記録は、数はそのまま=手で入れる) */
+      else if(a==="mjbackwho"){ const nm=String(v==null?"":v).trim(); if(!nm) return;
+        m.feeBackWho=nm; if(mjHasLog(m)) m.feeBackN=String(mjBackRecN(m)); render(); }
       else if(a==="mjsign"){
         const cur=String(m[v]||"");
         m[v] = cur.startsWith("-") ? cur.slice(1) : "-"+cur;
