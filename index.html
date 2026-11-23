@@ -461,7 +461,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.84 (localStorage保存・完全オフライン)
+   Tally 6.85 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1317,7 +1317,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.84";
+const APP_VERSION = "6.85";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -4757,13 +4757,22 @@ function mjtChipStarts(t){ return (t.players||[]).map((p,ci)=>String(((t.chipSta
    「誰から誰へ何枚」を入れると、**渡した人の基準から引き、受け取った人の基準に足す**(全員の合計は変わらない=増減の逆算も崩れない)。
    記録は`t.chipTrades=[{id,from,to,n,at}]`(from/toは席の番号)。取り消しは逆向きに足し引きして消すだけ。
    **注意(ⓘにも書いた)**: 基準を動かすのは代金を**この表の精算でまとめて払う**時。その場で現金を払い、しかもチップをこの表の精算(チップ単価)にも
-   入れていると、同じチップを二重に数える(買った人が多く払う)。どちらの運用かはユーザーに確認中 */
+   入れていると、同じチップを二重に数える(買った人が多く払う)。どちらの運用かはユーザーに確認中
+   → v6.85: ユーザーの運用は「表の精算でまとめて払う」(11/23 07:45「チップの売り買いはスコアで清算してましたね」)。基準を動かす今の形で合っている */
 const MJT_TRADE_INFO = "チップを<b>渡した人(売った人)の基準から枚数を引き、受け取った人(買った人)の基準に足します</b>。全員の基準の合計は変わりません。<br><br>"+
   "例: Aさん(基準50)が Bさん(基準150)に30枚売ったら、Aさん 20・Bさん 180。<br><br>"+
-  "記録した売り買いは下に並び、「取消」で元に戻せます。<br><br>"+
+  "記録した売り買いは下に並び、「取消」で元に戻せます。<b>精算シート・途中経過・共有の画像にも、記録した順に出ます</b>。<br><br>"+
+  "売り買いの記録がある人は、表から消せません(消すと、履歴と基準が合わなくなるため)。先に「取消」してください。<br><br>"+
   "<b>注意</b>: これは、売り買いの代金を<b>最後の精算でまとめて払う</b>時の記録です。代金を<b>その場で現金で払った</b>のに、チップもこの表の精算に入れていると、"+
   "同じチップを二重に数えてしまいます(買った人が多く払う)。その場で払った売り買いは記録しないでください。";
 function mjtTradeName(t, i){ const p=(t.players||[])[i]; return (p&&String(p).trim()) || ("P"+(num(i)+1)); }
+/* v6.85【売り買いの履歴を、精算シート・途中経過・共有の画像にも】(ユーザー 11/23 07:45「チップの売り買いはスコアで清算してましたね /
+   枚数が分かってればそれでも良いけど移動履歴がわかる事が大切」→ こちらの見立て(履歴は売り買いの欄の中だけ・人を消すと履歴が崩れる)を返し、07:47「お願いします」)。
+   ・履歴の1行(時刻・売った人・買った人・枚数)は mjtTradeRows の1か所。並びは記録した順(古い順)。売り買いの欄の一覧だけは、取消しやすいように新しい順(v6.06 のまま)
+   ・精算シート・途中経過・紙(mjtPrintHtml)と、共有の画像(mjtMidImage)の、グラフの前に「チップの売り買い」の表。記録が無い表は、今までと1字も同じ
+   ・売り買いの記録がある人は、表から消せない(消すと、その人の売り買いが履歴から消え、相手の基準だけが動いたまま残る=履歴と基準が合わなくなる)。先に取消
+   ・スコア表を消すと履歴も消える(家計簿の記録には写さない。表を残せば、記録の画面の「スコア表を開く」から見られる=ユーザーと決めた形) */
+function mjtTradeRows(t){ return (t.chipTrades||[]).map(x=>({ id:x.id, at:String(x.at||""), from:mjtTradeName(t,x.from), to:mjtTradeName(t,x.to), n:num(x.n) })); }
 function mjtTradePrev(t){
   const f=UI.mjtTrade||{}, n=num(f.n);
   if(f.from==null || f.to==null || !(n>0)) return "";
@@ -4790,9 +4799,9 @@ function mjtTradeHtml(t){
     '<div class="muted mono" id="tr-prev" style="font-size:11px;margin-top:6px;min-height:14px">'+mjtTradePrev(t)+'</div>';
   if(log.length){
     h+='<div style="margin-top:8px;border-top:1px solid var(--line)">'+
-      log.slice().reverse().map(x=>'<div class="row between" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'+
-        '<span style="font-size:12px;min-width:0" class="wrapname"><span class="muted mono">'+esc(x.at||"")+'</span> '+
-          esc(mjtTradeName(t,x.from))+' → '+esc(mjtTradeName(t,x.to))+' <b class="mono">'+num(x.n)+'枚</b></span>'+
+      mjtTradeRows(t).reverse().map(x=>'<div class="row between" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'+   /* v6.85: 1行の中身は mjtTradeRows(並びは新しい順) */
+        '<span style="font-size:12px;min-width:0" class="wrapname"><span class="muted mono">'+esc(x.at)+'</span> '+
+          esc(x.from)+' → '+esc(x.to)+' <b class="mono">'+x.n+'枚</b></span>'+
         '<button class="btn" data-mt="trundo" data-v="'+esc(x.id)+'" style="flex:none;margin-left:8px;font-size:11px;padding:4px 10px;color:var(--muted)">取消</button></div>').join("")+
       '</div>';
   }
@@ -4818,6 +4827,7 @@ function mjtMidImage(t, full){
   const F='-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif';
   let lastIdx=-1; rows.forEach((r,ri)=>{ if(P.some((p,ci)=>mjtScore(t,ri,ci)!==null)) lastIdx=ri; });
   const cd=mjtChartData(t);
+  const TR=mjtTradeRows(t);   /* v6.85: チップの売り買い */
   /* 高さの見積り */
   const rowH=52, histH=46, chartH=cd?340:0;
   const chipSt=mjtChipStarts(t), showCS=!full && chipSt.some(x=>x!=="");   /* v6.04 */
@@ -4827,6 +4837,7 @@ function mjtMidImage(t, full){
     + (rowH*sumRows) + (full&&notes.length? notes.length*20+6 : 0) + 14
     + (!full && lastIdx>=0 ? rowH*2 + 14 : 0)  /* 直近(途中経過のみ) */
     + (chartH? chartH+14 : 0)
+    + (TR.length ? 30 + histH*(TR.length+1) + 14 : 0)   /* v6.85: 売り買い(見出し+表の頭+1件ずつ) */
     + histH*(rows.length+1) + (full?30:0) + PAD;
   const cv=document.createElement("canvas");
   const SCALE=2; cv.width=W*SCALE; cv.height=Math.ceil(H)*SCALE;
@@ -4898,6 +4909,15 @@ function mjtMidImage(t, full){
       else{ const sc=mjtScore(t,lastIdx,ci); if(sc===null){tx="";} else { tx=fmtPt(sc); col=sc<0?red:"#000"; } }
       cell(PAD+lblW+colW*ci,y,colW,rowH,tx,{bg:latestBg,color:col,bold:true,size:26});
     }); y+=rowH+14;
+  }
+  /* v6.85: チップの売り買い(記録がある時だけ。時刻・売った人・買った人・枚数。記録した順)。字は 20px 以上(幅 720 の画像を画面の幅 402 で見て 11px 以上=v6.70) */
+  if(TR.length){
+    ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.font="bold 20px "+F;
+    ctx.fillText("チップの売り買い", PAD, y+14); y+=30;
+    const tw=(W-PAD*2-lblW-130)/2, xs=[PAD, PAD+lblW, PAD+lblW+tw, PAD+lblW+tw*2], ws=[lblW, tw, tw, 130];
+    ["時刻","売った人","買った人","枚数"].forEach((s,i)=>cell(xs[i],y,ws[i],histH,s,{bg:hdrBg,bold:true,size:20})); y+=histH;
+    TR.forEach(x=>{ [x.at, x.from, x.to, x.n+"枚"].forEach((s,i)=>cell(xs[i],y,ws[i],histH,s,{bg:(i?"#fff":lblBg),bold:!i,size:(i?22:20)})); y+=histH; });
+    y+=14;
   }
   /* グラフ */
   if(cd){
@@ -5121,11 +5141,17 @@ function mjtPrintHtml(t, mode){
   const headMid='<div class="pr-title">途中経過</div>'+
     '<div class="pr-sub">'+esc(t.date||"")+(t.ruleName?" ・ "+esc(t.ruleName):"")+" ・ "+seats+"人打ち</div>";
 
+  /* v6.85: チップの売り買い(記録がある時だけ。時刻・売った人・買った人・枚数。記録した順)。表の字は、ほかの表と同じ(紙 11px・精算シート 12px・途中経過 15px) */
+  const TR=mjtTradeRows(t);
+  const trades = !TR.length ? "" :
+    '<table class="pr-tbl pr-trade"><caption style="caption-side:top;text-align:left;font-size:'+(mode==="mid"?15:12)+'px;font-weight:700;padding:0 0 3px">チップの売り買い</caption>'+
+    '<thead><tr><th>時刻</th><th>売った人</th><th>買った人</th><th>枚数</th></tr></thead><tbody>'+
+    TR.map(x=>'<tr><td class="pr-no">'+esc(x.at)+'</td><td>'+esc(x.from)+'</td><td>'+esc(x.to)+'</td><td>'+x.n+'枚</td></tr>').join("")+'</tbody></table>';
   const body = (mode==="mid")
-    ? headMid + sumMid + latest + chart + tbl(true)
+    ? headMid + sumMid + latest + trades + chart + tbl(true)
     : (mode==="screen")
-      ? head + sum + chart + tbl(true)
-      : head + tbl(false) + '<div class="pr-break"></div>' + chart + sum;
+      ? head + sum + trades + chart + tbl(true)
+      : head + tbl(false) + '<div class="pr-break"></div>' + chart + sum + trades;
   return '<div class="pr-wrap'+(mode==="mid"?" pr-mid":"")+'">'+body+(mode==="mid"?"":foot)+'</div>';
 }
 function mjtPrint(){
@@ -5645,13 +5671,16 @@ function bindMjTable(){
       else if(a==="pdel"){
         const i=num(el.dataset.v);
         if(t.players.length<=mjtSeats(t)){ alert(mjtSeats(t)+"人より減らせません。"); return; }
+        /* v6.85: 売り買いの記録がある人は消さない(消すと、その人の売り買いが履歴から消え、相手の基準だけが動いたまま残る)。先に取消してもらう */
+        const nTr=(t.chipTrades||[]).filter(x=>x.from===i||x.to===i).length;
+        if(nTr){ alert("「"+(t.players[i]||"")+"」には、チップの売り買いの記録が"+nTr+"件あります。先に「⇄ チップの売り買い」で取り消してから削除してください。"); return; }
         if(confirm("「"+(t.players[i]||"")+"」を削除しますか?この列の記録も消えます。")){
           t.players.splice(i,1); t.rows.forEach(r=>r.splice(i,1)); t.chipStart.splice(i,1); t.chipEnd.splice(i,1); (t.fees||[]).splice(i,1);
           (t.pexp||[]).splice(i,1); (t.chipLocked||[]).splice(i,1); (t.feeRelief||[]).splice(i,1);
           /* 免除の負担者indexを詰める(削除者を指していたら未選択に) */
           (t.feeRelief||[]).forEach(r=>{ if(r&&r.by!=null){ if(r.by===i) r.by=null; else if(r.by>i) r.by--; } });
-          /* v6.06: 売り買いの記録も詰める(消した人が関わる記録は消す——相手の基準はそのまま残る) */
-          t.chipTrades=(t.chipTrades||[]).filter(x=>x.from!==i&&x.to!==i).map(x=>Object.assign(x,{from:x.from>i?x.from-1:x.from, to:x.to>i?x.to-1:x.to}));
+          /* v6.06: 売り買いの記録の席の番号も詰める(v6.85: 消す人の記録は無い=上で止めた) */
+          t.chipTrades=(t.chipTrades||[]).map(x=>Object.assign(x,{from:x.from>i?x.from-1:x.from, to:x.to>i?x.to-1:x.to}));
           UI.mjtTrade=null;
           UI.pdelMode=false;
           if(t.meIdx===i) t.meIdx=null; else if(t.meIdx>i) t.meIdx--;
