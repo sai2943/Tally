@@ -264,6 +264,14 @@
   /* v6.03: 一覧の名前を切らずに折り返す。.wseg=折り返しても割らない塊(店名・ルール名・品目など)。塊より長い時だけ中で折る */
   .wrapname{overflow-wrap:anywhere;}
   .wseg{display:inline-block; max-width:100%;}
+  /* v6.87: 店名とルール名を「・」でつながない。ルール名は灰の札(.mjrule。v6.51 の色の決まり=灰は補足)、店名は字だけ(.shopname)。
+     店名は、行に収まらなければ**空白の所で**折り返す(長い店名が、名前の途中の1字で次の行に割れないように)。
+     空白の無い長い店名だけ、収まらない所で折る。v6.87 で足した CSS はここだけ(下の「ここまで」まで) */
+  .shopname{word-break:keep-all; overflow-wrap:anywhere;}
+  .tag.mjrule{border:1px solid var(--muted); color:var(--muted); display:inline-block; max-width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; vertical-align:middle;}
+  /* 成績の詳細の見出し(店名と札が1行): 狭い時は店名から先に…で切る(札は縮めない。札が行より長い時だけ札も…) */
+  .hdr .tag.mjrule{flex-shrink:0;}
+  /* v6.87 ここまで */
   .bar{height:5px; background:var(--surface2); border-radius:3px;}
   .bar>div{height:5px; border-radius:3px; opacity:.85;}
   .xbtn{background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:0 2px;}
@@ -478,7 +486,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.86 (localStorage保存・完全オフライン)
+   Tally 6.87 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1237,6 +1245,17 @@ function mjShopHints(){
   });
   return Object.keys(m).sort((a,b)=>m[a]<m[b]?1:m[a]>m[b]?-1:0).slice(0,5);
 }
+/* v6.87【店名とルール名を「・」でつながない】(ユーザー 11/23 21:30「店名が長いと表記が崩れますので改善したい。•で店名とかルール区切ってるの見栄え的にダサく感じます」)。
+   それまで(v6.02〜v6.86): 店名とルール名を「店 ・ ルール」の1つの字にして(mjWhere)、塊ごとに折り返していた(wsegHtml)。
+   スコア表の一覧では、長い店名が日付・人数の札の横の狭い所に入り、店名の途中で割れて「・」とルール名が次の行へ落ちていた。
+   v6.87: **店名とルール名の両方がある所だけ**、ルール名を灰の札(mjRuleTag)にして店名の後ろ(スコア表の一覧は1行目の札の並び)に置く。
+   店名だけ・ルール名だけの所は v6.86 と1字も同じ(ある方を字で)。字だけの所(知らせ・聞く窓・家計簿のメモ・検索)は mjWhere のまま */
+function mjRuleTag(rule){ const r=String(rule==null?"":rule).trim(); return r ? '<span class="tag mjrule">'+esc(r)+'</span>' : ""; }
+/* 店名とルール名の両方がある時の HTML: 店名(字)+ルール名(札)。札の前は空白=店名で行がいっぱいなら、札は次の行へ。
+   後ろに字を続ける時(tail: スコア表を開く・打っている卓の行・ゲームの記録の画面の上)は、札の後ろは空白だけ(「・」を付けない=札が区切り)。
+   札(inline-block)の前後は、&nbsp; でつないでも折り返せる(CSS の決まり)ので、札の後ろに「・」を置くと、札が行の終わりに来た時に「・」が次の行の頭に落ちる */
+function mjWhereHtml(shop, rule, tail){ return '<span class="shopname">'+esc(String(shop).trim())+'</span> '+mjRuleTag(rule)+(tail ? " "+tail : ""); }
+const mjBoth=(shop, rule)=>!!(String(shop==null?"":shop).trim() && String(rule==null?"":rule).trim());
 /* v6.02: 店名とルール名を並べた表示名(どちらか無ければある方だけ) */
 function mjWhere(s, sep){
   return [String((s&&s.shop)||"").trim(), String((s&&s.store)||"").trim()].filter(Boolean).join(sep==null?" ・ ":sep);
@@ -1334,7 +1353,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.86";
+const APP_VERSION = "6.87";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -3128,7 +3147,7 @@ function viewMain(){
       h += '<div class="card" id="mj-busy" data-a="mjlog" style="cursor:pointer;margin-bottom:12px;border-color:var(--amber)">'+
         '<div class="row between" style="align-items:center">'+
         '<div style="min-width:0"><div style="font-size:13px;font-weight:600"><span style="color:var(--amber)">●</span> 打っている卓</div>'+
-        '<div class="muted" style="font-size:11px;margin-top:2px">'+esc(mjlBusyLine(false))+'</div>'+
+        '<div class="muted" style="font-size:11px;margin-top:2px">'+mjlBusyHtml(false)+'</div>'+
         '</div><span class="chevw" style="font-size:18px">'+CHEV+'</span></div></div>';
     }
     h += viewGameSessions();
@@ -3854,8 +3873,8 @@ function gameRowMj(s, first){
     '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(s.category==="free"?"フリー":"セット")+'</span>'+
     '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>'+
     (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>'+
-    /* v6.02: 店名 ・ ルール名。v6.03: 切らずに、店名とルール名の境目で折り返す */
-    '<div class="muted wrapname" style="font-size:11px">'+(mjWhere(s)?wsegHtml([s.shop,s.store]," ・"):"店名未入力")+'</div>'+
+    /* v6.02: 店名 ・ ルール名。v6.03: 切らずに、店名とルール名の境目で折り返す。v6.87: 両方ある時は、店名の後ろにルール名の札 */
+    '<div class="muted wrapname" style="font-size:11px">'+(mjBoth(s.shop,s.store)?mjWhereHtml(s.shop,s.store):mjWhere(s)?wsegHtml([s.shop,s.store]," ・"):"店名未入力")+'</div>'+
     /* v6.03: 着順を入れていない卓(金額だけの記録)は「0半荘 ・ 平均—着 ・ トップ0%」になるだけなので出さない */
     (mjHanchan(s)>0?'<div class="ellip" style="font-size:11px;color:var(--muted);margin-top:1px">'+mjHanchan(s)+'ゲーム ・ 平均'+(av!==null?av.toFixed(2):"—")+'着 ・ トップ'+topPct+'%</div>':'')+
     '</div>'+
@@ -4209,7 +4228,9 @@ function viewMjStatsPage(){
 function viewMjStatDetail(){
   const G=mjStatGroup(UI.mjStatKey);   /* v6.38: 店全体の組も開く */
   let h='<div class="hdr"><button class="navbtn" data-a="mjstlist">‹ 戻る</button>'+
-    '<div style="font-size:14px;font-weight:700" class="ellip">'+(G?esc(G.shop?G.shop+" ・ "+G.store:G.store):"成績")+'</div><div style="width:44px"></div></div>';   /* v6.39: 店全体も「店名 ・ 3麻合計」 */
+    (G && mjBoth(G.shop, G.store)   /* v6.87: 店名とルール名(または「3麻合計」)の両方がある組は、店名の後ろに札 */
+      ? '<div class="row" style="min-width:0;gap:6px;align-items:center;justify-content:center"><span class="ellip" style="font-size:14px;font-weight:700;min-width:0">'+esc(String(G.shop).trim())+'</span>'+mjRuleTag(G.store)+'</div>'
+      : '<div style="font-size:14px;font-weight:700" class="ellip">'+(G?esc(G.shop?G.shop+" ・ "+G.store:G.store):"成績")+'</div>')+'<div style="width:44px"></div></div>';   /* v6.39: 店全体も「店名 ・ 3麻合計」 */
   if(!G) return h+'<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">この記録は見つかりません。</div>';
   const catC="var(--amber)";   /* v6.51: フリーも琥珀(一覧と同じ) */
   h+='<div class="row" style="align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap">'+
@@ -4261,7 +4282,10 @@ function viewMjtList(){
     const names = (t.players||[]).map((p,i)=>p||("P"+(i+1))).join("・");
     const rounds = mjtRounds(t);
     const seats = num(t.rule)||3;
-    /* v6.84: 店名のある表は「店 ・ ルール」(店名の無い表は今までどおりルール名だけ)。長い時は、店名とルール名の境目で折り返す(v6.03 の遊技の一覧と同じ) */
+    /* v6.84: 店名のある表は「店 ・ ルール」(店名の無い表は今までどおりルール名だけ)。長い時は、店名とルール名の境目で折り返す(v6.03 の遊技の一覧と同じ)。
+       v6.87: 店名とルール名の両方がある表は、1行目(日付・人数の札)の後ろにルール名の札・2行目に店名(字だけ。日付の下から始まるので幅いっぱい使える)。
+       片方だけの表は v6.86 と同じ(1行目にある方の字・どちらも無ければ「ルール未設定」) */
+    const both = mjBoth(t.shop, t.ruleName);
     const title = mjWhere({shop:t.shop, store:t.ruleName}) ? wsegHtml([t.shop, t.ruleName], " ・") : esc("ルール未設定");
     const hasMe = t.meIdx!=null && (t.players||[])[t.meIdx]!=null;
     const meNet = hasMe ? mjtSettle(t).pays[t.meIdx] : null;   /* 端数調整・場代移転込みの精算値 */
@@ -4269,7 +4293,8 @@ function viewMjtList(){
       '<div style="flex:1;min-width:0"><div class="row" style="font-size:13px;gap:6px;align-items:center">'+
       '<span class="mono muted" style="font-size:11px;flex-shrink:0">'+t.date.slice(5).replace("-","/")+'</span>'+
       '<span class="tag" style="border:1px solid var(--teal);color:var(--teal);flex-shrink:0">'+seats+'人</span>'+
-      '<span class="wrapname" style="font-weight:700;min-width:0">'+title+'</span></div>'+
+      (both ? mjRuleTag(t.ruleName) : '<span class="wrapname" style="font-weight:700;min-width:0">'+title+'</span>')+'</div>'+
+      (both ? '<div class="shopname" style="font-size:13px;font-weight:700;margin-top:4px">'+esc(String(t.shop).trim())+'</div>' : '')+
       '<div class="muted ellip" style="font-size:11px;margin-top:3px">'+esc(names)+' ・ '+rounds+'ゲーム</div></div>'+
       (delMode
         ? '<button class="btn" data-a="mjtdel" data-v="'+t.id+'" style="flex-shrink:0;margin-left:8px;height:36px;padding:0 12px;font-size:12px;color:var(--red);border-color:var(--red)">削除</button>'
@@ -5248,10 +5273,14 @@ function mjtOfRec(m){ return m.fromTable==null ? undefined : (S.mjTables||[]).fi
 function mjFromTableHtml(m){
   const t=mjtOfRec(m); if(!t) return "";
   const parts=[t.date.slice(5).replace("-","/"), t.shop, t.ruleName, mjtSeats(t)+"人", mjtRounds(t)+"ゲーム"];   /* 空の塊は wsegHtml が落とす */
+  /* v6.87: 店名とルール名の両方がある表は「日付 ・ 店名 [ルール] 人数 ・ ゲーム数」(札の後ろは「・」を付けない=mjWhereHtml の tail) */
+  const sub = mjBoth(t.shop, t.ruleName)
+    ? wsegHtml([parts[0]])+' ・ '+mjWhereHtml(t.shop, t.ruleName, wsegHtml(parts.slice(3), " ・"))
+    : wsegHtml(parts, " ・");
   return '<div class="card" id="mj-fromtable" data-a="mjtfromrec" style="cursor:pointer;margin-bottom:12px">'+
     '<div class="row between" style="align-items:center;gap:10px"><div style="min-width:0">'+
     '<div style="font-size:13px;font-weight:600">スコア表を開く</div>'+
-    '<div class="muted wrapname" style="font-size:11px;margin-top:2px">'+wsegHtml(parts, " ・")+'</div></div>'+
+    '<div class="muted wrapname" style="font-size:11px;margin-top:2px">'+sub+'</div></div>'+
     '<span class="chevw" style="font-size:18px;flex-shrink:0">'+CHEV+'</span></div></div>';
 }
 function mjtUma(t, idx){ return [num(t.uma1)||0,num(t.uma2)||0,num(t.uma3)||0,num(t.uma4)||0][idx]||0; }
@@ -9953,10 +9982,17 @@ function mjBackFieldHtml(m){
 const mjStartOn = m => !!(m && UI.mjIsNew && UI.mjStart && UI.mjStart===m);
 /* 打っている卓がある(着順を1つでも記録した・席を決めた)。席を聞いている間に戻った卓は、打っている卓にしない(次にまた1画面目から始める) */
 function mjlBusy(){ return !mjlNeedSetup(); }
+/* 打っている卓の「nゲーム」(withTime なら「(HH:MM から)」も)。v6.87: 字の1行(mjlBusyLine)と HTML の1行(mjlBusyHtml)の両方がこれを使う(数え方と時刻の字は、ここだけ) */
+function mjlBusyGames(withTime){ const hm=withTime ? mjlStartHM() : ""; return mjLogRows().length+"ゲーム"+(hm ? "("+hm+" から)" : ""); }
 /* 打っている卓の1行の字: 店 ・ ルール ・ nゲーム(withTime なら、始まりの時刻も) */
 function mjlBusyLine(withTime){
-  const L=S.mjLog||{}, hm=withTime ? mjlStartHM() : "";
-  return [mjWhere({shop:L.shop, store:L.store}), mjLogRows().length+"ゲーム"].filter(Boolean).join(" ・ ")+(hm ? "("+hm+" から)" : "");
+  const L=S.mjLog||{};
+  return [mjWhere({shop:L.shop, store:L.store}), mjlBusyGames(withTime)].filter(Boolean).join(" ・ ");
+}
+/* v6.87: 同じ1行の HTML。店名とルール名の両方がある卓は「店名 [ルール] nゲーム」(札の後ろは「・」を付けない)、ほかは mjlBusyLine の字のまま */
+function mjlBusyHtml(withTime){
+  const L=S.mjLog||{}; if(!mjBoth(L.shop, L.store)) return esc(mjlBusyLine(withTime));
+  return mjWhereHtml(L.shop, L.store, esc(mjlBusyGames(withTime)));
 }
 function mjStartHtml(m){
   const busy=mjlBusy(), isFree=m.category==="free";
@@ -9970,7 +10006,7 @@ function mjStartHtml(m){
     '<span class="chevw" style="font-size:18px;flex-shrink:0">'+CHEV+'</span></div></div>';
   return '<div style="height:6px"></div>'+
     (!isFree ? card("mj-go-log", "mjstartset", "ゲームごとに記録", "スコア表に1ゲームずつ点数を入れていく。家計簿に反映すると、この記録になります", "", false)
-     : busy ? card("mj-go-log", "mjstartlog", "打っている卓を開く", "卓は1つだけ。続きを記録します", "● "+esc(mjlBusyLine(true)), true)
+     : busy ? card("mj-go-log", "mjstartlog", "打っている卓を開く", "卓は1つだけ。続きを記録します", "● "+mjlBusyHtml(true), true)
      : card("mj-go-log", "mjstartlog", "ゲームごとに記録", "1ゲームずつ着順を押していく。締めると、この記録になります", "", false))+
     card("mj-go-cash", "mjstartcash", "収支だけ記録", "投資・回収と着順の回数を入れる", "", false);
 }
@@ -9994,10 +10030,11 @@ function mjlStartFrom(m){
 function mjlWhereHtml(setup){
   const L=S.mjLog||{}, w=mjWhere({shop:L.shop, store:L.store}); if(!w) return "";
   const c=mjLogConf();
-  if(!setup) return '<div class="muted" id="mjl-where" style="font-size:12px;margin:-2px 0 10px 2px">'+esc(w)+' ・ フリー '+c.seats+'麻</div>';
+  const both=mjBoth(L.shop, L.store), wh=both ? mjWhereHtml(L.shop, L.store) : esc(w);   /* v6.87: 両方ある時は、店名の後ろにルール名の札(1行の時は札の後ろに「フリー n麻」を空白だけで続ける) */
+  if(!setup){ const tail="フリー "+c.seats+"麻"; return '<div class="muted" id="mjl-where" style="font-size:12px;margin:-2px 0 10px 2px">'+(both ? mjWhereHtml(L.shop, L.store, tail) : esc(w)+' ・ '+tail)+'</div>'; }
   const d=L.date||todayStr();
   return '<div class="card" id="mjl-where" style="margin-bottom:12px;padding:12px 16px">'+
-    '<div style="font-size:14px;font-weight:700">'+esc(w)+'</div>'+
+    '<div style="font-size:14px;font-weight:700">'+wh+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:3px">'+esc(d.slice(5).replace("-","/"))+'('+"日月火水木金土"[new Date(d+"T12:00:00").getDay()]+') ・ フリー ・ '+c.seats+'麻</div>'+
     '<div class="muted" style="font-size:11px;margin-top:2px">'+mjFeeLine({baseFee:c.gameFee, topBonus:c.topBonus, feeBack:c.feeBack, feeBackUnit:c.feeBackUnit, feeBackWho:c.feeBackWho, drinkFee:c.drinkFee})+'</div></div>';
 }
