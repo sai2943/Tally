@@ -486,7 +486,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.88 (localStorage保存・完全オフライン)
+   Tally 6.89 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1355,7 +1355,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.88";
+const APP_VERSION = "6.89";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -3867,16 +3867,20 @@ function gameRowSlot(s, first){
     '</div>'+
     '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
 }
-/* v6.88: 麻雀の記録の札の行(フリー/セット・3麻/4麻・相手)と、店名の行。遊技のタブの一覧の行と、記録の結果の画面の両方がこれを使う */
+/* v6.88: 麻雀の記録の札の行(フリー/セット・3麻/4麻・相手)と、店名の行。遊技のタブの一覧の行と、記録の結果の画面の両方がこれを使う
+   v6.89【ルール名は札の行】(ユーザー 11/24 14:12「ルールいれてるなら3麻とかの表記消しても良いかも、少なくともルールは人の表記より下にはならないと思う」)。
+   v6.87〜v6.88 はルール名の札を店名の行(店名の後ろ)に置いていて、相手の札より下になっていた。
+   v6.89: ルール名がある記録は、3麻/4麻 の札の所にルール名の札(mjRuleTag。人数はルール名で分かる)。ルール名の無い記録は v6.88 と同じ 3麻/4麻 の札 */
 function mjTagsHtml(s){
   const catC="var(--amber)";   /* v6.51: セットもフリーも琥珀(フリー=赤 をやめた。遊技の種類は琥珀1色) */
   return '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
     '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(s.category==="free"?"フリー":"セット")+'</span>'+
-    '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>'+
+    (mjRuleTag(s.store) || '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>')+
     (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>';
 }
-/* v6.02: 店名 ・ ルール名。v6.03: 切らずに、店名とルール名の境目で折り返す。v6.87: 両方ある時は、店名の後ろにルール名の札 */
-const mjWhereLineHtml = s => mjBoth(s.shop,s.store)?mjWhereHtml(s.shop,s.store):mjWhere(s)?wsegHtml([s.shop,s.store]," ・"):"店名未入力";
+/* v6.02: 店名 ・ ルール名。v6.03: 切らずに、店名とルール名の境目で折り返す。v6.87: 両方ある時は、店名の後ろにルール名の札。
+   v6.89: 店名の行は店名だけ(ルール名は札の行)。長い店名は空白の所で折り返す(.shopname=v6.87 で店名とルール名の両方がある時の形を、店名だけの記録にも)。店名が無ければ「店名未入力」 */
+const mjWhereLineHtml = s => { const sh=String(s.shop==null?"":s.shop).trim(); return sh ? '<span class="shopname">'+esc(sh)+'</span>' : "店名未入力"; };
 /* v6.88【一覧の行は2行】(ユーザー 11/24 06:22「見出しに着順とゲーム数要らないかも」→ 聞いて決めた: 消して結果の画面へ)。
    3行目(ゲーム数 ・ 平均着順 ・ トップ率)は、記録を開いた結果の画面に出す。押すと結果の画面(mjedit=記録を開く。パチスロの sedit と同じ名前の付け方) */
 function gameRowMj(s, first){
