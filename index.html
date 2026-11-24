@@ -486,7 +486,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.90 (localStorage保存・完全オフライン)
+   Tally 6.91 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1355,7 +1355,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.90";
+const APP_VERSION = "6.91";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -2177,21 +2177,53 @@ function bindAdvDrill(){
   });
 }
 function viewSvDrill(){
-  const mk=UI.month||todayStr().slice(0,7);
-  const d=securedSplit(mk), rows=svMoves(mk), p=preSplit(mk);
+  /* v6.91【バグ修正】**入口(予算カードの貯金)と同じ期間で見る**(変動消費・娯楽の内訳=v5.56 と同じ budgetMk(monthKey()))。
+     前は UI.month(アプリのどこでも入れていない)を見ていたので、いつも今日の暦月だった——給料日の前の月初(12/1〜12/14 など)は
+     まだ始まっていない次の期間を出し、カードは「¥100,000 達成」でも内訳は「12月 +¥0・まだ動きがありません」になった。前の月を開いていても今月だった */
+  const mk=budgetMk(monthKey());
+  const d=securedSplit(mk), rows=svMoves(mk), p=preSplit(mk), _pl=svPlan(mk), _span=budgetSpanTxt(mk);
   let h='<div class="hdr"><button class="navbtn" data-sd="back">‹ 戻る</button>'+
     '<div style="font-size:14px;font-weight:700">貯金の内訳</div><div style="width:44px"></div></div>';
+  /* v6.91: 見出しは、給料日の期間なら予算カードと同じ「11/13 〜 12/14」(暦月の設定なら今までどおり「2026年 11月」) */
   h+='<div class="card" style="margin-bottom:14px"><div class="row between" style="align-items:baseline">'+
-    '<span class="muted" style="font-size:12px">'+mk.replace("-","年 ")+'月</span>'+
+    '<span class="'+(_span ? 'mono ' : '')+'muted" style="font-size:12px">'+(_span || mk.replace("-","年 ")+'月')+'</span>'+
     '<span class="mono teal" style="font-size:20px;font-weight:700">'+signYen(d.sv)+'</span></div>'+
     '</div>';   /* v5.13: 説明文は撤去(ユーザー指摘: 金額だけで充分)。
        ついでにHTMLで効かない`**`がそのまま出ていた事故も消える */
+  /* v6.91【目標の内訳】(ユーザー 11/24 21:07「貯金がギリギリ達成してたら、いきなりプラス1万とかになって困ってます。多分光熱費が想定より早く落ちたのが原因だと思いますが」)。
+     調べると、早く落ちたこと自体では目標は動かない(同じ期間の中で日付が前に動くだけなら1円も動かない)。動くのは**期間の収入・固定費が変わった時**で、
+     いちばんありそうなのは、光熱費を確定の金額に書き換えて設定の金額(仮)より高かったこと(そのぶん目標が下がり、移した額は同じなので「達成 +¥」)。
+     計算は設計どおり(v3.74/v3.75: 貯金は使う枠を引いた残り)だが、**なぜ目標が動いたのかが画面のどこにも出なかった**(ユーザー選択: 内訳を出す・計算はそのまま)。
+     → 目標の式をそのまま並べる。数字は preSplit が出した物(数え直さない)。確定で設定と違う回があれば、その行の下に小さく差(fxConfDiff)。
+     行を足すと必ず目標になる(マイナスで0にした時は、その行を出す=v6.13 の差の内訳と同じ形)。所持金で頭打ちの時は、下の差の内訳が続くので「(計画)」を付ける */
+  if(p.hasRatio){
+    const ln=(lb,v)=>'<div class="row between" style="font-size:12px;padding:3px 0"><span class="muted">'+lb+'</span><span class="mono '+(v ? clsPM(v) : 'muted')+'">'+(v ? signYen(v) : yen(0))+'</span></div>';   /* 0 は印なしの「¥0」 */
+    const sub=v=>v ? '<div class="row between muted" style="font-size:11px;padding:0 0 3px 12px"><span>うち確定で設定より'+(v>0 ? '増えた' : '減った')+'分</span><span class="mono">'+yen(v)+'</span></div>' : '';
+    const dI=fxConfDiff(p.incE), dF=fxConfDiff(p.fxE);
+    let w=ln("収入", p.inc)+sub(dI);
+    if(p.fx || dF) w+=ln("固定費", -p.fx)+sub(dF);
+    if(p.varc) w+=ln("変動消費の枠", -p.varc);
+    if(p.amuse) w+=ln("娯楽の枠", -p.amuse);
+    if(p.apr) w+=ln("承認", -p.apr);
+    if(p.iv) w+=ln("投資へ", -p.iv);
+    const tot=p.inc-p.fx-p.varc-p.amuse-p.apr-p.iv;
+    w+='<div style="height:1px;background:var(--line);margin:6px 0 4px"></div>'+
+      (tot!==p.sv ? ln("計算上は(マイナスなので0)", tot) : '')+
+      '<div class="row between" style="font-size:12px;padding:3px 0;font-weight:700"><span>貯金の目標'+(_pl.bound ? '(計画)' : '')+'</span><span class="mono">'+yenM(p.sv)+'</span></div>';
+    h+='<div class="card" style="margin-bottom:14px">'+
+      '<div class="row" style="align-items:center;margin-bottom:6px"><span class="muted" style="font-size:12px;font-weight:700">目標の内訳</span>'+
+      infoBtn("貯金の目標は、予算の期間の<b>収入</b>から、<b>固定費</b>・<b>変動消費と娯楽の枠</b>・<b>承認</b>(枠の外で自分で認めた支出。箱に紐づけた分は除く)を引いた残りです。投資の割合があれば、その分も引きます。<br><br>"+
+        "<b>うち確定で設定より増えた分</b>: 給与や光熱費などの固定費を確定の金額に書き換えた回の、固定費の設定の金額(仮)との差です。固定費が増えれば目標は下がり、収入が増えれば上がります。"+
+        "引き落としの日が早まっただけ(同じ期間の中)なら、目標は動きません。<br><br>"+
+        "移し終えたあとで目標が下がると、移した額との差が予算カードの「達成」の後ろの +¥ になります。その分は貯金から所持金へ戻しても、計画は崩れません。")+'</div>'+
+      w+'</div>';
+  }
   /* v6.13: 所持金が足りず、予算カードの貯金を「いま移せる額」で頭打ちにしている時だけ、
      **計画のあと → いま移せる額** の差を上から順に引いて見せる(行を足すと必ず一致する) */
   {
-    const _bmk=budgetMk(mk), _pl=svPlan(_bmk);
+    /* v6.91: 期間(mk)と svPlan は上で出した物(入口と同じ期間) */
     if(_pl.bound){
-      const q=svShortParts(_bmk, _pl);
+      const q=svShortParts(mk, _pl);
       const line=(lb,v,strong)=>'<div class="row between" style="font-size:12px;padding:3px 0'+(strong?';font-weight:700':'')+'">'+
         '<span class="'+(strong?'':'muted')+'">'+lb+'</span><span class="mono'+(strong?'':' '+clsPM(v))+'">'+(strong?'¥'+v.toLocaleString("ja-JP"):signYen(v))+'</span></div>';
       let w='<div class="row between" style="font-size:12px;padding:3px 0"><span class="muted">計画どおりなら あと</span>'+
@@ -2937,13 +2969,9 @@ function viewCatDrill(){
 
   let h = '<div class="row" style="align-items:center;margin-bottom:10px">'+
     '<button class="navbtn" data-a="drillback" style="font-size:14px">‹ 戻る</button>'+
-    '<div style="flex:1;text-align:center;font-weight:700;font-size:15px">'+(UI.drillVarOnly&&cat==="消費"?"変動消費":esc(cat))+'の内訳 <span class="muted" style="font-size:11px">'+(()=>{
-      /* v5.56: サイクル中は「◯年◯月」が期間と一致しないので、予算カードと同じ日付範囲を出す */
-      if(!cycleStartDay()) return num(parts[0])+'年'+num(parts[1])+'月';
-      const r=budgetRange(mk), d=new Date(r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
-      const _md=x=>x.slice(5).replace("-","/");
-      return _md(r[0])+' 〜 '+_md(d.toISOString().slice(0,10));
-    })()+'</span></div>'+
+    '<div style="flex:1;text-align:center;font-weight:700;font-size:15px">'+(UI.drillVarOnly&&cat==="消費"?"変動消費":esc(cat))+'の内訳 <span class="muted" style="font-size:11px">'+
+      /* v5.56: サイクル中は「◯年◯月」が期間と一致しないので、予算カードと同じ日付範囲を出す(v6.91: 字は budgetSpanTxt) */
+      (budgetSpanTxt(mk) || num(parts[0])+'年'+num(parts[1])+'月')+'</span></div>'+
     '<button class="navbtn" data-a="setbudget" data-v="'+esc(cat)+'" style="font-size:12px;color:var(--teal)">予算変更</button></div>';
   h += '<div class="card" style="margin-bottom:12px">';
   if(cap>0){
@@ -3427,16 +3455,9 @@ function viewLedgerBudget(mk){
      暦月なら月表示と同じなので出さない——**同じことを二度言わない**。
      サイクルのときだけ「どこからどこまでの話か」を出す */
   {
-    const _r=budgetRange(mk);
-    if(cycleStartDay()){
-      /* 終わりは**次の給料日の前日**(_r[1]は排他の上限) */
-      const _e=(()=>{ const d=new Date(_r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
-        return d.toISOString().slice(0,10); })();
-      const _md=x=>x.slice(5).replace("-","/");
-      h += band("予算", '<span class="mono muted" style="font-size:11px">'+_md(_r[0])+' 〜 '+_md(_e)+'</span>');
-    } else {
-      h += band("予算");
-    }
+    /* v6.91: 期間の字は budgetSpanTxt(終わりは次の給料日の前日。貯金の内訳の見出しも同じ字) */
+    const _sp=budgetSpanTxt(mk);
+    h += _sp ? band("予算", '<span class="mono muted" style="font-size:11px">'+_sp+'</span>') : band("予算");
   }
   h += '<div class="card" style="margin-bottom:14px">';
   EXPENSE_CATS.filter(c=>c!=="承認"&&c!==ADV_EXP&&!GAME_CATS[c]).forEach((cat,i)=>{   /* v5.71: 麻雀・パチスロも予算の外(遊技の世界) */  /* 承認は予算バー対象外(承認プロセス自体が統制)。立替も対象外(v5.69) */
@@ -4310,15 +4331,17 @@ function viewMjtList(){
        v6.87: 店名とルール名の両方がある表は、1行目(日付・人数の札)の後ろにルール名の札・2行目に店名(字だけ。日付の下から始まるので幅いっぱい使える)。
        片方だけの表は v6.86 と同じ(1行目にある方の字・どちらも無ければ「ルール未設定」)
        v6.90【ルール名はいつも札】(ユーザー 11/24 18:47「前のやつは表記が違うのかな？」=店名を入れていない前の表はルール名が太字の見出しで、両方ある表と形が違った)。
-       ルール名は1行目の札・2行目の太字は店名だけ(店名の無い表は2行目なし)。どちらも無い表だけ v6.86 と同じ「ルール未設定」 */
+       ルール名は1行目の札・2行目の太字は店名だけ(店名の無い表は2行目なし)。どちらも無い表だけ v6.86 と同じ「ルール未設定」
+       v6.91: ルール名がある表は、人数の札(3人/4人)を出さない(ユーザー 11/24 21:07「ルールわかってる時は◯人は消して良いです」=人数はルールで分かる)。
+       ルール名の無い表は今までどおり人数の札(店名も無ければ、その後ろに「ルール未設定」) */
     const rn = String(t.ruleName==null?"":t.ruleName).trim(), sh = String(t.shop==null?"":t.shop).trim();
     const hasMe = t.meIdx!=null && (t.players||[])[t.meIdx]!=null;
     const meNet = hasMe ? mjtSettle(t).pays[t.meIdx] : null;   /* 端数調整・場代移転込みの精算値 */
     h += '<div class="listitem"'+(delMode?'':' data-a="mjtopen" data-v="'+t.id+'"')+'>'+
       '<div style="flex:1;min-width:0"><div class="row" style="font-size:13px;gap:6px;align-items:center">'+
       '<span class="mono muted" style="font-size:11px;flex-shrink:0">'+t.date.slice(5).replace("-","/")+'</span>'+
-      '<span class="tag" style="border:1px solid var(--teal);color:var(--teal);flex-shrink:0">'+seats+'人</span>'+
-      (rn ? mjRuleTag(rn) : sh ? '' : '<span class="wrapname" style="font-weight:700;min-width:0">'+esc("ルール未設定")+'</span>')+'</div>'+
+      (rn ? mjRuleTag(rn) : '<span class="tag" style="border:1px solid var(--teal);color:var(--teal);flex-shrink:0">'+seats+'人</span>'+
+        (sh ? '' : '<span class="wrapname" style="font-weight:700;min-width:0">'+esc("ルール未設定")+'</span>'))+'</div>'+
       (sh ? '<div class="shopname" style="font-size:13px;font-weight:700;margin-top:4px">'+esc(sh)+'</div>' : '')+
       '<div class="muted ellip" style="font-size:11px;margin-top:3px">'+esc(names)+' ・ '+rounds+'ゲーム</div></div>'+
       (delMode
@@ -5297,7 +5320,8 @@ function mjtOfRec(m){ return m.fromTable==null ? undefined : (S.mjTables||[]).fi
 /* 記録の画面の、スコア表を開く板。表を消してあれば出さない(v6.83 までと同じ画面) */
 function mjFromTableHtml(m){
   const t=mjtOfRec(m); if(!t) return "";
-  const parts=[t.date.slice(5).replace("-","/"), t.shop, t.ruleName, mjtSeats(t)+"人", mjtRounds(t)+"ゲーム"];   /* 空の塊は wsegHtml が落とす */
+  /* v6.91: ルール名がある表は人数を出さない(スコア表の一覧と同じ決まり。空の塊は wsegHtml が落とす) */
+  const parts=[t.date.slice(5).replace("-","/"), t.shop, t.ruleName, String(t.ruleName==null?"":t.ruleName).trim() ? "" : mjtSeats(t)+"人", mjtRounds(t)+"ゲーム"];   /* 空の塊は wsegHtml が落とす */
   /* v6.87: 店名とルール名の両方がある表は「日付 ・ 店名 [ルール] 人数 ・ ゲーム数」(札の後ろは「・」を付けない=mjWhereHtml の tail) */
   const sub = mjBoth(t.shop, t.ruleName)
     ? wsegHtml([parts[0]])+' ・ '+mjWhereHtml(t.shop, t.ruleName, wsegHtml(parts.slice(3), " ・"))
@@ -6248,7 +6272,7 @@ function nowCaps(mk){
   return {wallet:w, varc:one("消費"), amuse:one("娯楽")};
 }
 function preSplit(mk){
-  const base=disposableBase(mk);
+  const bp=baseParts(mk), base=bp.base;   /* v6.91: disposableBase と同じ数字(baseParts)。部品は貯金の内訳の「目標の内訳」へ返す */
   const bg=S.budgets||{}, wf=S.waterfall||{};
   const amuse=budgetAmt(bg["娯楽"], base);
   const varc =budgetAmt(bg["消費"], base);
@@ -6290,10 +6314,12 @@ function preSplit(mk){
   const rs=Math.max(0, parseFloat(String(wf.sink||"").replace("%",""))||0);
   const ri=Math.max(0, parseFloat(String(wf.invest||"").replace("%",""))||0);
   const tot=rs+ri;
-  if(tot<=0) return {rest:rest, sv:0, iv:0, hasRatio:false};
+  /* v6.91: 式の部品(収入・固定費・枠・承認と、数えた記録)。貯金の内訳の「目標の内訳」が、この数字をそのまま並べる */
+  const pt={inc:bp.inc, fx:bp.fx, incE:bp.incE, fxE:bp.fxE, amuse:amuse, varc:varc, apr:_apr};
+  if(tot<=0) return Object.assign(pt, {rest:rest, sv:0, iv:0, hasRatio:false});
   /* 丸め誤差で合計が残余を超えないよう、貯金を丸めて投資は差分で取る */
   const sv=Math.min(rest, Math.round(rest*rs/tot));
-  return {rest:rest, sv:sv, iv:Math.max(0, rest-sv), hasRatio:true};
+  return Object.assign(pt, {rest:rest, sv:sv, iv:Math.max(0, rest-sv), hasRatio:true});
 }
 /* v4.17【バグ修正】**「収入が着弾したか」を1件でも入ったか、で見ていたのが誤り**(ユーザー指摘)。
    実データで、8/3の割戻金¥7,516が「給料が来た」と判定され、給料日(8/14)の10日前に
@@ -7653,6 +7679,14 @@ function budgetRange(mk){
      次の給料日が繰り上がれば**この期間の終わりもそのぶん早くなる**(ユーザー指摘) */
   return [paydayOf(y, m, sd), paydayOf(ny, nm, sd)];   /* 終了は排他 */
 }
+/* v6.91: 予算の期間の字「11/13 〜 12/14」(終わりは次の給料日の前日。budgetRange の終わりは含まない上限)。暦月の設定なら空の字。
+   予算カードの見出し・変動消費と娯楽の内訳の見出し(v5.56)・貯金の内訳の見出しが、どれもここを通る(同じ字を何か所でも作らない) */
+function budgetSpanTxt(mk){
+  if(!cycleStartDay()) return "";
+  const r=budgetRange(mk), d=new Date(r[1]+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-1);
+  const _md=x=>x.slice(5).replace("-","/");
+  return _md(r[0])+" 〜 "+_md(d.toISOString().slice(0,10));
+}
 /* 日付が予算期間に入るか。**暦月と給料日サイクルの両方をここだけで扱う** */
 function inBudget(date, mk){
   if(!date) return false;
@@ -7675,12 +7709,24 @@ function curBudgetMk(){
    過去・未来の月は「その月に始まる期間」の定義のままにする(月送りで期間が飛ばない)。
    暦月モードでは常にmkを返すので**挙動は1ミリも変わらない**。 */
 function budgetMk(mk){ return (mk===todayStr().slice(0,7)) ? curBudgetMk() : mk; }
-function disposableBase(mk){
+/* v6.91: 可処分の元(期間の収入と固定費。数えた記録も返す)。disposableBase と、貯金の内訳の「目標の内訳」(preSplit が返す)の両方がここを通る */
+function baseParts(mk){
   const me=(S.entries||[]).filter(e=>inBudget(e.date, mk));   /* v5.49: 予算の期間で絞る */
-  const inc=me.filter(e=>e.type==="income"&&!isNet(e)&&!isOffPL(e)).reduce((a,e)=>a+e.amount,0);   /* v5.69: 立替精算は収入ではない */
-  const fx=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!isNet(e)).reduce((a,e)=>a+e.amount,0);
+  const incE=me.filter(e=>e.type==="income"&&!isNet(e)&&!isOffPL(e));   /* v5.69: 立替精算は収入ではない */
+  const fxE=me.filter(e=>e.type==="expense"&&e.category==="消費"&&isFixedCost(e)&&!isNet(e));
+  const inc=incE.reduce((a,e)=>a+e.amount,0), fx=fxE.reduce((a,e)=>a+e.amount,0);
   /* v6.30: ふるさと納税の確保(v3.99: 12月に貯金で賄えない分だけ可処分から引く)は、機能ごと削除した */
-  return Math.max(0, inc-fx);
+  return {inc:inc, fx:fx, base:Math.max(0, inc-fx), incE:incE, fxE:fxE};
+}
+function disposableBase(mk){ return baseParts(mk).base; }
+/* v6.91: 確定の金額に書き換えた回(fxAt)の、固定費の設定の金額との差の合計(+ = 設定より多い)。仮のままの回・設定の無い記録は数えない。
+   貯金の内訳の「うち確定で設定より増えた分/減った分」(収入の行と固定費の行の下) */
+function fxConfDiff(list){
+  return (list||[]).reduce((a,e)=>{
+    if(!e.fxAt) return a;
+    const t=(S.fixed||[]).find(x=>String(x.id)===String(e.fixedId));
+    return t ? a+num(e.amount)-num(t.amount) : a;
+  }, 0);
 }
 function budgetAmt(val, base){
   /* v3.74: 複合指定 "30000|30%" に対応し**小さい方**を採る(ユーザー設計)。
@@ -10058,7 +10104,9 @@ function mjlWhereHtml(setup){
   const L=S.mjLog||{}, w=mjWhere({shop:L.shop, store:L.store}); if(!w) return "";
   const c=mjLogConf();
   const both=mjBoth(L.shop, L.store), wh=both ? mjWhereHtml(L.shop, L.store) : esc(w);   /* v6.87: 両方ある時は、店名の後ろにルール名の札(1行の時は札の後ろに「フリー n麻」を空白だけで続ける) */
-  if(!setup){ const tail="フリー "+c.seats+"麻"; return '<div class="muted" id="mjl-where" style="font-size:12px;margin:-2px 0 10px 2px">'+(both ? mjWhereHtml(L.shop, L.store, tail) : esc(w)+' ・ '+tail)+'</div>'; }
+  /* v6.91: ルールが分かっている卓は人数を出さない(「店名 [ルール] フリー」。ユーザー 11/24 21:07。遊技の一覧の札と同じ決まり=v6.89)。
+     ルールの無い卓(店だけ)は今までどおり「店 ・ フリー 3麻」。席を決める前の札(下)は今のまま */
+  if(!setup){ const tail="フリー"+(String(L.store==null?"":L.store).trim() ? "" : " "+c.seats+"麻"); return '<div class="muted" id="mjl-where" style="font-size:12px;margin:-2px 0 10px 2px">'+(both ? mjWhereHtml(L.shop, L.store, tail) : esc(w)+' ・ '+tail)+'</div>'; }
   const d=L.date||todayStr();
   return '<div class="card" id="mjl-where" style="margin-bottom:12px;padding:12px 16px">'+
     '<div style="font-size:14px;font-weight:700">'+wh+'</div>'+
