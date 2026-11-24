@@ -486,13 +486,15 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.87 (localStorage保存・完全オフライン)
+   Tally 6.88 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
 const INCOME_CATS = ["給与","賞与","副業","臨時","家庭内","一部負担","立替精算"];   /* v5.94: 一部負担 */  /* 家庭内=配偶者からの生活費等の世帯内移転(v3.32)。salary集計はカテゴリ不問の全収入なので滝原資に乗る——支出側が既に家計混在のため対称で正しい */
 const UNIT_LABEL = {medal:"枚", ball:"玉", yen:"円"};
 const WD = ["日","月","火","水","木","金","土"];
+/* v6.88: 「11/23 (月)」。明細と遊技のタブの日の行・麻雀の結果の画面(前は日の行の2か所に同じ式を書いていた) */
+const mdWd = d => d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')';
 
 /* ---------- helpers ---------- */
 /* v5.32: **遊技の除外を1箇所に集約**(17箇所に同じ判定が散っていた)。
@@ -1353,7 +1355,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.87";
+const APP_VERSION = "6.88";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -1365,7 +1367,7 @@ let RENDER_PREV_SCREEN = null;
 let _scrollBack = null;        /* {list: 開いた元の画面(タブ/画面), y: その時の位置} */
 let _renderLocEd = false;      /* 今の画面が「前からある記録を直す画面」か */
 const scrollIsEditor = () => (UI.screen==="entry" && UI.editEntryId!=null) || UI.screen==="tredit" ||
-  (UI.screen==="session" && !UI.isNewSess) || (UI.screen==="mahjong-edit" && !UI.mjIsNew);
+  (UI.screen==="session" && !UI.isNewSess) || (UI.screen==="mahjong-edit" && !UI.mjIsNew) || UI.screen==="mjresult";   /* v6.88: 結果の画面も「開いた記録」 */
 function render(){
   /* 清算画面へ「他画面から」入るたび、折りたたみ区画をライフサイクル既定へ戻す。
      同一画面内の再描画(トグル等)では発火しない=操作中に勝手に閉じない */
@@ -1424,6 +1426,7 @@ function subnavExtra(sc){
   /* v4.75: ボーダー試算のクリア。ヘッダに置くとスクロール時にステータスバーと重なるため下バーへ */
   if(sc==="bordertool") return [["[data-a='btreset']",'クリア','color:var(--red)']];
   if(sc==="mahjong-edit") return mjStartOn(UI.mjDraft) ? [] : [["[data-a='mjsave']",'保存する',SV]];   /* v6.79: 1画面目は戻るだけ */
+  if(sc==="mjresult") return mjResOf() ? [["[data-a='mjresedit']",'編集する',SV]] : [];   /* v6.88: 麻雀の記録の結果の画面 */
   if(sc==="session")      return [["[data-a='ssave']",'保存する',SV]];
   if(sc==="fixed"  && UI.fixForm)   return [["[data-fa='fsave']", UI.fixForm.editId?'保存する':'登録する', SV]];
   if(sc==="stores" && UI.storeForm) return [["[data-a='stsave']", UI.storeForm.editId?'更新する':'追加する', SV]];
@@ -1559,6 +1562,7 @@ function _renderBody(){
 function _renderScreen(app){
   if(UI.screen==="session"){ app.innerHTML = viewSession(); bindSession(); return; }
   if(UI.screen==="mahjong-edit"){ app.innerHTML = viewMj(); bindMj(); return; }
+  if(UI.screen==="mjresult"){ app.innerHTML = viewMjResult(); bindMjResult(); return; }   /* v6.88 */
   if(UI.screen==="fixed"){ app.innerHTML = viewFixed(); bindFixed(); return; }
   if(UI.screen==="wishlist"){ app.innerHTML = viewWishlist(); bindWishlist(); return; }
   if(UI.screen==="invest"){ app.innerHTML = viewInvest(); bindInvest(); return; }
@@ -3201,7 +3205,7 @@ function viewLedgerDetail(mk){
     const dOpen=(UI.dayOpen&&UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayS);
     h += '<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer;'+(d>todayS?'opacity:.62;':'')+'" data-a="dtoggle" data-v="'+d+'">'+
-      '<span class="mono muted" style="font-size:11px">'+(dOpen?'▾':'▸')+' '+d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')'+
+      '<span class="mono muted" style="font-size:11px">'+(dOpen?'▾':'▸')+' '+mdWd(d)+
       '<span style="margin-left:8px;font-size:11px">'+(list.length+'件')+'</span></span>'+
       '<span class="mono '+clsPM(dayNet)+'" style="font-size:13px;font-weight:700">'+signYen(dayNet)+'</span></div>'+
       (!dOpen?'':'<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
@@ -3863,20 +3867,23 @@ function gameRowSlot(s, first){
     '</div>'+
     '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
 }
-function gameRowMj(s, first){
-  const fin=mjFinal(s), av=mjAvgRank(s);
+/* v6.88: 麻雀の記録の札の行(フリー/セット・3麻/4麻・相手)と、店名の行。遊技のタブの一覧の行と、記録の結果の画面の両方がこれを使う */
+function mjTagsHtml(s){
   const catC="var(--amber)";   /* v6.51: セットもフリーも琥珀(フリー=赤 をやめた。遊技の種類は琥珀1色) */
-  const topPct=mjHanchan(s)>0?Math.round((mjRanks(s)[0]||0)/mjHanchan(s)*100):0;
-  return '<div class="row" style="padding:10px 16px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="mjedit" data-v="'+s.id+'">'+
-    '<div style="flex:1;min-width:0">'+
-    '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
+  return '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
     '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(s.category==="free"?"フリー":"セット")+'</span>'+
     '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>'+
-    (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>'+
-    /* v6.02: 店名 ・ ルール名。v6.03: 切らずに、店名とルール名の境目で折り返す。v6.87: 両方ある時は、店名の後ろにルール名の札 */
-    '<div class="muted wrapname" style="font-size:11px">'+(mjBoth(s.shop,s.store)?mjWhereHtml(s.shop,s.store):mjWhere(s)?wsegHtml([s.shop,s.store]," ・"):"店名未入力")+'</div>'+
-    /* v6.03: 着順を入れていない卓(金額だけの記録)は「0半荘 ・ 平均—着 ・ トップ0%」になるだけなので出さない */
-    (mjHanchan(s)>0?'<div class="ellip" style="font-size:11px;color:var(--muted);margin-top:1px">'+mjHanchan(s)+'ゲーム ・ 平均'+(av!==null?av.toFixed(2):"—")+'着 ・ トップ'+topPct+'%</div>':'')+
+    (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>';
+}
+/* v6.02: 店名 ・ ルール名。v6.03: 切らずに、店名とルール名の境目で折り返す。v6.87: 両方ある時は、店名の後ろにルール名の札 */
+const mjWhereLineHtml = s => mjBoth(s.shop,s.store)?mjWhereHtml(s.shop,s.store):mjWhere(s)?wsegHtml([s.shop,s.store]," ・"):"店名未入力";
+/* v6.88【一覧の行は2行】(ユーザー 11/24 06:22「見出しに着順とゲーム数要らないかも」→ 聞いて決めた: 消して結果の画面へ)。
+   3行目(ゲーム数 ・ 平均着順 ・ トップ率)は、記録を開いた結果の画面に出す。押すと結果の画面(mjedit=記録を開く。パチスロの sedit と同じ名前の付け方) */
+function gameRowMj(s, first){
+  const fin=mjFinal(s);
+  return '<div class="row" style="padding:10px 16px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="mjedit" data-v="'+s.id+'">'+
+    '<div style="flex:1;min-width:0">'+mjTagsHtml(s)+
+    '<div class="muted wrapname" style="font-size:11px">'+mjWhereLineHtml(s)+'</div>'+
     '</div>'+
     '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
 }
@@ -3957,7 +3964,7 @@ function viewGameSessions(){
     const open=(UI.gdOpen&&UI.gdOpen[d]!==undefined)?UI.gdOpen[d]:(d===todayS);
     h+='<div style="margin-bottom:8px">'+
       '<div class="row between" style="padding:9px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer" data-a="gdtoggle" data-v="'+d+'">'+
-      '<span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+' '+d.slice(5).replace("-","/")+' ('+WD[new Date(d+"T00:00:00").getDay()]+')'+
+      '<span class="mono muted" style="font-size:11px">'+(open?'▾':'▸')+' '+mdWd(d)+
       '<span style="margin-left:8px;font-size:11px">'+list.length+'件</span></span>'+
       '<span class="mono '+clsPM(net)+'" style="font-size:13px;font-weight:700">'+signYen(net)+'</span></div>'+
       (!open ? '' : '<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px">'+
@@ -4094,7 +4101,8 @@ function mjWorkHtml(A){
     '<div class="row between" style="font-size:12px;margin:5px 0"><span class="muted">1ゲームの時間</span><span class="mono">'+perHan+'分</span></div>';
 }
 /* v6.39: G(組)を渡す——チップの行はセットの組だけ */
-function mjAggHtml(A, G){
+/* v6.88: 平均着順と着順の棒(成績の画面と、麻雀の記録の結果の画面) */
+function mjRankHtml(A){
   const line=(A.rc+1)/2, r2=Number(A.avgRank.toFixed(2));
   const rankCol = r2<line ? "teal" : (r2>line ? "red" : "amber");
   const cols = A.rc===3 ? ["var(--teal)","var(--amber)","var(--red)"]
@@ -4110,7 +4118,10 @@ function mjAggHtml(A, G){
         '<span class="mono"><span style="font-weight:700">'+cnt+'</span><span class="muted" style="font-size:11px">回 ・ '+pct+'%</span></span></div>'+
         '<div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">'+
         '<div style="height:100%;width:'+pct+'%;background:'+cols[i]+';border-radius:4px"></div></div></div>';
-    }).join("")+'</div>'+
+    }).join("")+'</div>';
+}
+function mjAggHtml(A, G){
+  return mjRankHtml(A)+
     '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">'+
     mjMoneyHtml(A, G)+
     mjWorkHtml(A)+   /* v6.76: 1時間あたり・1半荘の時間 */
@@ -5739,10 +5750,12 @@ function bindMjTable(){
         /* v6.84: 戻る先は開いた所(「＋ 麻雀」から=遊技のタブ・記録の画面から=その記録。反映し直すと記録の id が変わるので、表の id で探す)。一覧から開いた時は一覧 */
         saveMjt(true); const fr=UI.mjtFrom, tid=UI.mjt && UI.mjt.id; UI.mjtFrom=null;
         UI.mjt=null; UI.mjtCell=null; UI.mjtTrade=null; UI.rulesOpen=UI.chipsOpen=UI.feesOpen=null;
-        if(fr==="games" || fr==="rec"){
-          const s=fr==="rec" ? (S.mjSessions||[]).find(x=>String(x.fromTable)===String(tid)) : null;
+        if(fr==="games" || fr==="rec" || fr==="res"){
+          const s=(fr==="rec" || fr==="res") ? (S.mjSessions||[]).find(x=>String(x.fromTable)===String(tid)) : null;
           UI.tab="games";
-          if(s){ UI.mjDraft=mjEditDraft(s); UI.mjIsNew=false; UI.screen="mahjong-edit"; } else UI.screen="main";   /* 記録の開き方は、遊技のタブの一覧から開く時(mjedit)と同じ */
+          /* v6.88: 結果の画面から開いた表(res)は結果の画面へ・編集の画面から開いた表(rec)は編集の画面へ */
+          if(s && fr==="res"){ UI.mjRes=s.id; UI.screen="mjresult"; }
+          else if(s){ UI.mjDraft=mjEditDraft(s); UI.mjIsNew=false; UI.screen="mahjong-edit"; } else UI.screen="main";
         } else UI.screen="mjtlist";
         render(); }
       else if(a==="pdf"){ mjtPrint(); }
@@ -10038,6 +10051,61 @@ function mjlWhereHtml(setup){
     '<div class="muted" style="font-size:11px;margin-top:3px">'+esc(d.slice(5).replace("-","/"))+'('+"日月火水木金土"[new Date(d+"T12:00:00").getDay()]+') ・ フリー ・ '+c.seats+'麻</div>'+
     '<div class="muted" style="font-size:11px;margin-top:2px">'+mjFeeLine({baseFee:c.gameFee, topBonus:c.topBonus, feeBack:c.feeBack, feeBackUnit:c.feeBackUnit, feeBackWho:c.feeBackWho, drinkFee:c.drinkFee})+'</div></div>';
 }
+/* v6.88【麻雀の記録の結果の画面】(ユーザー 11/24 06:22「一度締めたら結果の画面だけ出して、そこから編集したい時は編集ボタンを押すようにしたいかも。
+   ただ勿論途中の場合もあるから、確定後にそういう風にしたい」→ 聞いて決めた: **保存した記録は全部**。打っている途中は「打っている卓」とスコア表で記録するので、
+   保存した記録はほぼ締めた後。途中で保存した記録も、この画面の「編集する」で直す)。
+   遊技のタブの一覧(mjedit)・家計簿の明細・スコア表から戻った時(この画面から開いた表)に、この画面。下の「編集する」で編集の画面へ
+   (編集の画面の「戻る」「保存する」で、この画面へ戻る=mjBackToRes)。
+   中身: 日付と実働 → 札の行・店名の行(一覧と同じ関数)→ 最終収支 → スコア表を開く(スコア表から反映した記録)→ 着順(ゲーム数・平均着順・棒=成績の画面と同じ mjRankHtml・1時間あたり)→
+   収支(編集の画面と同じ mjSummary)→ メモ。金額は、どれも家計簿へ書く関数と同じ(mjFinal・mjAgg・mjSummary)=この画面で数え直さない */
+const mjResOf = () => (S.mjSessions||[]).find(x=>String(x.id)===String(UI.mjRes));
+function viewMjResult(){
+  const s = mjResOf();
+  let h = '<div class="hdr"><button class="navbtn" data-a="mjresback">‹ 戻る</button><div style="font-size:14px;font-weight:700">麻雀の結果</div><div style="width:44px"></div></div>';
+  if(!s) return h+'<div class="muted" style="text-align:center;padding:24px 0;font-size:12px">この記録は見つかりません。</div>';
+  const fin = mjFinal(s), A = mjAgg([s]), wm = mjWorkMin(s);
+  const st = String(s.startAt||"").trim(), en = String(s.endAt||"").trim();
+  const tm = (st||en) ? (st+"〜"+en+(wm>0 ? "("+mjlAgo(wm*60000)+")" : "")) : "";
+  h += '<div class="card" id="mjr-head" style="margin-bottom:12px">'+
+    '<div class="mono muted" style="font-size:12px;margin-bottom:8px">'+(s.date ? mdWd(s.date) : "日付なし")+(tm ? ' ・ '+esc(tm) : '')+'</div>'+
+    mjTagsHtml(s)+
+    '<div class="wrapname" style="font-size:13px;font-weight:700;margin-top:2px">'+mjWhereLineHtml(s)+'</div>'+
+    '<div class="row between" style="align-items:baseline;margin-top:12px"><span class="muted" style="font-size:12px">最終収支</span>'+
+    '<span class="mono '+clsPM(fin)+'" style="font-size:26px;font-weight:700">'+signYen(fin)+'</span></div></div>';
+  h += mjFromTableHtml(s);   /* スコア表から反映した記録は、スコア表を開く板(編集の画面と同じ) */
+  if(A){
+    const wk = mjWorkHtml(A);
+    h += band("着順");
+    h += '<div class="card" id="mjr-rank" style="margin-bottom:14px">'+
+      '<div class="muted" style="font-size:11px;margin-bottom:8px">'+A.H+'ゲーム</div>'+mjRankHtml(A)+
+      (wk ? '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">'+wk+'</div>' : '')+'</div>';
+  }
+  h += band("収支");
+  h += '<div class="card" id="mjr-sum" style="margin-bottom:14px">'+mjSummary(s)+'</div>';
+  const memo = mjMemoShown(s);
+  if(memo.trim()){ h += band("メモ"); h += '<div class="card" id="mjr-memo" style="font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere">'+esc(memo)+'</div>'; }
+  h += '<div style="display:none"><button data-a="mjresedit">編集する</button></div>';   /* 下バーの「編集する」が押す */
+  return h;
+}
+function bindMjResult(){
+  document.querySelectorAll("[data-a]").forEach(el=>{
+    el.onclick = ()=>{
+      const a=el.dataset.a, s=mjResOf();
+      if(a==="mjresback"){ UI.mjRes=null; UI.screen="main"; render(); }
+      else if(a==="mjresedit"){ if(!s) return; UI.mjDraft=mjEditDraft(s); UI.mjIsNew=false; UI.mjFromRes=s.id; UI.screen="mahjong-edit"; render(); }   /* v6.76: 写し + 金額の変わらない時だけ印 */
+      else if(a==="mjtfromrec"){
+        const t=s && mjtOfRec(s); if(!t) return;
+        UI.mjt=t; UI.mjtCell=null; UI.mjtTrade=null; UI.mjtFrom="res"; UI.screen="mjtable"; render();   /* 表の「戻る」で、この画面へ */
+      }
+    };
+  });
+}
+/* 編集の画面を閉じる時、結果の画面から開いた記録なら、その結果の画面へ戻る(その記録がまだある時)。それ以外は遊技のタブ */
+function mjBackToRes(){
+  const d=UI.mjDraft, r=UI.mjFromRes; UI.mjFromRes=null; UI.mjDraft=null;
+  if(d && r!=null && String(r)===String(d.id) && (S.mjSessions||[]).some(x=>String(x.id)===String(r))){ UI.mjRes=r; UI.screen="mjresult"; }
+  else UI.screen="main";
+}
 function viewMj(){
   const m = UI.mjDraft;
   const lg = mjHasLog(m);   /* v6.71: 半荘の記録から来た記録(締めた時の写しを持つ) */
@@ -10459,7 +10527,7 @@ function bindMj(){
   document.querySelectorAll("[data-a]").forEach(el=>{
     el.onclick = ()=>{
       const a=el.dataset.a, v=el.dataset.v;
-      if(a==="back"){ UI.screen="main"; UI.mjDraft=null; render(); }
+      if(a==="back"){ mjBackToRes(); render(); }   /* v6.88: 結果の画面から開いた時は、結果の画面へ */
       /* v5.62: 過去のルールを反映。**単価が変われば入っている金額の意味も変わる**ので、
          金額が入っている時だけ 変更前→変更後 を見せて確かめる——
          半荘の記録から来た卓は単価1(スコア欄=円)で、そこにレート30を当てると**黙って30倍**になる */
@@ -10545,7 +10613,7 @@ function bindMj(){
         if(!confirm("この麻雀記録を削除しますか?")) return;
         S.entries = S.entries.filter(e=>!isLinkOf(e,"mj-"+m.id));   /* v5.74 */
         S.mjSessions = (S.mjSessions||[]).filter(x=>x.id!==m.id);
-        save(); UI.screen="main"; UI.mjDraft=null; render();
+        save(); UI.mjFromRes=null; UI.screen="main"; UI.mjDraft=null; render();
       }
       /* v5.45: 卓の外(もらう分)の追加・削除。経費と同じ形だが**符号の向きが逆** */
       /* v5.48: 卓の外の符号を反転。**空欄でも押せる**(先に符号を決めてから数字を打てる) */
@@ -10649,7 +10717,7 @@ function saveMj(){
   const _xf = new Set((cleaned.expenses||[]).map(x=>String(x.fromEntry)).filter(x=>x!=="undefined"&&x!=="null"));
   if(_xf.size) S.entries = S.entries.filter(e=>!_xf.has(String(e.id)));
   _rs.forEach(d=>{ if(d && !S.entries.some(e=>String(e.id)===String(d.id))) S.entries.push(d); });
-  save(); UI.screen="main"; UI.mjDraft=null; render();
+  save(); mjBackToRes(); render();   /* v6.88: 結果の画面から開いた記録は、保存したら結果の画面へ */
   const _msgs=[]; if(_xf.size) _msgs.push("振替"+_xf.size+"件"); if(_rs.length) _msgs.push("家計簿へ"+_rs.length+"件戻し");
   if(_msgs.length) toast("保存しました("+_msgs.join(" / ")+")");
 }
@@ -10791,7 +10859,7 @@ function bindMain(){
       else if(a==="mjedit"){
         const s = (S.mjSessions||[]).find(x=>String(x.id)===String(v));
         if(!s) return;
-        UI.mjDraft=mjEditDraft(s); UI.mjIsNew=false; UI.screen="mahjong-edit"; render();   /* v6.76: 写し + 金額の変わらない時だけ印 */
+        UI.mjRes=s.id; UI.screen="mjresult"; render();   /* v6.88: 記録を開くと結果の画面(編集の画面へは、そこの「編集する」) */
       }
       else if(a==="dtoggle"){ const d=el.dataset.v; UI.dayOpen=UI.dayOpen||{}; const cur=(UI.dayOpen[d]!==undefined)?UI.dayOpen[d]:(d===todayStr()); UI.dayOpen[d]=!cur; render(); }
       /* v4.68: 明細の「予定」バー。既定は畳んだまま(UI.futOpenの未定義=false) */
@@ -10878,7 +10946,7 @@ function bindMain(){
         }
         if(e.src==="mahjong"){
           const s = (S.mjSessions||[]).find(x=>isLinkOf(e,"mj-"+x.id));
-          if(s){ UI.mjDraft=mjEditDraft(s); UI.mjIsNew=false; UI.tab="games"; UI.screen="mahjong-edit"; render(); return; }   /* v6.76 */
+          if(s){ UI.mjRes=s.id; UI.tab="games"; UI.screen="mjresult"; render(); return; }   /* v6.88: 遊技のタブの一覧から開く時と同じ、結果の画面 */
         }
         UI.editEntryId=e.id;
         UI.entryForm=entryFormOf(e);   /* v6.15: 中身はentryFormOfの1か所に(v5.95の形のまま) */
