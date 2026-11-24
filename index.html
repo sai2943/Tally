@@ -486,7 +486,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.89 (localStorage保存・完全オフライン)
+   Tally 6.90 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1355,7 +1355,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.89";
+const APP_VERSION = "6.90";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -3838,8 +3838,10 @@ function viewLedger(){
   return h;
 }
 
+/* v6.90: 人の印は1か所(相手の札=personTag と、麻雀の相手の行の頭=mjPeopleLineHtml) */
+const PERSON_SVG='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="7.5" r="3.5"/><path d="M5 19.5c0-3.9 3.1-6 7-6s7 2.1 7 6"/></svg>';
 function personTag(name){
-  return '<span class="tag" style="border:1px solid var(--muted);color:var(--muted);display:inline-flex;align-items:center;gap:2px;min-width:0;max-width:130px;padding:1px 6px 1px 4px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="7.5" r="3.5"/><path d="M5 19.5c0-3.9 3.1-6 7-6s7 2.1 7 6"/></svg><span class="ellip" style="min-width:0">'+esc(name)+'</span></span>';
+  return '<span class="tag" style="border:1px solid var(--muted);color:var(--muted);display:inline-flex;align-items:center;gap:2px;min-width:0;max-width:130px;padding:1px 6px 1px 4px">'+PERSON_SVG+'<span class="ellip" style="min-width:0">'+esc(name)+'</span></span>';
 }
 /* v4.34: **パチスロと麻雀のセッションを1つの一覧に統合**(ユーザー設計)。
    v4.32で麻雀の全期間集計をツールへ移した結果、両サブタブに残ったのは
@@ -3870,14 +3872,20 @@ function gameRowSlot(s, first){
 /* v6.88: 麻雀の記録の札の行(フリー/セット・3麻/4麻・相手)と、店名の行。遊技のタブの一覧の行と、記録の結果の画面の両方がこれを使う
    v6.89【ルール名は札の行】(ユーザー 11/24 14:12「ルールいれてるなら3麻とかの表記消しても良いかも、少なくともルールは人の表記より下にはならないと思う」)。
    v6.87〜v6.88 はルール名の札を店名の行(店名の後ろ)に置いていて、相手の札より下になっていた。
-   v6.89: ルール名がある記録は、3麻/4麻 の札の所にルール名の札(mjRuleTag。人数はルール名で分かる)。ルール名の無い記録は v6.88 と同じ 3麻/4麻 の札 */
+   v6.89: ルール名がある記録は、3麻/4麻 の札の所にルール名の札(mjRuleTag。人数はルール名で分かる)。ルール名の無い記録は v6.88 と同じ 3麻/4麻 の札
+   v6.90【家計簿の行に合わせる】(ユーザー 11/24 18:47「遊戯タブの収支ですが前よりは良くなりましたがしっくり来てません/収支に倣う方が良いのかな？/現状は店名が浮いてて微妙です」→ 3つの形の絵から案A を選んだ)。
+   v6.89 は札が4つ並ぶ重い1行目の下に、小さい店名が1行だけで浮いて見えた。家計簿の行(札1つ+字2行)・パチスロの行(札+店名+機種)と同じ形に:
+   札は種類とルールだけ(この関数)・字の1行目=店名(mjWhereLineHtml)・2行目=相手(mjPeopleLineHtml。相手のいない記録は出さない) */
 function mjTagsHtml(s){
   const catC="var(--amber)";   /* v6.51: セットもフリーも琥珀(フリー=赤 をやめた。遊技の種類は琥珀1色) */
   return '<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
     '<span class="tag" style="border:1px solid '+catC+';color:'+catC+'">'+(s.category==="free"?"フリー":"セット")+'</span>'+
-    (mjRuleTag(s.store) || '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>')+
-    (s.players||[]).filter(Boolean).map(personTag).join('')+'</div>';
+    (mjRuleTag(s.store) || '<span class="tag" style="border:1px solid var(--muted);color:var(--muted)">'+s.rule+'麻</span>')+'</div>';
 }
+/* v6.90: 相手の行(人の印+名前を「・」でつなぐ。前後の空白は外し、空の名前は出さない)。相手のいない記録は空の字=行を出さない。
+   fs=字の大きさ(一覧の行は 11px=店名の行と同じ・結果の画面の上は 12px)。人の印は字の行の真ん中にそろえる(vertical-align:-1px) */
+const mjPeopleLineHtml = (s, fs) => { const p=(s.players||[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);
+  return p.length ? '<div class="wrapname" style="font-size:'+fs+'px;color:var(--muted);margin-top:1px"><span style="display:inline-flex;vertical-align:-1px;margin-right:3px">'+PERSON_SVG+'</span>'+esc(p.join("・"))+'</div>' : ''; };
 /* v6.02: 店名 ・ ルール名。v6.03: 切らずに、店名とルール名の境目で折り返す。v6.87: 両方ある時は、店名の後ろにルール名の札。
    v6.89: 店名の行は店名だけ(ルール名は札の行)。長い店名は空白の所で折り返す(.shopname=v6.87 で店名とルール名の両方がある時の形を、店名だけの記録にも)。店名が無ければ「店名未入力」 */
 const mjWhereLineHtml = s => { const sh=String(s.shop==null?"":s.shop).trim(); return sh ? '<span class="shopname">'+esc(sh)+'</span>' : "店名未入力"; };
@@ -3888,6 +3896,7 @@ function gameRowMj(s, first){
   return '<div class="row" style="padding:10px 16px;cursor:pointer;'+(first?'':'border-top:1px solid var(--line);')+'" data-a="mjedit" data-v="'+s.id+'">'+
     '<div style="flex:1;min-width:0">'+mjTagsHtml(s)+
     '<div class="muted wrapname" style="font-size:11px">'+mjWhereLineHtml(s)+'</div>'+
+    mjPeopleLineHtml(s, 11)+
     '</div>'+
     '<div class="mono '+clsPM(fin)+'" style="font-size:14px;flex-shrink:0;margin-left:8px">'+signYen(fin)+'</div></div>';
 }
@@ -4299,17 +4308,18 @@ function viewMjtList(){
     const seats = num(t.rule)||3;
     /* v6.84: 店名のある表は「店 ・ ルール」(店名の無い表は今までどおりルール名だけ)。長い時は、店名とルール名の境目で折り返す(v6.03 の遊技の一覧と同じ)。
        v6.87: 店名とルール名の両方がある表は、1行目(日付・人数の札)の後ろにルール名の札・2行目に店名(字だけ。日付の下から始まるので幅いっぱい使える)。
-       片方だけの表は v6.86 と同じ(1行目にある方の字・どちらも無ければ「ルール未設定」) */
-    const both = mjBoth(t.shop, t.ruleName);
-    const title = mjWhere({shop:t.shop, store:t.ruleName}) ? wsegHtml([t.shop, t.ruleName], " ・") : esc("ルール未設定");
+       片方だけの表は v6.86 と同じ(1行目にある方の字・どちらも無ければ「ルール未設定」)
+       v6.90【ルール名はいつも札】(ユーザー 11/24 18:47「前のやつは表記が違うのかな？」=店名を入れていない前の表はルール名が太字の見出しで、両方ある表と形が違った)。
+       ルール名は1行目の札・2行目の太字は店名だけ(店名の無い表は2行目なし)。どちらも無い表だけ v6.86 と同じ「ルール未設定」 */
+    const rn = String(t.ruleName==null?"":t.ruleName).trim(), sh = String(t.shop==null?"":t.shop).trim();
     const hasMe = t.meIdx!=null && (t.players||[])[t.meIdx]!=null;
     const meNet = hasMe ? mjtSettle(t).pays[t.meIdx] : null;   /* 端数調整・場代移転込みの精算値 */
     h += '<div class="listitem"'+(delMode?'':' data-a="mjtopen" data-v="'+t.id+'"')+'>'+
       '<div style="flex:1;min-width:0"><div class="row" style="font-size:13px;gap:6px;align-items:center">'+
       '<span class="mono muted" style="font-size:11px;flex-shrink:0">'+t.date.slice(5).replace("-","/")+'</span>'+
       '<span class="tag" style="border:1px solid var(--teal);color:var(--teal);flex-shrink:0">'+seats+'人</span>'+
-      (both ? mjRuleTag(t.ruleName) : '<span class="wrapname" style="font-weight:700;min-width:0">'+title+'</span>')+'</div>'+
-      (both ? '<div class="shopname" style="font-size:13px;font-weight:700;margin-top:4px">'+esc(String(t.shop).trim())+'</div>' : '')+
+      (rn ? mjRuleTag(rn) : sh ? '' : '<span class="wrapname" style="font-weight:700;min-width:0">'+esc("ルール未設定")+'</span>')+'</div>'+
+      (sh ? '<div class="shopname" style="font-size:13px;font-weight:700;margin-top:4px">'+esc(sh)+'</div>' : '')+
       '<div class="muted ellip" style="font-size:11px;margin-top:3px">'+esc(names)+' ・ '+rounds+'ゲーム</div></div>'+
       (delMode
         ? '<button class="btn" data-a="mjtdel" data-v="'+t.id+'" style="flex-shrink:0;margin-left:8px;height:36px;padding:0 12px;font-size:12px;color:var(--red);border-color:var(--red)">削除</button>'
@@ -10074,6 +10084,7 @@ function viewMjResult(){
     '<div class="mono muted" style="font-size:12px;margin-bottom:8px">'+(s.date ? mdWd(s.date) : "日付なし")+(tm ? ' ・ '+esc(tm) : '')+'</div>'+
     mjTagsHtml(s)+
     '<div class="wrapname" style="font-size:13px;font-weight:700;margin-top:2px">'+mjWhereLineHtml(s)+'</div>'+
+    mjPeopleLineHtml(s, 12)+
     '<div class="row between" style="align-items:baseline;margin-top:12px"><span class="muted" style="font-size:12px">最終収支</span>'+
     '<span class="mono '+clsPM(fin)+'" style="font-size:26px;font-weight:700">'+signYen(fin)+'</span></div></div>';
   h += mjFromTableHtml(s);   /* スコア表から反映した記録は、スコア表を開く板(編集の画面と同じ) */
