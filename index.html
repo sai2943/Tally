@@ -486,7 +486,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.94 (localStorage保存・完全オフライン)
+   Tally 6.95 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1355,7 +1355,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.94";
+const APP_VERSION = "6.95";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -1583,6 +1583,7 @@ function _renderScreen(app){
   if(UI.screen==="advdrill"){ app.innerHTML = viewAdvDrill(); bindAdvDrill(); return; }   /* v6.15 */
   if(UI.screen==="bankmatch"){ app.innerHTML = viewBankMatch(); bindBankMatch(); return; }   /* v6.18 */
   if(UI.screen==="rcptset"){ app.innerHTML = viewRcptSet(); bindRcptSet(); return; }   /* v6.23 */
+  if(UI.screen==="mjslset"){ app.innerHTML = viewMjslSet(); bindMjslSet(); return; }   /* v6.95: スコア表のリンク */
   if(UI.screen==="tredit"){ app.innerHTML = viewTrEdit(); bindTrEdit(); return; }
   if(UI.screen==="mjlog"){ app.innerHTML = viewMjLog(); bindMjLog(); return; }
   if(UI.screen==="mjconf"){ app.innerHTML = viewMjConf(); bindMjConf(); return; }
@@ -3396,6 +3397,16 @@ function budgetRow(mk, cat){
      前は実効枠(cap)が 0 より大きいかで分けていて、所持金で 0 まで絞られると、枠を決めているのに「＋ 上限を設定」になり、押すと予算の設定の画面へ行っていた */
   return {monthCap:monthCap, capIsPct:budgetIsPct(_bv), spent:spent, walletBound:walletBound, cap:walletBound ? (spent + k.cap) : monthCap, has:monthCap>0};
 }
+/* v6.95【貯金(投資)の行】(ユーザー 11/25 20:19「(金額)貯金したら達成じゃ無くて残り0って表記に変わったんですかね?」→ 11/26 03:44「貯金は貴方のオススメでお願いします」)。
+   前は斜線の後ろを「いま所持金から移せる所までの目標」(svPlan の sv・iv=頭打ちの目標)にしていて、移せる額を全部移すと
+   「¥移した額 / ¥移した額 あと ¥0」になり、計画には届いていないので「達成」も出ず、分かりにくかった。
+   → 斜線の後ろは**計画の目標**(full)。右は、届いたら「達成」(+超えた額)、所持金で頭打ち(cap < full)なら「いま移せる ¥X」(X = 頭打ちの目標 − 移した額)、
+     それ以外は「あと ¥X」(計画の目標 − 移した額)。バーは計画の目標に対する割合。予算カードの貯金の行と、振替の帯(_row)の両方がここを通る */
+function svRowView(done, cap, full){
+  const ok=done>=full, now=!ok && cap<full;
+  return {ok:ok, lead:ok ? '' : now ? 'いま移せる' : 'あと', val:ok ? '達成' : '¥'+Math.max(0, (now?cap:full)-done).toLocaleString("ja-JP"),
+    over:Math.max(0, done-full), pc:Math.max(0, Math.min(100, full>0 ? done/full*100 : 0))};
+}
 /* v6.93: 予算のバーの長さ(%)。枠が 0(所持金で 0 まで絞られた時だけ起きる)なら満タン=使える分が残っていない印。予算カードの行と、変動消費・娯楽の内訳の両方がここを通る */
 function capPct(spent, cap){ return cap>0 ? Math.min(100, spent/cap*100) : 100; }
 /* v6.13【修正】(ユーザー指摘: 所持金と予算が一致しない)。
@@ -3588,21 +3599,19 @@ function viewLedgerBudget(mk){
      未達=あと / 達成=達成 + 超過額。これはv4.82で振替カードに入れた文法をそのまま持ってくる */
   {
     /* v6.13: 目標は「いま所持金から移せる額」で頭打ちにした実効の目標(svPlan)。所持金が足りていれば計画のまま */
-    const _sp=securedSplit(mk), _pl=svPlan(mk), _pp={sv:_pl.sv};
+    const _sp=securedSplit(mk), _pl=svPlan(mk);
     if(_pl.planSv>0 || _sp.sv!==0){
-      /* 「達成」は**計画の目標**に届いた時だけ。所持金で頭打ちにした分を移し終えただけなら「あと ¥0」(計画には届いていない) */
-      const _ok=_sp.sv>=_pl.planSv, _over=Math.max(0,_sp.sv-_pl.planSv);
-      const _spc=Math.max(0, Math.min(100, _pp.sv>0?_sp.sv/_pp.sv*100:0));
+      /* v6.95: 斜線の後ろは計画の目標、右は 達成/いま移せる ¥X/あと ¥X(svRowView。振替の帯と同じ) */
+      const _v=svRowView(_sp.sv, _pl.sv, _pl.planSv);
       h += '<div style="cursor:pointer;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)" data-a="svdrill">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:6px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">貯金</span>'+
-        '<span class="mono muted" style="font-size:11px"> '+yenM(_sp.sv)+' / '+yenM(_pp.sv)+'</span></span>'+
-        '<span class="nw"><span class="mono muted" style="font-size:11px">'+(_ok?'':'あと')+'</span> '+
-        '<span class="mono '+(_ok?'teal':'amber')+'" style="font-size:17px;font-weight:700">'+
-        (_ok?'達成':'¥'+Math.max(0,_pp.sv-_sp.sv).toLocaleString("ja-JP"))+'</span>'+
-        (_over>0?'<span class="mono muted" style="font-size:11px"> +¥'+_over.toLocaleString("ja-JP")+'</span>':'')+
+        '<span class="mono muted" style="font-size:11px"> '+yenM(_sp.sv)+' / '+yenM(_pl.planSv)+'</span></span>'+
+        '<span class="nw"><span class="mono muted" style="font-size:11px">'+_v.lead+'</span> '+
+        '<span class="mono '+(_v.ok?'teal':'amber')+'" style="font-size:17px;font-weight:700">'+_v.val+'</span>'+
+        (_v.over>0?'<span class="mono muted" style="font-size:11px"> +¥'+_v.over.toLocaleString("ja-JP")+'</span>':'')+
         CHEV_IN+'</span></div>'+
-        '<div class="bar"><div style="width:'+_spc+'%;background:var(--teal)"></div></div></div>';
+        '<div class="bar"><div style="width:'+_v.pc+'%;background:var(--teal)"></div></div></div>';
     }
   }
   h += '</div>';   /* 予算カード(使う)を閉じる */
@@ -3729,24 +3738,24 @@ function viewLedger(){
     const _nagging = _isCurM && mainIncomeLanded(bmk) && _remain > 0;   /* 催促カードが出ている状態 */
     const _show = !_isFutM && !_nagging && (!_isCurM || mainIncomeLanded(bmk));
     const _row=(nm,plan,done,bd,full)=>{
-      if(plan<=0) return "";
+      /* v6.95: 斜線の後ろは計画の目標(full)、右は 達成/いま移せる ¥X/あと ¥X(svRowView。予算カードの貯金の行と同じ)。出すかどうかも計画の目標で */
+      const _full=(full==null?plan:full), _v=svRowView(done, plan, _full);
+      if(_full<=0) return "";
       /* v4.84: 純額なので done は負になりうる。バーの幅を下限0で止める */
       /* v6.13: 「達成」は計画の目標(full)に届いた時だけ。頭打ちの目標を移し終えただけなら「あと ¥0」 */
-      const _full=(full==null?plan:full);
-      const ok=done>=_full, pc=Math.max(0, Math.min(100, plan>0?done/plan*100:0));
+      const ok=_v.ok, pc=_v.pc;
       /* v4.82: **超過額を出す**(ユーザー要望)。v4.81で承認が振替目標を下げるようになったので、
          既に振り替えたあとに承認を記帳すると超過が出る。**貯金から戻すべき額**がこれ。
          **警告ではないのでtealにする**——達成と同じ色にすることで「達成していて、その分がこれ」と読める。
          琥珀や赤にすると「まずいこと」に見えるが、超過は事実であって問題ではない。
          置き場所は**左の数字群の後ろ**: 実績/目標と並ぶ事実の一部で、右の「達成」は状態を表す語のまま残す */
-      const over = Math.max(0, done - _full);
+      const over = _v.over;
       return '<div style="margin-bottom:10px">'+
         '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
         '<span><span class="muted" style="font-size:12px;font-weight:700">'+nm+'</span>'+
-        '<span class="mono muted" style="font-size:11px"> '+yenM(done)+' / ¥'+plan.toLocaleString("ja-JP")+'</span></span>'+
-        '<span><span class="mono muted" style="font-size:11px">'+(ok?'':'あと')+'</span> '+
-        '<span class="mono '+(ok?"teal":"amber")+'" style="font-size:17px;font-weight:700">'+
-        (ok?'達成':'¥'+Math.max(0,plan-done).toLocaleString("ja-JP"))+'</span>'+
+        '<span class="mono muted" style="font-size:11px"> '+yenM(done)+' / ¥'+_full.toLocaleString("ja-JP")+'</span></span>'+
+        '<span><span class="mono muted" style="font-size:11px">'+_v.lead+'</span> '+
+        '<span class="mono '+(ok?"teal":"amber")+'" style="font-size:17px;font-weight:700">'+_v.val+'</span>'+
         /* v4.82b: **超過は「達成」の隣に置く**(ユーザー指摘: 見づらい・ダサい)。
            左に置くと `¥166,694 / ¥123,915 +¥42,779` と数字が3つ並び、
            **予算カードの文法(左に2つ・右に語+数字)から外れて読めなくなっていた**。
@@ -4427,9 +4436,11 @@ function bindMjtList(){
         const linked=(S.mjSessions||[]).some(s=>String(s.fromTable)===String(t.id));
         let msg="このスコア表を削除します。\n"+t.date.replace(/-/g,"/")+" "+names+"\n"+rounds+"ゲームの記録が消えます。";
         if(linked) msg+="\n\n遊技タブの収支記録は残ります\n(消えるのはゲームごとのスコアのみ)。";
+        if(t.link && mjslReady()) msg+="\n\nリンクで見せている表なので、リンクも止めます。";   /* v6.95 */
         msg+="\n\n元に戻せません。よろしいですか?";
         if(!confirm(msg)) return;
         S.mjTables=(S.mjTables||[]).filter(x=>String(x.id)!==String(t.id));
+        mjslDrop(t);   /* v6.95: リンクで見せていた表は、Google の中からも消す */
         if(UI.mjt && String(UI.mjt.id)===String(t.id)){ UI.mjt=null; UI.mjtCell=null; }
         UI.mjtDelMode=false;   /* v2.89と同じく1件で自動解除 */
         save(); render(); toast("スコア表を削除しました");
@@ -4648,6 +4659,8 @@ function viewTool(){
   h += _list([
     /* v5.25: 説明の語は落とし、**件数だけ残す**——件数は情報だが「半荘ごとのスコアを記録・集計」は名前で分かる */
     _row('data-a="mjtlist"', "スコア表", {sub: (S.mjTables||[]).length ? (S.mjTables||[]).length+'件' : ''}),
+    /* v6.95: スコア表をリンクで見せる(Google に置くプログラムの設定)。状態を小さく出す(レシートの読み取りと同じ) */
+    _row('data-a="mjslset"', "スコア表のリンク", {sub: mjslSub()}),
     _row('data-a="mjstats"', "店・ルール別 成績"),
   ]);
   h += _head("パチスロ");
@@ -5154,6 +5167,377 @@ async function mjtShareMid(full){
     }
   }catch(e){ if(!e || e.name!=="AbortError") toast("共有できませんでした: "+(e&&e.message||e)); }
 }
+/* ========================= v6.95 スコア表をリンクで見せる =========================
+   ユーザー(11/25 20:45・LINE の写し):「スコア表、LINEで逐一共有は良いんですが、こんな感じで画像だらけになってちょっとスマートじゃない、
+   中のデータは良いんですがもっと良い共有方法があると良いですね」→ 11/26 03:44「スコア表は2かな？相手はGoogleアカウント無くても良いなら②が良いですね。
+   結局文字でも、LINE上に画像を連打してたのが文字の連打になるだけで解決になってないと思います」(②= 03:2x に返した形)。
+   ・ユーザーの Google に置く小さなプログラム(MJSL_GAS。Amazon のメールのとは**別のプロジェクト**)が、見るページを出す。
+     公開は「自分として実行・全員」なので、相手は Google のアカウントが無くても見られる。
+     Amazon のメールのプログラムの URL は、鍵が無く、知っている人がメールの中身を読めるので、ここには貼らせない(保存の時に断る)。
+     貼った URL は「つながるか確かめる」(鍵を付けた ping に tally-score と返る)が通るまで使わない(mjslReady)
+   ・スコア表の「リンクで見せる」で、その表のリンク(…/exec?t=<表の札 t.link>)を共有シートで1回だけ送る(LINE など)。表の札は20字の英数字(当てられない)
+   ・その後は、表を変えるたびに(続けて打っている間は待って、MJSL_WAIT たったら)自動で送る。中身が前に送れた物と同じなら送らない。
+     送れなかった時(電波など)は、次に表を変えた時に送り直す。見るページは1分ごとに自分で新しくなる(開き直した時も)
+   ・送る中身は**途中経過の画面と同じ物**(mjtPrintHtml(t,"mid") と、その見た目の CSS = この画面の .pr- の決まり mjslCss)。
+     プログラムは置いて並べるだけ(計算しない)ので、画面の形を直しても、Google 側のプログラムを新しくしなくてよい
+   ・書き換えには鍵が要る(「プログラムをコピー」の時にこの端末で作り、コピーするプログラムの中に入れる)。リンクを知っている人は見るだけ
+   ・URL と鍵は APIキーと同じ扱い(この端末の中だけ・S に入れない)。表の札(t.link)は S に入る(同期・バックアップに乗る)
+   ・最後に届いてから7日たった表は、プログラムが消す(次に何か届いた時に)。「止める」を押した時と、スコア表を削除した時は、すぐ消す
+   ・画像で共有のボタンは今までどおり */
+const MJSL_URL_LS="tally:mjslUrl", MJSL_KEY_LS="tally:mjslKey", MJSL_OK_LS="tally:mjslOk";
+const MJSL_WAIT=2500;   /* 表を変えてから送るまで(ms。続けて打っている間は送らない) */
+const MJSL_V=1;         /* Google に置くプログラムの版(確かめた時の返事の v) */
+function mjslUrl(){ const u=rcptLS(MJSL_URL_LS).trim(); return AMZ_URL_RE.test(u) ? u : ""; }
+function mjslKey(){ const k=rcptLS(MJSL_KEY_LS).trim(); return /^[A-Za-z0-9]{24,64}$/.test(k) ? k : ""; }
+/* 使えるか: URL と鍵があり、その URL で「つながるか確かめる」が通っている */
+function mjslReady(){ const u=mjslUrl(); return !!(u && mjslKey() && rcptLS(MJSL_OK_LS)===u); }
+function mjslRand(n){ const A="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", b=new Uint8Array(n); crypto.getRandomValues(b); return Array.from(b, x=>A[x%62]).join(""); }
+function mjslLink(t){ return mjslUrl()+"?t="+t.link; }
+/* 見るページの見た目: この画面(途中経過)の .pr- の決まりを、そのまま写す(印刷の決まり = @media の中は写さない)。
+   見るページは中身を #app の中に置くので、#app の付いた決まり(途中経過の字の大きさ)も、この画面と同じに効く */
+let MJSL_CSS=null;
+function mjslCss(){
+  if(MJSL_CSS!==null) return MJSL_CSS;
+  let s="";
+  try{ Array.from(document.styleSheets||[]).forEach(sh=>{ Array.from(sh.cssRules||[]).forEach(r=>{ if(r.type===1 && /\.pr-/.test(r.selectorText||"")) s+=r.cssText+"\n"; }); }); }
+  catch(e){ s=""; }
+  if(s) MJSL_CSS=s;   /* 読めなかった時は覚えない(次にもう一度) */
+  return s;
+}
+function mjslHtml(t){ return '<style>'+mjslCss()+'</style>'+mjtPrintHtml(t,"mid"); }
+/* プログラムを呼ぶ(POST。本文は JSON の字 = text/plain なので、前もって問い合わせる CORS の手間が無い)。失敗は {ok:false, msg} */
+async function mjslPost(q, ms){
+  const url=mjslUrl(); if(!url) return {ok:false, msg:"スコア表のリンクの URL がありません(管理 → スコア表のリンク)。"};
+  const ctl=(typeof AbortController==="function") ? new AbortController() : null, timer=ctl ? setTimeout(()=>ctl.abort(), ms||30000) : 0;
+  let res=null;
+  const body=JSON.stringify(Object.assign({k:mjslKey()}, q));
+  /* 裏に回る時に送る分は keepalive(画面が止まっても、送り終えるまで続く。本文は 64KB まで) */
+  try{ res=await fetch(url, {method:"POST", credentials:"omit", redirect:"follow", cache:"no-store", keepalive:!!(document.hidden && body.length<60000), body:body, signal:(ctl ? ctl.signal : undefined)}); }
+  catch(e){ res=null; }
+  if(timer) clearTimeout(timer);
+  const g=await gasJs(res); if(!g.ok) return g;
+  const js=g.js, e=String(js.err||"");
+  if(js.ok!==true) return {ok:false, code:e, msg: e==="key" ? "鍵が違います。\nこの端末で「プログラムをコピー」をして Google 側に貼り替え、「デプロイを管理」で新しいバージョンにしてください(URLは変わりません)。"
+    : e==="size" ? "表が大きすぎて送れません。" : e==="busy" ? "Google 側が混んでいます。少したってから、もう一度。"
+    : "プログラムの中で失敗しました("+(e||"理由なし").slice(0,40)+")。"};
+  return {ok:true, js:js};
+}
+/* 送る順番(表ごと・この端末の中だけ): tm=待っている印 / p=送っている途中 / again=送っている間に変わった / stop=止めている途中 /
+   sent=最後に送れた物(札と中身) / at=その時刻 / err=送れなかった訳 */
+function mjslQ(t){ const Q=(UI.mjslQ=UI.mjslQ||{}), id=String(t.id); return Q[id]||(Q[id]={}); }
+function mjslQueue(t, now){
+  if(!t || !t.link || !mjslReady()) return;
+  const q=mjslQ(t); if(q.stop) return;
+  clearTimeout(q.tm);
+  q.tm=setTimeout(()=>{ q.tm=0; mjslFlush(t); }, now ? 0 : MJSL_WAIT);
+}
+async function mjslSend(t, q){
+  for(;;){
+    if(!t.link || !mjslReady() || q.stop) return;
+    const h=mjslHtml(t), key=t.link+"\n"+h;
+    if(key===q.sent){ q.err=""; return; }
+    q.busy=true; mjslStPaint(t);
+    const g=await mjslPost({act:"put", id:t.link, h:h});
+    q.busy=false;
+    if(!g.ok){   /* 送り直すのは、次に表を変えた時 */
+      if(g.code==="key") rcptLS(MJSL_OK_LS, null);   /* 鍵が合わない(Google 側を貼り替えた)= 準備をやり直す(「リンクを送る」で準備の画面へ) */
+      q.err=g.msg||"送れませんでした"; q.again=false; return; }
+    q.sent=key; q.at=Date.now(); q.err="";
+    if(!q.again) return;
+    q.again=false;   /* 送っている間に変わった分を、もう一度 */
+  }
+}
+function mjslFlush(t){
+  const q=mjslQ(t);
+  if(q.p){ q.again=true; return q.p; }
+  q.p=mjslSend(t, q).catch(e=>{ q.err=String((e && e.message) || e); }).then(()=>{ q.p=null; q.busy=false; mjslStPaint(t); });
+  return q.p;
+}
+/* 裏に回る時(画面を消した・ほかのアプリへ切り替えた)は、待っている分をすぐ送る。iPhone は裏に回った画面の待ち時間を止めるので、
+   待ったままだと、次に Tally を開くまで送られない(1ゲーム入れてすぐ画面を消すと、相手の画面がそのゲームの前のままになる) */
+function mjslNow(){ const Q=UI.mjslQ||{}; Object.keys(Q).forEach(id=>{ const q=Q[id]; if(!q.tm) return; clearTimeout(q.tm); q.tm=0;
+  const t=(S.mjTables||[]).find(x=>String(x.id)===id); if(t) mjslFlush(t); }); }
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) mjslNow(); });
+/* 表の下の行(送り終えた時は、この行だけ書き換える = 打っている途中の画面を描き直さない) */
+function mjslStTxt(t){
+  if(!t.link) return "";
+  if(!mjslReady()) return '<span class="muted">この端末では、リンクの準備がありません</span>';
+  const q=mjslQ(t);
+  if(q.busy) return '<span class="muted">送っています…</span>';
+  if(q.err) return '<span class="amber">送れていません(次に表を変えた時に、送り直します)</span>';
+  return '<span class="muted">リンクで見せています'+(q.at ? ' ・ '+tsHM(q.at)+' に送りました' : '')+'</span>';
+}
+function mjslStPaint(t){ const el=document.getElementById("mjsl-st"); if(el && UI.mjt===t) el.innerHTML=mjslStTxt(t); }
+function mjslRowHtml(t){
+  const on=!!t.link;
+  return '<div class="row" style="gap:6px;margin-top:6px">'+
+    '<button class="btn" data-mt="mjslshow" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">'+(on ? 'リンクを送る' : 'リンクで見せる')+'</button>'+
+    (on && mjslReady() ? '<button class="btn" data-mt="mjslstop" style="flex:none;padding:11px 16px;font-size:14px;color:var(--red);border-color:var(--red)">止める</button>' : '')+'</div>'+
+    (on ? '<div id="mjsl-st" style="font-size:11px;text-align:right;margin-top:5px;line-height:1.5">'+mjslStTxt(t)+'</div>' : '');
+}
+/* 「リンクで見せる」「リンクを送る」(押したその場で共有シートを開く。先に送り終えるのを待つと、iPhone は共有シートを開かせない) */
+function mjslShow(t){
+  if(!mjslReady()){ UI.mjslBack=UI.screen; UI.mjslTest=null; UI.screen="mjslset"; render(); toast("はじめに一度だけ、Google に見るページを置きます"); return; }   /* 「戻る」は押した画面(対局モード)へ */
+  const first=!t.link;
+  if(first){ t.link=mjslRand(20); saveMjt(true); }
+  mjslQueue(t, true);
+  const url=mjslLink(t);
+  const copy=()=>{ if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(()=>toast("リンクをコピーしました"), ()=>alert(url)); else alert(url); };
+  if(navigator.share) navigator.share({url:url}).catch(e=>{ if(!e || e.name!=="AbortError") copy(); });
+  else copy();
+  if(first) renderKeepScroll();
+}
+/* 「止める」: Google の中から消して、表の札を外す(スコア表は残る)。送っている途中なら、終わってから消す(消した後に届いて、生き返らないように) */
+async function mjslStop(t){
+  if(!t.link || !mjslReady()) return;
+  if(!confirm("リンクを止めますか?\n\n送ったリンクを開いても、この表は見られなくなります(Google の中から消します)。スコア表は残ります。")) return;
+  const q=mjslQ(t); q.stop=true; clearTimeout(q.tm); q.tm=0;
+  if(q.p) await q.p;
+  const g=await mjslPost({act:"del", id:t.link});
+  q.stop=false;
+  if(!g.ok){ alert("止められませんでした。\n"+g.msg); return; }
+  delete t.link; q.sent=""; q.err=""; q.at=0;
+  saveMjt(true); renderKeepScroll(); toast("リンクを止めました");
+}
+/* スコア表を削除した時: リンクも止める(待たない。電波が無くて消せなかった表は、7日で消える) */
+function mjslDrop(t){
+  if(!t || !t.link || !mjslReady()) return;
+  const q=mjslQ(t), id=t.link; q.stop=true; clearTimeout(q.tm); q.tm=0;
+  Promise.resolve(q.p).then(()=>mjslPost({act:"del", id:id})).catch(()=>{});
+}
+/* 管理 → スコア表のリンク */
+function mjslSub(){ const u=mjslUrl(); return u ? (mjslReady() ? 'Google' : 'Google ・ まだ確かめていません') : 'Google ・ 未設定'; }
+async function mjslTest(){
+  const url=mjslUrl(); if(!url || (UI.mjslTest && UI.mjslTest.busy)) return;
+  UI.mjslTest={busy:true}; if(UI.screen==="mjslset") render();
+  const g=await mjslPost({act:"ping"}, 20000);
+  const good=g.ok && g.js.app==="tally-score" && Number(g.js.v)>=MJSL_V;
+  rcptLS(MJSL_OK_LS, good ? url : null);
+  UI.mjslTest = good ? {ok:true, msg:"つながりました。スコア表の「リンクで見せる」が使えます。"}
+    : {ok:false, msg: g.ok ? "スコア表のプログラムではないようです。\n「プログラムをコピー」で貼ったプロジェクトの、ウェブアプリのURLを貼ってください。"
+      : g.nojs ? g.msg+"\n(Amazon のメールなど、別のプログラムのURLかもしれません)" : g.msg};
+  if(UI.screen==="mjslset") render();
+}
+const MJSL_INFO="スコア表を、<b>リンクを知っている人</b>に見せます。相手は Google のアカウントが無くても見られます。LINE などには、表ごとにリンクを<b>1回</b>送るだけです。<br><br>"+
+  "<b>見えるもの</b>: 途中経過の画面と同じ物です(平均着順・着順内訳・合計・チップの基準・直近・チップの売り買い・推移の図・全部のゲーム)。表を変えると、少し待ってから自動で送ります。見ているページは、1分ごとに自分で新しくなります。<br><br>"+
+  "<b>はじめに一度だけ</b>(PCかタブレットのブラウザが楽です)<br>"+
+  "① script.google.com を開き、「新しいプロジェクト」(<b>Amazon のメールのプロジェクトとは別に</b>作ります)<br>"+
+  "② 下の「プログラムをコピー」を押し、エディタの中の3行の雛形の下の空いた所を押して、改行してから貼り、保存する(雛形の { } の中には貼らない。雛形は残っていても動きます)<br>"+
+  "③ 右上の「デプロイ」→「新しいデプロイ」→「種類の選択」の歯車で「ウェブアプリ」→「次のユーザーとして実行」は「自分」、「アクセスできるユーザー」は「全員」→「デプロイ」(権限の確認が出た時は、許可してください。このプログラムは、メールも Drive も読みません)<br>"+
+  "④ 出てきた「ウェブアプリ」のURL(…/exec で終わる)をコピーして、ここに貼って保存する(その場で、つながるか確かめます)<br><br>"+
+  "<b>鍵</b>: コピーしたプログラムには、この端末の Tally だけが知っている鍵が入っています。鍵の無い人は、表を書き換えられません。"+
+  "別の端末で使う時や、Tally を入れ直した時は、その端末で「プログラムをコピー」をして貼り替え、「デプロイ」→「デプロイを管理」→ 鉛筆のマーク →「バージョン」を「新バージョン」にして「デプロイ」してください(URLは変わりません)。<br><br>"+
+  "<b>消える時</b>: 最後に送ってから7日たった表は、次に何か送った時に Google の中から消えます。スコア表の「止める」を押した時と、スコア表を削除した時は、すぐ消えます。<br><br>"+
+  "<b>知っておくこと</b>: 見るページの上に、Google の「このアプリケーションは Google Apps Script のユーザーによって作成されました」という帯が出ます(個人の Google アカウントでは消せません)。"+
+  "送るには電波が要ります(送れなかった時は、次に表を変えた時に送り直します)。<br><br>"+
+  "<b>URL</b>: ここに貼るURLは、リンクを送った相手にも見えます(リンクの頭の部分)。鍵が無いと書き換えられないので、見られて困ることはありません。"+
+  "Amazon のメールのURLは、知っている人がメールの中身を読めるので、ここには貼れません。";
+function viewMjslSet(){
+  const u=mjslUrl(), T=UI.mjslTest, rd=mjslReady();
+  let h='<div class="hdr"><button class="navbtn" data-msl="back">‹ 戻る</button>'+
+    '<div style="font-size:14px;font-weight:700">スコア表のリンク</div><div style="width:44px"></div></div>';
+  h+='<div class="card" style="margin-bottom:14px"><div class="fxl">見るページ(Google)'+infoBtn(MJSL_INFO)+'</div>'+
+    '<div class="mono" style="font-size:12px;margin-bottom:8px">'+(u ? esc(amzMask(u)) : '<span class="muted">未設定</span>')+'</div>'+
+    '<input class="input mono" id="msl-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="width:100%;margin-bottom:8px;font-size:12px">'+
+    '<div class="row" style="gap:8px"><button class="btn tealb" style="flex:1;padding:10px 0;font-size:12px;font-weight:700" data-msl="save">'+(u ? '貼り直す' : '保存')+'</button>'+
+    (u ? '<button class="btn" style="flex:none;padding:10px 18px;font-size:12px;color:var(--red)" data-msl="del">消す</button>' : '')+'</div>';
+  if(u) h+='<button class="btn full" style="padding:10px 0;font-size:12px;margin-top:12px" data-msl="test">'+((T && T.busy) ? '確かめています…' : 'つながるか確かめる')+'</button>'+
+    ((T && T.msg) ? '<div class="'+(T.ok ? 'teal' : 'red')+'" style="font-size:12px;margin-top:8px;line-height:1.6">'+esc(T.msg).replace(/\n/g,"<br>")+'</div>'
+      : (T && T.busy) ? '' : '<div class="'+(rd ? 'teal' : 'amber')+'" style="font-size:12px;margin-top:8px;line-height:1.6">'+(rd ? '確かめ済み' : 'まだ確かめていません')+'</div>');
+  h+='<button class="btn full" style="padding:9px 0;font-size:12px;margin-top:12px" data-msl="gas">プログラムをコピー</button></div>';
+  return h;
+}
+function bindMjslSet(){
+  document.querySelectorAll("[data-msl]").forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset.msl;
+      if(a==="back"){ UI.mjslTest=null; UI.screen=(UI.mjslBack && UI.mjslBack!=="mjslset" && UI.mjt) ? UI.mjslBack : "main"; UI.mjslBack=null; render(); return; }
+      if(a==="save"){
+        const inp=document.getElementById("msl-url"), g=gasUrlIn(inp && inp.value);
+        if(g.err){ toast(g.err); return; }
+        const idOf=u=>(AMZ_URL_RE.exec(String(u||""))||[])[1]||"";
+        if(amzUrl() && idOf(g.u)===idOf(amzUrl())){ toast("それは Amazon のメールのプログラムのURLです。スコア表には、別のプロジェクトを作ってください"); return; }
+        rcptLS(MJSL_URL_LS, g.u); rcptLS(MJSL_OK_LS, null); UI.mjslTest=null; render(); toast("保存しました(この端末だけ)");
+        mjslTest(); return;
+      }
+      if(a==="del"){
+        if(!confirm("この端末から、スコア表のリンクのURLを消しますか?\n\nリンクで見せている表は、この端末からは送れなくなります(Google の中の表は、7日で消えます)。")) return;
+        rcptLS(MJSL_URL_LS, null); rcptLS(MJSL_OK_LS, null); UI.mjslTest=null; render(); toast("消しました"); return;
+      }
+      if(a==="test"){ mjslTest(); return; }
+      if(a==="gas"){
+        let k=mjslKey(); if(!k){ k=mjslRand(32); rcptLS(MJSL_KEY_LS, k); }   /* 鍵はコピーした時に作る(2回目からは同じ鍵) */
+        const txt=MJSL_GAS.split("@@KEY@@").join(k);
+        const ng=()=>alert("コピーできませんでした(この端末では、クリップボードに書けません)。");
+        if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(()=>toast("プログラムをコピーしました"), ng); else ng();
+        return;
+      }
+    };
+  });
+}
+/* Google に置くプログラム(Apps Script)。**ここが元**(「プログラムをコピー」で、@@KEY@@ をこの端末の鍵にして、そのままクリップボードに入る)。
+   検査は tests/mjsl695/gas_test.js が、この文字をそのまま Node の上で動かす。String.raw なので、中にバッククォートと ${ は書けない(閉じの script タグと、注釈の始まりの字も) */
+const MJSL_GAS=String.raw`/**
+ * Tally 用 — スコア表を、リンクを知っている人に見せるプログラム(版1)
+ * Tally の「管理 → スコア表のリンク」の「プログラムをコピー」で入れた物です。
+ * Amazon のメールのプログラムとは、別のプロジェクトに置いてください(あちらの URL は、知っている人がメールの中身を読めるため)。
+ *
+ * ・Tally から届いた表(途中経過の画面と同じ物)を、このプロジェクトの中(スクリプト プロパティ)に置き、…/exec?t=表の札 で見せます
+ * ・書き換えるには、下の KEY(鍵)が要ります。鍵は、コピーした端末の Tally だけが知っています。リンクを知っている人は、見るだけです
+ * ・最後に届いてから7日たった表は、次に何か届いた時に消します
+ * ・メール・Drive・カレンダーなどは読みません
+ */
+var KEY = "@@KEY@@";
+var DAYS = 7;              // 最後に届いてから、この日数で消す
+var MAX_TABLES = 30;       // 置いておく表の数(超えたら、古い方から消す)
+var MAX_BYTES = 300000;    // 1つの表の大きさの上限(バイト)
+var PART = 2500;           // 1つの値に入れる字数(スクリプト プロパティは1つ 9KB まで。日本語は1字 3バイト)
+var TOTAL = 420000;        // 置いておく量の上限(バイト。全体で 500KB まで)
+
+/* 見るページ。…/exec?t=表の札 */
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  var id = idOk_(p.t) ? String(p.t) : "";
+  var rec = id ? read_(PropertiesService.getScriptProperties().getProperties(), id) : null;
+  return HtmlService.createHtmlOutput(page_(id, rec))
+    .setTitle("スコア表")
+    .addMetaTag("viewport", "width=device-width, initial-scale=1");
+}
+
+/* Tally から: {k: 鍵, act: "ping" | "put" | "del", id: 表の札, h: 表} */
+function doPost(e) {
+  var q = null;
+  try { q = JSON.parse(String((e && e.postData && e.postData.contents) || "")); } catch (err) { q = null; }
+  if (!q || typeof q !== "object") return json_({ ok: false, err: "bad" });
+  if (!/^[A-Za-z0-9]{24,64}$/.test(KEY) || String(q.k || "") !== KEY) return json_({ ok: false, err: "key" });
+  if (q.act === "ping") return json_({ ok: true, app: "tally-score", v: 1 });
+  var id = String(q.id || "");
+  if (!idOk_(id)) return json_({ ok: false, err: "id" });
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return json_({ ok: false, err: "busy" });
+  try {
+    var pr = PropertiesService.getScriptProperties(), all = pr.getProperties(), now = Date.now();
+    if (q.act === "del") {
+      pr.setProperties(keep_(all, id, now, 0, false), true);
+      return json_({ ok: true });
+    }
+    if (q.act === "put") {
+      var h = String(q.h == null ? "" : q.h), need = len8_(h);
+      if (!h || need > MAX_BYTES) return json_({ ok: false, err: "size" });
+      var old = meta_(all, id), u = Math.max(now, old ? old.u + 1 : 0);
+      var o = keep_(all, id, now, need + 400, true), n = 0, i = 0;
+      while (i < h.length) {
+        var j = Math.min(h.length, i + PART);
+        if (j < h.length) { var c = h.charCodeAt(j - 1); if (c >= 0xD800 && c <= 0xDBFF) j--; }   // 絵文字などを2つに切らない
+        o["C_" + id + "_" + u + "_" + n] = h.slice(i, j);
+        n++; i = j;
+      }
+      o["M_" + id] = JSON.stringify({ u: u, n: n });
+      pr.setProperties(o, true);
+      return json_({ ok: true, u: u });
+    }
+    return json_({ ok: false, err: "act" });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* 見るページが1分ごとに呼ぶ(google.script.run)。変わっていなければ same、無ければ gone */
+function getT(id, u) {
+  if (!idOk_(id)) return { gone: true };
+  var rec = read_(PropertiesService.getScriptProperties().getProperties(), String(id));
+  if (!rec) return { gone: true };
+  if (Number(u) === rec.u) return { same: true };
+  return { u: rec.u, h: rec.h };
+}
+
+function idOk_(s) { return /^[A-Za-z0-9]{16,40}$/.test(String(s == null ? "" : s)); }
+function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+function meta_(all, id) {
+  var m = null;
+  try { m = JSON.parse(all["M_" + id] || "null"); } catch (err) { m = null; }
+  return (m && m.n > 0 && m.u > 0) ? m : null;
+}
+function read_(all, id) {
+  var m = meta_(all, id);
+  if (!m) return null;
+  var h = "";
+  for (var i = 0; i < m.n; i++) {
+    var c = all["C_" + id + "_" + m.u + "_" + i];
+    if (c == null) return null;
+    h += c;
+  }
+  return { u: m.u, h: h };
+}
+/* 字の大きさ(バイト。UTF-8) */
+function len8_(s) {
+  s = String(s == null ? "" : s);
+  var n = 0;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    n += c < 0x80 ? 1 : c < 0x800 ? 2 : (c >= 0xD800 && c <= 0xDFFF) ? 2 : 3;
+  }
+  return n;
+}
+function sizeOf_(all, id) {
+  var m = meta_(all, id);
+  if (!m) return 0;
+  var s = len8_("M_" + id) + len8_(all["M_" + id]);
+  for (var i = 0; i < m.n; i++) { var k = "C_" + id + "_" + m.u + "_" + i; s += len8_(k) + len8_(all[k]); }
+  return s;
+}
+/* 残す物: 7日たった表と、id の前の物(置き直すか、消す)を外す。置く時は、多すぎる分・大きすぎる分を古い方から外す。
+   今の版でない切れ端も外す。Tally の物でないプロパティは、そのまま残す */
+function keep_(all, id, now, need, put) {
+  var ts = {}, drop = {}, o = {};
+  Object.keys(all).forEach(function (k) {
+    var mm = /^M_([A-Za-z0-9]+)$/.exec(k);
+    if (mm) { var m = meta_(all, mm[1]); ts[mm[1]] = m ? m.u : 0; }
+  });
+  drop[id] = true;
+  var live = Object.keys(ts).filter(function (x) {
+    if (x === id) return false;
+    if (!ts[x] || now - ts[x] > DAYS * 86400000) { drop[x] = true; return false; }
+    return true;
+  }).sort(function (a, b) { return ts[a] - ts[b]; });   // 古い順
+  if (put) {
+    var size = need, count = 1;
+    live.forEach(function (x) { size += sizeOf_(all, x); count++; });
+    for (var i = 0; i < live.length && (count > MAX_TABLES || size > TOTAL); i++) {
+      drop[live[i]] = true; size -= sizeOf_(all, live[i]); count--;
+    }
+  }
+  Object.keys(all).forEach(function (k) {
+    var mm = /^(M|C)_([A-Za-z0-9]+)(?:_(\d+)_\d+)?$/.exec(k);
+    if (!mm) { o[k] = all[k]; return; }
+    if (drop[mm[2]]) return;
+    if (mm[1] === "C") {
+      var m = meta_(all, mm[2]);
+      if (!m || mm[3] == null || String(m.u) !== mm[3]) return;   // 今の版でない切れ端
+    }
+    o[k] = all[k];
+  });
+  return o;
+}
+/* 見るページ。中身(Tally の途中経過の画面と同じ物)はそのまま入れて、1分ごとに新しい物があれば入れ替える */
+function page_(id, rec) {
+  var css = "*{box-sizing:border-box}" +   // Tally の画面と同じ(表の幅・余白の数え方)
+    "html,body{margin:0;background:#e6ecea;color:#000;font-family:'Hiragino Sans','Noto Sans JP',sans-serif;font-size:14px;-webkit-text-size-adjust:100%;text-size-adjust:100%}" +
+    "#app{max-width:560px;margin:0 auto;padding:4px 6px 28px}" +
+    "#at{font-size:12px;color:#444;text-align:right;margin:6px 4px;min-height:17px}" +
+    "#msg{font-size:15px;color:#333;text-align:center;padding:56px 12px;line-height:1.7}";
+  var gone = '<div id="msg">この表は見られません。<br>止められたか、消えました。</div>';
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' + css + '</style></head><body>' +
+    '<div id="app"><div id="at"></div><div id="v">' + (rec ? rec.h : gone) + '</div></div>' +
+    '<script>' +
+    'var ID=' + JSON.stringify(id) + ',U=' + (rec ? rec.u : 0) + ',GONE=' + JSON.stringify(gone) + ';' +
+    'function p2(n){return ("0"+n).slice(-2);}' +
+    'function at(){var e=document.getElementById("at");if(!U){e.textContent="";return;}var d=new Date(U);e.textContent="更新 "+(d.getMonth()+1)+"/"+d.getDate()+" "+p2(d.getHours())+":"+p2(d.getMinutes());}' +
+    'function show(r){if(!r||r.same)return;var v=document.getElementById("v");if(r.gone){if(U){U=0;v.innerHTML=GONE;at();}return;}U=r.u;v.innerHTML=r.h;at();}' +
+    'function poll(){if(!ID||document.hidden)return;google.script.run.withSuccessHandler(show).withFailureHandler(function(){}).getT(ID,U);}' +
+    'at();setInterval(poll,60000);document.addEventListener("visibilitychange",function(){if(!document.hidden)poll();});' +
+    '<\/script></body></html>';
+}`;
 /* ---------- 端数処理つき精算計算 ----------
    切捨対象は最終支払額(収支−場代)の負け側のみ。単位=なし/100/500/1000円(500=500円刻み切捨)。
    免除合計は受取の大きい順にゼロを割らない範囲で波及控除(帳尻Σ支払=−場代合計は常に一致) */
@@ -5759,6 +6143,7 @@ function viewMjPlay(){
   h += '<div class="row" style="gap:6px;margin-top:8px">'+
     '<button class="btn" data-mt="tomid" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">途中経過を表示</button>'+
     '<button class="btn" data-mt="midshare" style="flex:1;padding:11px 0;font-size:14px;font-weight:700;color:var(--teal);border-color:var(--teal)">画像で共有</button></div>';
+  h += mjslRowHtml(t);   /* v6.95: リンクで見せる(画像の下。押すと共有シートでリンクを送る) */
   /* v6.06: 売り買いは打っている最中に起きるので、対局モードからも記録できるように(チップを使う卓だけ)。
      v6.86: 置き場を、ここ(一番下)から見出しの左の ⇄ に移した(点数のキーパッドが開いていると、ここは画面の外になるため) */
   /* v6.70: 表の読み方の1行(「ヘッダー: 上段=合計 / 下段=…」)は ⓘ へ(総点検 A2) */
@@ -5943,6 +6328,8 @@ function bindMjTable(){
         saveMjt(false); renderKeepScroll();
       }
       else if(a==="midshare"){ mjtShareMid(false); }
+      else if(a==="mjslshow"){ mjslShow(t); }   /* v6.95 */
+      else if(a==="mjslstop"){ mjslStop(t); }
       else if(a==="fullshare"){ mjtShareMid(true); }
       else if(a==="lockrow"||a==="lockrowlast"){
         const P=t.players;                      /* bindMjTableのスコープにPは無い(v2.82で修正) */
@@ -6103,6 +6490,7 @@ function saveMjt(persist){
   const i=(S.mjTables||[]).findIndex(x=>String(x.id)===String(t.id));
   if(i>=0) S.mjTables[i]=t; else (S.mjTables=S.mjTables||[]).push(t);
   if(persist) save(); else saveLocal();
+  mjslQueue(t);   /* v6.95: リンクで見せている表は、少し待ってから送る */
 }
 
 /* ---------- 資産タブ(概観) ---------- */
@@ -10895,6 +11283,7 @@ function bindMain(){
       else if(a==="savings"){ UI.screen="savings"; render(); }
       else if(a==="togglelaunchadd"){ S.openAddOnLaunch=!S.openAddOnLaunch; save(); render(); }
       else if(a==="rcptset"){ UI.screen="rcptset"; UI.rcptTest=null; UI.amzTest=null; render(); }   /* v6.23 */
+      else if(a==="mjslset"){ UI.screen="mjslset"; UI.mjslTest=null; UI.mjslBack=null; render(); }   /* v6.95: スコア表のリンク */
       else if(a==="svdrill"){ UI.screen="svdrill"; render(); }
       else if(a==="advdrill"){ UI.advDoneOpen=false; UI.screen="advdrill"; render(); }   /* v6.15 */
       else if(a==="mjlog"){ UI.screen="mjlog"; render(); }
@@ -12225,13 +12614,28 @@ function amzSkipIds(from){
   return ids;
 }
 /* v6.80 Google に置いたプログラムを呼んで、返事の JSON を受け取る。取り込み・確かめる(amzFetch)と、メールから品目を読む(mailCall)の両方が使う(失敗の言い方を2か所に書かない) */
-async function amzGet(url, qs, ctl){
-  let res=null, js=null;
-  try{ res=await fetch(url+"?"+qs, {method:"GET", credentials:"omit", redirect:"follow", cache:"no-store", signal:(ctl ? ctl.signal : undefined)}); }
-  catch(e){ return {ok:false, msg:"Googleに置いたプログラムにつながりませんでした。\n電波が弱いか、公開の設定が違うかもしれません(デプロイの「アクセスできるユーザー」は「全員」)。"}; }
+/* v6.95 Google に置いたプログラムの返事(fetch の結果。つながらなかった時は null)を JSON にする。
+   つながらない・返事が無い・JSON でない時の言い方は、ここだけ(Amazon のメールの amzGet と、スコア表のリンクの mjslPost。v6.94 までは amzGet の中) */
+async function gasJs(res){
+  if(!res) return {ok:false, msg:"Googleに置いたプログラムにつながりませんでした。\n電波が弱いか、公開の設定が違うかもしれません(デプロイの「アクセスできるユーザー」は「全員」)。"};
   if(!res.ok) return {ok:false, msg:"Googleに置いたプログラムから返事がありません("+res.status+")。\nデプロイをやり直して、URLを貼り直してください。"};
-  try{ js=await res.json(); }catch(e){ js=null; }
-  if(!js || typeof js!=="object") return {ok:false, msg:"プログラムの返事が読めません。\nデプロイの「アクセスできるユーザー」が「全員」になっているか確かめてください(ログインの画面が返ってきているかもしれません)。"};
+  let js=null; try{ js=await res.json(); }catch(e){ js=null; }
+  if(!js || typeof js!=="object") return {ok:false, nojs:true, msg:"プログラムの返事が読めません。\nデプロイの「アクセスできるユーザー」が「全員」になっているか確かめてください(ログインの画面が返ってきているかもしれません)。"};
+  return {ok:true, js:js};
+}
+/* v6.95 貼った Google のプログラムの URL(空白と、? # の後ろを外す)。…/dev(テスト用)と、形の違う URL は断る(Amazon のメールとスコア表のリンクで同じ) */
+function gasUrlIn(raw){
+  const u=String(raw==null ? "" : raw).replace(/\s+/g,"").split(/[?#]/)[0];
+  if(/\/dev$/.test(u)) return {err:"…/dev ではなく、「デプロイ」で出る …/exec のURLを貼ってください"};
+  if(!AMZ_URL_RE.test(u)) return {err:"URLは https://script.google.com/macros/s/…/exec の形です"};
+  return {u:u};
+}
+async function amzGet(url, qs, ctl){
+  let res=null;
+  try{ res=await fetch(url+"?"+qs, {method:"GET", credentials:"omit", redirect:"follow", cache:"no-store", signal:(ctl ? ctl.signal : undefined)}); }
+  catch(e){ res=null; }
+  const g=await gasJs(res); if(!g.ok) return g;
+  const js=g.js;
   if(js.ok!==true){
     const raw=String(js.err||"");
     /* v6.61: 版3のプログラムは、1回に使う量が多すぎそうな時に自分で止める(TOO_MANY) */
@@ -12949,9 +13353,9 @@ function amzSetHtml(){
 /* 設定の画面の押した先(bindRcptSet から呼ぶ)。扱ったら true */
 function amzSetAct(a, v){
   if(a==="amzsave"){
-    const inp=document.getElementById("rs-amz"), u=String((inp && inp.value) || "").replace(/\s+/g,"").split(/[?#]/)[0];
-    if(/\/dev$/.test(u)){ toast("…/dev ではなく、「デプロイ」で出る …/exec のURLを貼ってください"); return true; }
-    if(!AMZ_URL_RE.test(u)){ toast("URLは https://script.google.com/macros/s/…/exec の形です"); return true; }
+    const inp=document.getElementById("rs-amz"), g=gasUrlIn(inp && inp.value);   /* v6.95: 確かめ方は gasUrlIn(スコア表のリンクと同じ) */
+    if(g.err){ toast(g.err); return true; }
+    const u=g.u;
     rcptLS(AMZ_URL_LS, u);
     if(!normDate(rcptLS(AMZ_FROM_LS))) rcptLS(AMZ_FROM_LS, amzDay(todayStr(), -AMZ_FIRST));   /* 初めての時は7日前から(前に手で入れた分を、まとめて出さないように) */
     UI.amzTest=null; render(); toast("保存しました(この端末だけ)"); return true;
