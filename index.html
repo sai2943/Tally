@@ -486,7 +486,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.92 (localStorage保存・完全オフライン)
+   Tally 6.93 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1355,7 +1355,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.92";
+const APP_VERSION = "6.93";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -2939,7 +2939,7 @@ function viewCatDrill(){
   /* v6.92: 枠は予算カードと同じ budgetRow(所持金で絞った実効枠。前は月の枠を別に計算していて、カードと内訳で数字が食い違った) */
   const _br = budgetRow(mk, cat), cap = _br.cap||0;
   const spent = list.reduce((a,e)=>a+e.amount,0);
-  const pct = cap>0 ? Math.min(100, spent/cap*100) : 0;
+  const pct = capPct(spent, cap);   /* v6.93: 予算カードと同じ(枠が 0 まで絞られた時は満タン) */
   const over = spent - cap;
   if(UI.drillMode==null) UI.drillMode="chain";
   /* v4.80: 判定は chainKeyOf に一本化(以前はここに同じ規則の写しがあり、2つの実装がズレうる状態だった) */
@@ -2975,7 +2975,8 @@ function viewCatDrill(){
       (budgetSpanTxt(mk) || num(parts[0])+'年'+num(parts[1])+'月')+'</span></div>'+
     '<button class="navbtn" data-a="setbudget" data-v="'+esc(cat)+'" style="font-size:12px;color:var(--teal)">予算変更</button></div>';
   h += '<div class="card" style="margin-bottom:12px">';
-  if(cap>0){
+  /* v6.93: 予算カードと同じく、枠を決めているか(_br.has)で分ける。所持金で 0 まで絞られても「¥0 / ¥0」と ⓘ(前は枠を出さず合計だけ) */
+  if(_br.has){
     const col = cat==="娯楽" ? "var(--amber)" : "var(--red)";  /* v3.35: 超過でも分類固有色 */
     const colCls = cat==="娯楽" ? "amber" : "red";
     /* v6.92: 所持金で絞っている時だけ、合計の横に ⓘ(月の枠と、絞っている理由。予算カードには出さない=v3.86) */
@@ -2989,7 +2990,8 @@ function viewCatDrill(){
         : '<div style="height:18px;background:var(--surface2);border-radius:9px;position:relative;overflow:hidden">'+
           '<div style="height:100%;width:'+pct+'%;background:'+col+'"></div>'+
           '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:9px">'+
-          '<span class="mono muted" style="font-size:11px;font-weight:700">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span></div></div>')+
+          /* v6.93: バーが満タン(使い切った時・所持金で 0 まで絞られた時)は、超過の時と同じく背景の色の字。灰色の字は赤・琥珀の上で読めない(コントラスト 1.1〜1.8) */
+          '<span class="mono'+(pct>=100?'':' muted')+'" style="font-size:11px;font-weight:700'+(pct>=100?';color:var(--bg)':'')+'">残り ¥'+Math.max(0,cap-spent).toLocaleString("ja-JP")+'</span></div></div>')+
       '<div style="text-align:right;font-size:11px;margin-top:4px" class="mono muted">'+list.length+'件</div>';
   } else {
     h += '<div class="row between"><span style="font-size:12px;font-weight:700">合計</span><span class="mono" style="font-size:16px;font-weight:700">¥'+spent.toLocaleString("ja-JP")+'</span></div>';
@@ -3390,8 +3392,12 @@ function budgetRow(mk, cat){
   const nc=nowCaps(mk);
   const k=(cat==="消費"?nc.varc:cat==="娯楽"?nc.amuse:null);
   const walletBound=!!(k && k.has && (spent + k.cap) < monthCap);
-  return {monthCap:monthCap, capIsPct:budgetIsPct(_bv), spent:spent, walletBound:walletBound, cap:walletBound ? (spent + k.cap) : monthCap};
+  /* v6.93: has = 枠を決めている(月の枠が 0 より大きい)。予算カードの行と、変動消費・娯楽の内訳が「¥使った / ¥枠」を出すか「＋ 上限を設定」にするかは、ここで決める。
+     前は実効枠(cap)が 0 より大きいかで分けていて、所持金で 0 まで絞られると、枠を決めているのに「＋ 上限を設定」になり、押すと予算の設定の画面へ行っていた */
+  return {monthCap:monthCap, capIsPct:budgetIsPct(_bv), spent:spent, walletBound:walletBound, cap:walletBound ? (spent + k.cap) : monthCap, has:monthCap>0};
 }
+/* v6.93: 予算のバーの長さ(%)。枠が 0(所持金で 0 まで絞られた時だけ起きる)なら満タン=使える分が残っていない印。予算カードの行と、変動消費・娯楽の内訳の両方がここを通る */
+function capPct(spent, cap){ return cap>0 ? Math.min(100, spent/cap*100) : 100; }
 /* v6.13【修正】(ユーザー指摘: 所持金と予算が一致しない)。
    貯金の目標は「今期の収入 − 固定費 − 変動消費・娯楽の枠 − 承認」の残り(preSplit)で、**所持金を見ていない**。
    予算の外で所持金から出ていったお金——**軍資金へ移した分**(負けの穴埋め・借りの返済・遊技の経費)、
@@ -3414,7 +3420,7 @@ function svPlan(mk){
   /* v6.92: 変動消費・娯楽の残りは**月の枠の残り**(月の枠 − 使った額)。所持金で絞った枠(cap)ではない——
      所持金の不足は先に貯金の側で受ける(v6.13)ので、絞った分を貯金へ回したことにしない。
      絞るのは、残りを賄えない時=いま移せる額がもう0の時だけ(nowCaps)。足りない分は「計算上は(マイナスなので0)」に出る */
-  const rem=["消費","娯楽"].reduce((a,c)=>{ const r=budgetRow(mk,c); return a+(r.monthCap>0 ? Math.max(0, r.monthCap-r.spent) : 0); }, 0);
+  const rem=["消費","娯楽"].reduce((a,c)=>{ const r=budgetRow(mk,c); return a+(r.has ? Math.max(0, r.monthCap-r.spent) : 0); }, 0);
   const t=todayStr();
   const futOut=(S.entries||[]).filter(e=>e.type==="expense" && e.date>t && inBudget(e.date,mk) && !isNet(e) && !e.bkSrc && e.svTx==null)
     .reduce((a,e)=>a+e.amount,0);
@@ -3476,13 +3482,14 @@ function viewLedgerBudget(mk){
     /* v6.13: 計算は`budgetRow`へ(貯金の「いま移せる額」も同じ数字を使うので、2箇所に書かない) */
     const _br=budgetRow(mk, cat);
     const monthCap=_br.monthCap, capIsPct=_br.capIsPct, spent=_br.spent, walletBound=_br.walletBound, cap=_br.cap;
-    const pct = cap>0 ? Math.min(100, spent/cap*100) : 0;
+    const pct = capPct(spent, cap);   /* v6.93: 枠が 0 まで絞られた時は満タン(capPct) */
     const over = spent - cap;
     /* v3.35: 超過でも色相は分類固有色を維持(娯楽=琥珀のまま)——警報は帯+超過ラベルが担う */
     const col = cat==="娯楽" ? "var(--amber)" : "var(--red)";
     const colCls = cat==="娯楽" ? "amber" : "red";
-    h += '<div style="cursor:pointer'+(i?';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)':'')+'" data-a="'+(cap>0?"catdrill":"setbudget")+'" data-v="'+cat+'">';
-    if(cap>0){
+    h += '<div style="cursor:pointer'+(i?';margin-top:13px;padding-top:13px;border-top:1px solid var(--line)':'')+'" data-a="'+(_br.has?"catdrill":"setbudget")+'" data-v="'+cat+'">';
+    /* v6.93: 枠を決めているか(_br.has)で分ける。所持金で 0 まで絞られても「¥0 / ¥0 残り ¥0」で出し、押すと内訳(理由は内訳の ⓘ)。決めていない時だけ「＋ 上限を設定」 */
+    if(_br.has){
       /* v3.87: **残りを主役に**(ユーザー設計)。使った額は振り返りの数字、残りは意思決定の数字。
          導線行は廃止しカード全体をタップ可能に(›で示す)——行が1つ減り視認性が上がる */
       /* v3.91: **白は行に1つだけ**。ラベルも数字も白だと視線が跳ね、白の意味が薄まる。
@@ -4688,19 +4695,22 @@ function summaryText(){
   const gm=done.filter(e=>isNet(e));
   L.push("- うち遊技(所持金には出入りしない) "+sgn(sumEnt(gm,"income")-sumEnt(gm,"expense")));
   L.push("");
-  const base=disposableBase(mk), ps=preSplit(mk);
-  L.push("## 予算 ("+mk+")");
+  /* v6.93【修正】予算は**予算カードと同じ期間**(curBudgetMk)で数える。前は暦月(mk)で数えていて、給料日の期間だと、
+     月が変わった後は、まだ始まっていない次の期間の可処分・先取り・上限を渡していた(Claude の分析がずれる)。
+     見出しも期間の字(budgetSpanTxt。暦月の設定なら空の字なので、今までどおり「2026-11」)。「当月」「月次の推移」の表は暦月のまま */
+  const bmk=curBudgetMk(), base=disposableBase(bmk), ps=preSplit(bmk);
+  L.push("## 予算 ("+(budgetSpanTxt(bmk)||bmk)+")");
   L.push("- 可処分(収入−固定費) "+yen(base));
   L.push("- 先に取り分ける: 貯金 "+yen(ps.sv)+" / 投資 "+yen(ps.iv));
   /* v6.13: 所持金が計画に足りない時は、予算カードの貯金を頭打ちにしている。その数字と差の内訳も渡す */
-  { const _bm=curBudgetMk(), _pl=svPlan(_bm);
-    if(_pl.bound){ const q=svShortParts(_bm, _pl);
+  { const _pl=svPlan(bmk);
+    if(_pl.bound){ const q=svShortParts(bmk, _pl);
       L.push("- 所持金が計画に "+yen(_pl.short)+" 足りない → 貯金(と投資)のあとを「いま所持金から移せる額」"+yen(q.avail)+" に頭打ち(計画のあと "+yen(q.left)+")");
       L.push("  - 差の内訳: 軍資金へ(差引) "+sgn(-q.bank)+" / 立替(差引) "+sgn(-q.adv)+" / まだ入っていない収入 "+sgn(-q.futInc)+
         " / 期間の初めの所持金 "+sgn(q.carry)+" / その他 "+sgn(q.other));
     } }
   /* v6.92: 実効は予算カードと同じ数字(budgetRow の cap=使った額 + いま使える額)。前は nowCaps の「所持金×割合」をそのまま出していた */
-  const capLine=(c,lb)=>{ const r=budgetRow(mk,c); return "- "+lb+": 実効 "+yen(r.cap)+" / 月の枠 "+yen(r.monthCap); };
+  const capLine=(c,lb)=>{ const r=budgetRow(bmk,c); return "- "+lb+": 実効 "+yen(r.cap)+" / 月の枠 "+yen(r.monthCap); };
   L.push(capLine("消費","変動消費の上限"));
   L.push(capLine("娯楽","娯楽の上限"));
   L.push("");
