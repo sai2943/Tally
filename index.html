@@ -486,7 +486,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.93 (localStorage保存・完全オフライン)
+   Tally 6.94 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1355,7 +1355,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.93";
+const APP_VERSION = "6.94";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -4090,6 +4090,7 @@ function mjAgg(list, mk){
   if(!H) return null;
   /* v6.76: 実働の分かる記録(実働が読めて、着順の回数が1以上)。1時間あたり・1半荘の時間は、この記録だけで出す(分子も分母も同じ記録) */
   const W = L.filter(s=>mjWorkMin(s)>0 && mjHanchan(s)>0);
+  const BU = L.map(s=>mjBetGames(s,"uma")), BS = L.map(s=>mjBetGames(s,"sashi"));   /* v6.94: 相手と打ったゲーム(馬身・差し馬の1ゲーム平均) */
   const rc = Math.max.apply(null, L.map(s=>mjRankCount(s)));
   const rankSums=[0,0,0,0];
   L.forEach(s=>{ const r=mjRanks(s); for(let i=0;i<4;i++) rankSums[i]+=(r[i]||0); });
@@ -4117,6 +4118,7 @@ function mjAgg(list, mk){
        チップの円はセットの内訳に出す(フリーはスコアに含めたまま) */
     umaX:L.reduce((a,s)=>a+mjExtSum(s,"uma"),0),
     sashiX:L.reduce((a,s)=>a+mjExtSum(s,"sashi"),0),
+    umaG:BU.reduce((a,b)=>a+b.n,0), umaGY:BU.reduce((a,b)=>a+b.yen,0), sashiG:BS.reduce((a,b)=>a+b.n,0), sashiGY:BS.reduce((a,b)=>a+b.yen,0),
     otherX:L.reduce((a,s)=>a+mjExtSum(s,"other"),0),
     chipY:L.reduce((a,s)=>a+mjChipYen(s),0),
     workMin:W.reduce((a,s)=>a+mjWorkMin(s),0), workH:W.reduce((a,s)=>a+mjHanchan(s),0), workFinal:W.reduce((a,s)=>a+mjFinal(s),0)};   /* v6.76 */
@@ -4125,6 +4127,32 @@ function mjAgg(list, mk){
    「差し馬」を先に見る(「差し馬」の中に「馬身」は無いが、念のため順番を決めておく)。どちらでもなければ その他 */
 const mjExtKind = x => { const n=String((x&&x.name)||""); return n.indexOf("差し馬")>=0 ? "sashi" : n.indexOf("馬身")>=0 ? "uma" : "other"; };
 const mjExtSum = (m, kind) => ((m&&m.extras)||[]).reduce((a,x)=>a+(mjExtKind(x)===kind ? num(x.amount) : 0),0);
+/* v6.94【馬身・差し馬は、相手と打ったゲームで割る】(ユーザー 11/25 20:19「馬身と差し馬は対象と打ったゲーム数に応じた平均で出して欲しい、じゃないとおかしい」)。
+   前は1ゲーム平均を、その期間の全部のゲーム数で割っていた=相手のいないゲームまで母数に入り、平均が薄まっていた。
+   締めた記録の写し(log.rows・v6.71 から)で、その種類(馬身・差し馬)の卓の外の行の相手と、自分の両方に着順がある行を数える
+   (相手と打ったゲーム。相手ごとの成績 mjlVs と同じ数え方)。**同じ行は1回**=相手が2人いても1ゲーム。
+   相手は行の k("sa:a"・"um:b"=写しの中の id)、無ければ名前(mjExtWho。交代で戻ってきた人の別の id も同じ名前なら数える)。
+   相手の分からない馬身(全員の着順の無い行に手で入れた馬身)は、手で馬身を入れた行を数える。
+   写しの無い記録(v6.71 より前に締めた記録・金額だけの記録)や、相手が写しの行に見つからない卓の外の行は、数が分からないので
+   ゲーム数にも金額にも入れない。返す yen は、数の分かった行の金額の和(平均の分子。分母と同じ記録だけ) */
+function mjBetGames(s, kind){
+  const lg=s && s.log, rows=(lg && Array.isArray(lg.rows)) ? lg.rows : null;
+  if(!rows) return {n:0, yen:0};
+  const P=lg.people||{}, hit=new Set(); let yen=0;
+  ((s.extras)||[]).forEach(x=>{
+    if(mjExtKind(x)!==kind) return;
+    /* 相手の無い行の名前「馬身 +1」の後ろは回数(相手ではない)。mjExtWho はそれも名前として読むので、ここで外す */
+    const m=/^(?:sa|um):(.+)$/.exec(String((x&&x.k)||"")), w0=mjExtWho(x).trim(), w=/^[+＋\-−]\d+$/.test(w0) ? "" : w0;
+    const ids = m ? [m[1]] : w ? Object.keys(P).filter(id=>String(P[id]==null?"":P[id]).trim()===w) : null;
+    if(ids===null && kind!=="uma") return;   /* 相手の分からない差し馬は数えられない */
+    const mine=[];
+    rows.forEach((r,i)=>{ if(!r || typeof r!=="object") return;
+      if(ids===null){ if(!r.ranks && num(r.uma)) mine.push(i); }
+      else if(r.ranks && num(r.ranks.me) && ids.some(id=>num(r.ranks[id]))) mine.push(i); });
+    if(!mine.length) return;
+    mine.forEach(i=>hit.add(i)); yen+=num(x.amount); });
+  return {n:hit.size, yen:yen};
+}
 /* v6.37: 平均の内訳を1円に丸めても、**足すと上の行(丸めた合計)にぴったり合う**ように配る(最大剰余)。
    tot は合計を丸めた値(一覧の「平均収支」と同じ数)。各行は元の値から1円未満しか動かない */
 function mjRoundParts(vals, tot){
@@ -4133,11 +4161,14 @@ function mjRoundParts(vals, tot){
   vals.map((v,i)=>[v-Math.floor(v),i]).sort((a,b)=>b[0]-a[0]).forEach(([,i])=>{ if(rest>0){ out[i]++; rest--; } });
   return out;
 }
-const MJ_AGG_INFO="左の列は<b>1ゲームあたりの平均</b>、右の列は<b>合計</b>(この期間に積み上げた金額)です。どちらの列も<b>下の行を足すと、上の行(収支(ゲーム代込))になります。</b><br>"+
+const MJ_AGG_INFO="左の列は<b>1ゲームあたりの平均</b>、右の列は<b>合計</b>(この期間に積み上げた金額)です。<b>下の行を足すと、上の行(収支(ゲーム代込))になります</b>(1ゲーム平均の列の馬身・差し馬は除く。下を見てください)。<br>"+
   "ゲーム代抜(スコア + 馬身 + 差し馬) + ゲーム代(店に払った額 + バック + 経費)<br><br>"+
   "<b>経費(飲食・交通など)もゲーム代の一部</b>として数えます。<br><br>"+
   "<b>スコア</b>は、卓での勝ち負けのうち、下に分けて出した分(馬身・差し馬、セットのチップ)を除いた残りです。ゲームの記録で締めた卓は<b>店での精算(実際に動いたお金)</b>から出しているので、チップや飛びを付けていなくても、その分はスコアに入っていて<b>収支はずれません</b>。<br><br>"+
   "馬身・差し馬は、店の精算とは別に相手とやり取りしたお金です。どちらでもない卓の外のお金は「卓の外(その他)」に出します。<br><br>"+
+  "<b>馬身・差し馬の1ゲーム平均</b>は、<b>その相手と打ったゲームの数</b>(名前の下の数)で割ります。相手が2人いても、同じゲームは1回と数えます。"+
+  "ゲームごとの着順が残っていない記録(締めた後も残すようにする前の記録・金額だけで入れた記録)は、相手と打った数が分からないので、この平均には入れません(合計には入ります)。"+
+  "そのため1ゲーム平均の列では、馬身・差し馬を足しても上の行にはなりません。<br><br>"+
   "チップは<b>セットだけ</b>分けて出します(スコア表で全部記録できるため。かっこの中は1ゲームあたりの枚数)。フリーはチップを全部は付けきれないので、スコアに含めています。";
 /* v6.76: 1時間あたり(最終収支=ゲーム代込 ÷ 実働)・1半荘の時間(実働 ÷ 半荘数)。実働の分かる記録が無ければ出さない(0円・0分は事実ではない)。
    一部の記録だけの時は、数えた半荘数を添える(平均スコアの「(素点の分かる○半荘)」と同じ形) */
@@ -4198,7 +4229,11 @@ function mjMoneyHtml(A, G){
   const T={score:A.raw-A.ext-chipY, chip:chipY, uma:A.umaX, sashi:A.sashiX, other:A.otherX, fee:-A.fee, back:A.back, exp:-A.exp};
   const [score, chip, uma, sashi, other, fee, back, exp]=mjRoundParts(
     [T.score/H, T.chip/H, T.uma/H, T.sashi/H, T.other/H, T.fee/H, T.back/H, T.exp/H], tot);
-  const v=(x)=>'<span class="mono '+clsPM(x)+'">'+signYen(x)+'</span>';
+  const v=(x)=>x==null ? '<span class="mono muted">—</span>' : '<span class="mono '+clsPM(x)+'">'+signYen(x)+'</span>';
+  /* v6.94: 馬身・差し馬の1ゲーム平均は、相手と打ったゲームで割る(mjBetGames。数は名前の下)。数の分かる記録が無ければ「—」(0円は事実ではない)。
+     ほかの行と収支(ゲーム代抜)は今までどおり全部のゲームで割る(上の行の数は変わらない) */
+  const betAvg=(g, gy)=> g>0 ? Math.round(gy/g) : null;
+  const betLab=(nm, g)=>'<span class="muted">'+nm+'</span>'+(g>0 ? '<span class="mjm-n">相手と打った'+g+'ゲーム</span>' : '');
   const row=(cls, label, avg, sum)=>'<div class="mjm-row '+cls+'"><span class="mjm-l">'+label+'</span>'+v(avg)+v(sum)+'</div>';
   let h='<div class="mjm-row head"><span></span><span class="muted">1ゲーム平均</span><span class="muted">合計</span></div>'+
     row("top", '収支(ゲーム代込)'+infoBtn(MJ_AGG_INFO), tot, A.final);
@@ -4210,8 +4245,8 @@ function mjMoneyHtml(A, G){
     const cn=Math.round(A.chips/H*100)/100, sg=x=>(x>=0?"+":"")+x;
     h+=row("sub", '<span class="muted">スコア</span>', score, T.score)+
       (chipOn ? row("sub", '<span class="muted">チップ</span><span class="mjm-n">計'+sg(fmtPt(A.chips))+'枚・1ゲーム '+sg(String(cn))+'枚</span>', chip, T.chip) : '')+
-      (A.umaX ? row("sub", '<span class="muted">馬身</span>', uma, T.uma) : '')+
-      (A.sashiX ? row("sub", '<span class="muted">差し馬</span>', sashi, T.sashi) : '')+
+      (A.umaX ? row("sub", betLab("馬身", A.umaG), betAvg(A.umaG, A.umaGY), T.uma) : '')+
+      (A.sashiX ? row("sub", betLab("差し馬", A.sashiG), betAvg(A.sashiG, A.sashiGY), T.sashi) : '')+
       (A.otherX ? row("sub", '<span class="muted">卓の外(その他)</span>', other, T.other) : '');
   }
   /* v6.39: **経費もゲーム代の一部**(ユーザー: 経費もゲーム代の一環として入れましょう)。v6.37は別の行「平均経費」だった */
