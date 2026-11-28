@@ -486,7 +486,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Tally 6.95 (localStorage保存・完全オフライン)
+   Tally 6.96 (localStorage保存・完全オフライン)
    ============================================================ */
 const KEY = "kakeibo:v1";  /* 歴史的名称のままが正。変更=全データ孤立。リポジトリ改名(tally)とは無関係の内部ID——絶対に触らない */
 const EXPENSE_CATS = ["消費","娯楽","承認","立替","遊技経費"];  /* 承認=事前承認済みの特別支出。予算バー対象外(承認プロセス自体が統制)。立替=v5.69(isAdv参照) */
@@ -1355,7 +1355,7 @@ function moveMonth(d){ UI.m += d;
 /* ============================================================
    レンダリング
    ============================================================ */
-const APP_VERSION = "6.95";
+const APP_VERSION = "6.96";
 let _renderLoc = "";
 let RENDER_PREV_SCREEN = null;
 /* v6.71(総点検 C8。ユーザー 11/14 22:09「返事待ちは貴方のオススメで良いですよ」= 勧めは「開いた記録から戻った時だけ、元の位置に戻す」)。
@@ -3718,9 +3718,13 @@ function viewLedger(){
         '<div class="row between" style="align-items:baseline;margin-bottom:5px">'+
         '<span class="red" style="font-size:13px;font-weight:700">⚠ 所持金で予定を払えません</span>'+
         '<span class="mono red" style="font-size:15px;font-weight:700">不足 ¥'+_fc.short.toLocaleString("ja-JP")+'</span></div>'+
-        '<div class="muted" style="font-size:11px;line-height:1.7">所持金 '+yenM(_fc.now)+
-        ' に対し、今後の予定は 収入 ¥'+_fc.futIncome.toLocaleString("ja-JP")+' / 支出 ¥'+_fc.futExpense.toLocaleString("ja-JP")+'。<br>'+
-        '変動消費と娯楽を見直すか、貯金から引き出してください。</div></div>';
+        /* v6.96: 説明は読める所で行を分ける(ユーザー 11/28・家計簿の写し:「内容は良いんですが改行の関係で読みづらいですね」=「収/入」で折れていた)。
+           和文はどの字の間でも折り返せる上に、.muted の text-wrap:pretty が行の長さをそろえようとして、余白があっても語の途中で折った。
+           「所持金 … に対し、」「今後の予定は 収入 … / 支出 …。」「変動消費と娯楽を見直すか、貯金から引き出してください。」の3行に分け、
+           語と金額のまとまり(.nw)は途中で切らない。幅が足りない時だけ、まとまりの間(「、」の後・「/」の前・「収入」の前)で折り返す。言葉と順番は前と同じ */
+        '<div class="muted" style="font-size:11px;line-height:1.7"><span class="nw">所持金 '+yenM(_fc.now)+' に対し、</span><br>'+
+        '<span class="nw">今後の予定は</span> <span class="nw">収入 ¥'+_fc.futIncome.toLocaleString("ja-JP")+'</span> <span class="nw">/ 支出 ¥'+_fc.futExpense.toLocaleString("ja-JP")+'。</span><br>'+
+        '<span class="nw">変動消費と娯楽を見直すか、</span><span class="nw">貯金から引き出してください。</span></div></div>';
     }
   }
   /* v4.62: **給料着弾前は出さない**(ユーザー指摘: 出ても何も出来ない)。
